@@ -1,0 +1,23 @@
+{
+  "name": "ai-personalos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI PersonalOS - a premium AI-powered Personal Operating System",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @personalos/web",
+    "api": "npm run dev --workspace @personalos/api",
+    "build": "npm run build --workspace @personalos/web",
+    "start": "npm run start --workspace @personalos/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "icons": "node scripts/generate-icons.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

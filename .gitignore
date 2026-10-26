@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+.eslintcache
+.env*.local
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+*.pem
+*.p12
+*.pfx
+.vercel/

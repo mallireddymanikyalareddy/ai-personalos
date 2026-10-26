@@ -1,0 +1,78 @@
+"use client";
+
+import * as React from "react";
+import { usePathname, useRouter } from "next/navigation";
+
+import { Button } from "@/components/ui/button";
+import { unregisterServiceWorker } from "@/lib/pwa";
+import { useAuth } from "@/modules/auth/auth-context";
+
+const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email"];
+
+export default function AuthGroupLayout({ children }: { children: React.ReactNode }) {
+  const { status, profile, refresh } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const isPublic = PUBLIC_PATHS.includes(pathname);
+  const isOnboarding = pathname === "/onboarding";
+
+  React.useEffect(() => {
+    if (status === "loading" || status === "offline") return;
+    if (status === "anonymous" && isOnboarding) {
+      router.replace("/login");
+      return;
+    }
+    if (status === "authenticated" && isPublic && profile) {
+      const target = profile.onboardingCompleted ? "/today" : "/onboarding";
+      if (pathname !== target) {
+        router.replace(target);
+      }
+    }
+  }, [status, profile, isOnboarding, isPublic, router, pathname]);
+
+  if (status === "loading") {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-bg">
+        <div
+          className="size-8 animate-spin rounded-full border-2 border-line border-t-accent"
+          role="status"
+          aria-label="Loading"
+        />
+      </div>
+    );
+  }
+
+  if (status === "offline") {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-bg px-6">
+        <div className="w-full max-w-sm rounded-xl border border-line bg-surface p-6 text-center">
+          <h1 className="text-base font-semibold text-ink">You are offline</h1>
+          <p className="mt-1.5 text-sm leading-relaxed text-ink-3">
+            PersonalOS could not reach the server. Your data is safe on this device - reconnect and we
+            will pick up where you left off.
+          </p>
+          <div className="mt-4 flex flex-col gap-2">
+            <Button variant="secondary" size="sm" onClick={() => void refresh()}>
+              Try again
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                void unregisterServiceWorker().then(() => window.location.reload());
+              }}
+            >
+              Reset offline cache
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "anonymous" && isOnboarding) return null;
+  if (status === "authenticated" && isPublic) return null;
+
+  return <>{children}</>;
+}
