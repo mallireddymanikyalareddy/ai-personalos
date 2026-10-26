@@ -125,6 +125,13 @@ export function GoalQuickAdd() {
         onChange={(event) => setTitle(event.target.value)}
         placeholder="What's your new goal?"
         aria-label="What's your new goal"
+        data-testid="goals-quick-add-input"
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            add(QUICK_ADD_CATEGORIES[0]);
+          }
+        }}
       />
 
       <div className="mt-2 grid grid-cols-4 gap-1.5">

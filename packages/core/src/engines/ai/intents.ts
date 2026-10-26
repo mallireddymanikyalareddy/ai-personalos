@@ -257,10 +257,12 @@ export function parseIntent(
     .join(" ");
 
   if (!best) {
+    const isQuestion = /\?\s*$/.test(trimmed) || /^(what|which|who|when|where|why|how|do|does|did|is|are|am|can|could|should|will|would|show|list|tell)\b/i.test(trimmed);
+    const asTask = capture.title.length > 0 && !isQuestion;
     return {
-      capability: capture.title.length > 0 ? "create_task" : "answer_question",
-      confidence: capture.title.length > 0 ? 0.55 : 0.3,
-      slots: capture.title.length > 0 ? slots : { query: fallbackKeywords || trimmed },
+      capability: asTask ? "create_task" : "answer_question",
+      confidence: asTask ? 0.55 : 0.3,
+      slots: asTask ? slots : { query: fallbackKeywords || trimmed },
       targets: [],
       raw: trimmed,
       reason:

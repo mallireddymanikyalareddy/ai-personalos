@@ -116,6 +116,21 @@ export function PaperWorkspace() {
     return os.addPaperNotebook({ title: "All documents" }).id;
   }, [os]);
 
+  const freshPage = React.useRef<{ id: string; name: string; text: string } | null>(null);
+
+  const closePageDialog = () => {
+    const fresh = freshPage.current;
+    freshPage.current = null;
+    setPageDialogId(null);
+    if (!fresh || fresh.id !== pageDialogId) return;
+    const state = os.getState();
+    const page = state.paperPages[fresh.id];
+    const hasStrokes = Object.values(state.paperStrokes).some((stroke) => stroke.pageId === fresh.id);
+    if (page && page.name === fresh.name && page.textContent === fresh.text && !hasStrokes) {
+      os.deletePaperPage(fresh.id);
+    }
+  };
+
   const createPage = (input: {
     name: string;
     kind: PaperPageKind;
@@ -135,6 +150,7 @@ export function PaperWorkspace() {
         folderId !== "all" && folderId !== "trash" ? folderId : null,
     });
     setActiveId(page.id);
+    freshPage.current = { id: page.id, name: page.name, text: page.textContent };
     setPageDialogId(page.id);
     setView("all");
     toast(`"${page.name}" created`);
@@ -713,8 +729,9 @@ export function PaperWorkspace() {
 
       <PaperPageDialog
         pageId={pageDialogId}
-        onClose={() => setPageDialogId(null)}
+        onClose={closePageDialog}
         onOpenCanvas={(id) => {
+          freshPage.current = null;
           setPageDialogId(null);
           setCanvasPageId(id);
           setCanvasOpen(true);

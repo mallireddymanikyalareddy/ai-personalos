@@ -278,7 +278,7 @@ export const JournalEditor = React.forwardRef<JournalEditorHandle, JournalEditor
           id={`journal-title-${entry.id}`}
           value={entry.title}
           onChange={(event) => onChange({ title: event.target.value })}
-          placeholder="Thursday, October 8, 2026"
+          placeholder={new Date(entry.entryDate).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
           className="w-full border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight text-ink placeholder:text-ink-3 focus:outline-none"
         />
 

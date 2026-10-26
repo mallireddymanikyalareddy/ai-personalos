@@ -1,6 +1,8 @@
 "use client";
 import * as React from "react";
 
+import Link from "next/link";
+
 import {
   BookOpen,
   CalendarPlus,
@@ -370,7 +372,7 @@ export function TodayQuickCapture({ day }: { day: number }) {
           <Zap className="size-4 text-accent" aria-hidden="true" />
           Quick Capture
         </h2>
-        <a href="/notes" className="text-xs font-medium text-accent-ink hover:underline">Write</a>
+        <Link href="/notes" className="text-xs font-medium text-accent-ink hover:underline">Write</Link>
       </header>
 
       <Input
@@ -378,6 +380,13 @@ export function TodayQuickCapture({ day }: { day: number }) {
         onChange={(event) => setText(event.target.value)}
         placeholder="Capture a thought, task, or note."
         aria-label="Capture a thought, task, or note"
+        data-testid="today-capture-input"
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            capture("task");
+          }
+        }}
       />
 
       <div className="mt-2 grid grid-cols-6 gap-1">

@@ -119,7 +119,7 @@ export function runAssistant(
         {
           capability: "create_task",
           title: `Create task "${title}"`,
-          summary: parsed.dueAt != null ? `Due ${new Date(parsed.dueAt).toLocaleDateString()}` : "Added to your inbox",
+          summary: parsed.dueAt != null ? `Due ${new Date(parsed.dueAt).toLocaleDateString()}` : "Goes to your inbox once you accept",
           risk: "low",
           requiresConfirmation: true,
           reasoning: parsed.dueAt != null ? "A date was parsed from your request." : "No date was found, so it lands in the inbox.",

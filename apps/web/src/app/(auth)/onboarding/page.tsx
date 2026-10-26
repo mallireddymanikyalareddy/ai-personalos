@@ -63,6 +63,23 @@ function detectedLocale(): string | undefined {
   return candidate && isValidLocale(candidate) ? candidate : undefined;
 }
 
+function draftKey(profileId: string): string {
+  return `personalos:onboarding:${profileId}`;
+}
+
+function readSavedDraft(profileId: string | undefined): { step: number; draft: Draft } | null {
+  if (!profileId) return null;
+  try {
+    const raw = window.sessionStorage.getItem(draftKey(profileId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { step: number; draft: Draft };
+    const step = Math.min(Math.max(0, Number(parsed.step) || 0), STEPS.length - 1);
+    return parsed.draft && typeof parsed.draft.displayName === "string" ? { step, draft: parsed.draft } : null;
+  } catch {
+    return null;
+  }
+}
+
 function StepDots({ step }: { step: number }) {
   return (
     <div className="flex items-center gap-2" aria-hidden="true">
@@ -153,6 +170,12 @@ export default function OnboardingPage() {
           }
           setState(next);
           setError(null);
+          const saved = readSavedDraft(next.profile?.id);
+          if (saved) {
+            setDraft(saved.draft);
+            setStep(saved.step);
+            return;
+          }
           const pref = next.profile?.preferences;
           const detectedZone = detectedTimezone();
           const detectedLoc = detectedLocale();
@@ -206,6 +229,12 @@ export default function OnboardingPage() {
     };
   }, [router]);
 
+  const profileId = state?.profile?.id;
+  React.useEffect(() => {
+    if (!profileId || !draft) return;
+    window.sessionStorage.setItem(draftKey(profileId), JSON.stringify({ step, draft }));
+  }, [profileId, step, draft]);
+
   const update = React.useCallback((patch: Partial<Draft>) => {
     setDraft((current) => (current ? { ...current, ...patch } : current));
   }, []);
@@ -239,6 +268,7 @@ export default function OnboardingPage() {
           notifications: draft.notifications,
         },
       });
+      if (profileId) window.sessionStorage.removeItem(draftKey(profileId));
       await refresh();
       router.replace("/today");
     } catch (caught) {

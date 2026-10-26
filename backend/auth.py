@@ -1,4 +1,5 @@
 import copy
+import os
 import hashlib
 import re
 import secrets
@@ -139,8 +140,15 @@ def client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def origin_of(request: Request) -> str:
-    host = (request.headers.get("x-forwarded-host") or request.headers.get("host", "")).split(",")[0].strip()
+def origin_of(request: Request) -> str | None:
+    """Public origin for emailed links. Uses APP_URL if set, else the Host header (which the ingress
+    routes on, so it must be this app's domain); client-supplied X-Forwarded-Host is never trusted."""
+    configured = os.environ.get("APP_URL", "").strip().rstrip("/")
+    if configured.startswith("https://"):
+        return configured
+    host = request.headers.get("host", "").strip().lower()
+    if not host or host.startswith(("localhost", "127.", "0.0.0.0")) or ":" in host:
+        return None
     return f"https://{host}"
 
 
@@ -323,8 +331,10 @@ async def reset_request(body: IdentifierIn, request: Request):
     ident = body.identifier.strip().lower()
     user = await db.users.find_one({"$or": [{"handle": ident}, {"email": ident}]}, {"_id": 0})
     if user and user.get("email") and digest.allow_send_now(f"reset:{user['id']}"):
-        token = await create_token(user["id"], "reset", timedelta(hours=1))
-        await digest.send_account_link(user, "reset", f"{origin_of(request)}/reset-password?token={token}")
+        origin = origin_of(request)
+        if origin:
+            token = await create_token(user["id"], "reset", timedelta(hours=1))
+            await digest.send_account_link(user, "reset", f"{origin}/reset-password?token={token}")
     return {"status": "accepted"}
 
 
@@ -350,8 +360,10 @@ async def verify_request(request: Request, auth=Depends(require_auth)):
     if not user.get("email"):
         raise invalid("email", "add an email address first")
     if digest.allow_send_now(f"verify:{user['id']}"):
-        token = await create_token(user["id"], "verify", timedelta(hours=24))
-        await digest.send_account_link(user, "verify", f"{origin_of(request)}/verify-email?token={token}")
+        origin = origin_of(request)
+        if origin:
+            token = await create_token(user["id"], "verify", timedelta(hours=24))
+            await digest.send_account_link(user, "verify", f"{origin}/verify-email?token={token}")
     return {"status": "accepted"}
 
 
@@ -420,6 +432,42 @@ async def get_profile(auth=Depends(require_auth)):
     return profile(auth[0])
 
 
+PREF_ENUMS = [
+    (("planningPreference",), {"morning", "evening", "weekly_review"}),
+    (("ai", "tone"), {"concise", "balanced", "detailed"}),
+    (("ai", "proactivity"), {"suggest", "plan", "automate"}),
+    (("notifications", "emailDigest"), {"off", "daily", "weekly"}),
+]
+PREF_BOOLS = [("workingHours", "enabled"), ("notifications", "dailyBriefing"), ("notifications", "taskReminders"),
+              ("notifications", "aiInsights")]
+
+
+def _pref_value(prefs: dict, path: tuple):
+    node = prefs
+    for key in path:
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+def _validate_pref_enums(prefs: dict) -> None:
+    for path, allowed in PREF_ENUMS:
+        value = _pref_value(prefs, path)
+        if value is not None and value not in allowed:
+            raise invalid(f"preferences.{'.'.join(path)}", f"must be one of {sorted(allowed)}")
+    for path in PREF_BOOLS:
+        value = _pref_value(prefs, path)
+        if value is not None and not isinstance(value, bool):
+            raise invalid(f"preferences.{'.'.join(path)}", "must be true or false")
+    model = _pref_value(prefs, ("ai", "model"))
+    if model is not None and not (isinstance(model, str) and 1 <= len(model) <= 64):
+        raise invalid("preferences.ai.model", "must be 1-64 characters")
+    days = _pref_value(prefs, ("workingHours", "days"))
+    if days is not None and not (isinstance(days, list) and all(isinstance(d, int) and 0 <= d <= 6 for d in days)):
+        raise invalid("preferences.workingHours.days", "must be a list of weekday numbers 0-6")
+
+
 def validate_preferences(prefs: dict) -> None:
     if not isinstance(prefs, dict):
         raise invalid("preferences", "must be an object")
@@ -430,6 +478,7 @@ def validate_preferences(prefs: dict) -> None:
     for group in ("workingHours", "sleepSchedule", "notifications", "ai"):
         if group in prefs and not isinstance(prefs[group], dict):
             raise invalid(f"preferences.{group}", "must be an object")
+    _validate_pref_enums(prefs)
     for path in [("workingHours", "start"), ("workingHours", "end"), ("sleepSchedule", "bedtime"), ("sleepSchedule", "wakeTime")]:
         value = (prefs.get(path[0]) or {}).get(path[1])
         if value is not None and not TIME_RE.match(str(value)):
@@ -500,6 +549,8 @@ async def get_onboarding(auth=Depends(require_auth)):
 def _onboarding_life_areas(names) -> list:
     if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
         raise invalid("lifeAreaNames", "must be a list of life area names", "Onboarding failed schema validation.")
+    if not names:
+        raise invalid("lifeAreaNames", "pick at least one life area", "Onboarding failed schema validation.")
     catalog = {a["name"] for a in LIFE_AREA_CATALOG}
     unknown = [n for n in names if n not in catalog]
     if unknown:
@@ -514,13 +565,13 @@ def validate_onboarding(body, user: dict) -> dict:
     tz = str(body.get("timezone", ""))
     if not valid_tz(tz):
         raise invalid("timezone", "must be a valid IANA timezone", "Onboarding failed schema validation.")
-    life_areas = _onboarding_life_areas(body.get("lifeAreaNames") or [])
+    life_areas = _onboarding_life_areas(body.get("lifeAreaNames", []))
     prefs = body.get("preferences") or {}
     validate_preferences(prefs)
     update = {"timezone": tz, "locale": str(body.get("locale") or "en")[:35], "life_areas": life_areas,
               "preferences": deep_merge(user.get("preferences") or {}, prefs), "onboarding_completed_at": now(), "updated_at": now()}
-    if body.get("displayName"):
-        update["display_name"] = str(body["displayName"]).strip()[:64]
+    if body.get("displayName") is not None:
+        update.update(_display_name(body["displayName"]))
     return update
 
 

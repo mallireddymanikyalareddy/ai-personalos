@@ -296,7 +296,7 @@ export function IntegrationsModule() {
     const apiStatuses = new Map((catalog ?? []).map((entry) => [entry.id, entry.status]));
     return INTEGRATION_PROVIDERS.map((provider) => ({
       ...provider,
-      status: apiStatuses.get(provider.id) ?? provider.status,
+      status: apiStatuses.get(provider.id) ?? (provider.status === "live" ? "preparing" : provider.status),
     }));
   }, [catalog]);
 

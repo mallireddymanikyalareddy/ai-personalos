@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, StrictBool
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
@@ -117,22 +118,32 @@ async def get_state(auth=Depends(require_auth)):
     return {"envelope": doc["envelope"], "version": doc["version"], "updatedAt": iso(doc["updated_at"])}
 
 
+MAX_STATE_BYTES = 25 * 1024 * 1024
+
+
 @app.put("/api/v1/state")
-async def put_state(body: StateIn, auth=Depends(require_auth)):
+async def put_state(body: StateIn, request: Request, auth=Depends(require_auth)):
+    if int(request.headers.get("content-length") or 0) > MAX_STATE_BYTES:
+        raise ApiError(413, "PAYLOAD_TOO_LARGE", "Your saved data is too large to sync.")
     env = body.envelope
     if not isinstance(env.get("state"), dict) or not isinstance(env.get("version"), (int, float)):
         raise ApiError(400, "VALIDATION_FAILED", "State payload failed schema validation.")
     user_id = auth[0]["id"]
-    current = await db.app_state.find_one({"user_id": user_id}, {"version": 1})
-    current_version = current["version"] if current else 0
-    if body.baseVersion is not None and body.baseVersion < current_version:
-        return JSONResponse({"code": "CONFLICT_VERSION", "version": current_version}, status_code=409)
     stamp = datetime.now(timezone.utc)
-    doc = await db.app_state.find_one_and_update(
-        {"user_id": user_id},
-        {"$set": {"envelope": env, "updated_at": stamp}, "$inc": {"version": 1}},
-        upsert=True, return_document=ReturnDocument.AFTER, projection={"_id": 0, "version": 1},
-    )
+    update = {"$set": {"envelope": env, "updated_at": stamp}, "$inc": {"version": 1}}
+    if body.baseVersion is None:
+        doc = await db.app_state.find_one_and_update(
+            {"user_id": user_id}, update, upsert=True, return_document=ReturnDocument.AFTER, projection={"_id": 0, "version": 1})
+        return {"version": doc["version"], "updatedAt": iso(stamp)}
+    match = {"user_id": user_id, "version": body.baseVersion} if body.baseVersion > 0 else {"user_id": user_id, "version": {"$exists": False}}
+    try:
+        doc = await db.app_state.find_one_and_update(
+            match, update, upsert=body.baseVersion == 0, return_document=ReturnDocument.AFTER, projection={"_id": 0, "version": 1})
+    except DuplicateKeyError:
+        doc = None
+    if not doc:
+        current = await db.app_state.find_one({"user_id": user_id}, {"version": 1})
+        return JSONResponse({"code": "CONFLICT_VERSION", "version": current["version"] if current else 0}, status_code=409)
     return {"version": doc["version"], "updatedAt": iso(stamp)}
 
 

@@ -148,8 +148,19 @@ function onVisible(): void {
   if (document.visibilityState === "visible") void refreshFromServer();
 }
 
-export async function startAccountSync(userId: string, displayName: string): Promise<void> {
-  if (activeUser === userId) return;
+let starting: { userId: string; promise: Promise<void> } | null = null;
+
+export function startAccountSync(userId: string, displayName: string): Promise<void> {
+  if (activeUser === userId) return Promise.resolve();
+  if (starting?.userId === userId) return starting.promise;
+  const promise = beginAccountSync(userId, displayName).finally(() => {
+    if (starting?.promise === promise) starting = null;
+  });
+  starting = { userId, promise };
+  return promise;
+}
+
+async function beginAccountSync(userId: string, displayName: string): Promise<void> {
   stopAccountSync();
   const os = getOS();
   os.hydrate();

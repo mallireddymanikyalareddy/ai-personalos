@@ -51,7 +51,7 @@ import { useToast } from "@/components/ui/toast";
 
 import { MobileSettingsSection } from "@/components/mobile/mobile-settings-section";
 import { accountApi, errorMessage, fieldError } from "@/lib/api";
-import { setSettings } from "@/lib/settings-sync";
+import { type LocalSettingsPatch } from "@/lib/settings-sync";
 import { useAuth } from "@/modules/auth/auth-context";
 import { useAppState, useOS } from "@/store/use-os";
 import { WeeklyEmailCard } from "@/modules/settings/weekly-email-card";
@@ -492,6 +492,11 @@ export default function SettingsPage() {
     [refresh, toast],
   );
 
+  const setAppearance = (local: LocalSettingsPatch, prefs: UserPreferencesPatch) => {
+    os.updateSettings(local);
+    savePreferences(prefs);
+  };
+
   const saveProfile = async () => {
     if (!profile) return;
     setProfileBusy(true);
@@ -662,7 +667,7 @@ export default function SettingsPage() {
   };
 
   const resetAppearance = () => {
-    setSettings({ theme: "system", timeFormat: 24, weekStart: 1 });
+    setAppearance({ theme: "system", timeFormat: 24, weekStart: 1 }, { theme: "system", timeFormat: "24h", weekStart: "monday" });
     toast("Appearance reset to defaults", { tone: "success" });
   };
 
@@ -1010,7 +1015,7 @@ export default function SettingsPage() {
                   <Segmented
                     label="Theme"
                     value={prefs.theme}
-                    onChange={(value: ThemeSetting) => setSettings({ theme: value })}
+                    onChange={(value: ThemeSetting) => setAppearance({ theme: value }, { theme: value })}
                     options={[
                       { value: "system", label: "System" },
                       { value: "light", label: "Light" },
@@ -1027,7 +1032,7 @@ export default function SettingsPage() {
                     <Segmented
                       label="Time format"
                       value={prefs.timeFormat}
-                      onChange={(value) => setSettings({ timeFormat: value === "12h" ? 12 : 24 })}
+                      onChange={(value) => setAppearance({ timeFormat: value === "12h" ? 12 : 24 }, { timeFormat: value === "12h" ? "12h" : "24h" })}
                       options={[
                         { value: "24h", label: "24-hour" },
                         { value: "12h", label: "12-hour" },
@@ -1039,7 +1044,7 @@ export default function SettingsPage() {
                     <Segmented
                       label="Week starts"
                       value={prefs.weekStart}
-                      onChange={(value) => setSettings({ weekStart: value === "sunday" ? 0 : 1 })}
+                      onChange={(value) => setAppearance({ weekStart: value === "sunday" ? 0 : 1 }, { weekStart: value === "sunday" ? "sunday" : "monday" })}
                       options={[
                         { value: "monday", label: "Monday" },
                         { value: "sunday", label: "Sunday" },

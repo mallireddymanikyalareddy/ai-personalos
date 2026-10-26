@@ -1,0 +1,76 @@
+{
+  "summary": "Iteration 8: tested the onboarding profile fix, onboarding validation, a bug hunt across all modules as demo, password reset and verify-email (mailtest only), and data persistence. ONBOARDING FIX VERIFIED: a new user registered as 'Riley Tester' and changed the name to 'Sam' with America/New_York. After finishing, /today greets 'Sam' (also after a reload), the AI page says 'Hi Sam', and Settings > Profile shows Sam / America/New_York. Backend: 80/80 regression tests pass (the send-now email test was deselected), and the new test_iter8_auth_flows.py passes 14/14. It covers: reset request 202, bad token 400 TOKEN_INVALID, weak password 400, verify-email 202, sessions list plus revoke-others (the other session gets 401), devices, empty integrations catalog, state put/409 conflict/persistence across a new login, and onboarding applying name and time zone. All 23 app routes load with no crash and no console errors. Working CRUD: tasks (create, edit, complete, delete menu; persists across reload and sign-out/sign-in), habits, calendar event, notebook note plus /notebook/view?book=&page= (survives a reload), paper, goals (category chip), notes, journal, command palette, capture dialog, work-mode timer, AI local chat, security sessions/revoke-others, verify email, forgot and reset password. Bugs found are listed below.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/v1/auth/password-reset/request (auth.py origin_of)", "issue": "The reset and verify link origin comes from the client-controlled X-Forwarded-Host or Host header. If the ingress passes this header through, an attacker can request a reset for a victim with X-Forwarded-Host: evil.tld and the victim gets a token link to the attacker's host (reset-link poisoning). Use an env-configured APP_ORIGIN or an allowlist. I did not confirm whether the ingress forwards the client header.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/v1/users/me/onboarding", "issue": "displayName '   ' (whitespace only) is accepted and saves an empty displayName \"\" (200). PATCH /users/me rejects the same input. Reuse _display_name() in validate_onboarding."},
+      {"endpoint": "POST /api/v1/users/me/onboarding", "issue": "lifeAreaNames [] is accepted and completes onboarding. The UI requires at least 1, but the server does not enforce it."},
+      {"endpoint": "PATCH /api/v1/users/me", "issue": "preferences.planningPreference and the ai.* / notifications.* values are not validated. For example, planningPreference 'banana' and ai.tone 12 return 200 and are stored."},
+      {"endpoint": "POST /api/v1/integrations/{provider}/begin", "issue": "There is no route, so it returns 404. The frontend Connect buttons call it (see integration_issues)."},
+      {"endpoint": "PUT /api/v1/state", "issue": "The version check is a find-then-update, not atomic (two concurrent PUTs with the same baseVersion can both succeed). When baseVersion is omitted, the conflict check is skipped entirely. The envelope has no size limit."},
+      {"endpoint": "backend logs", "issue": "Earlier 500s (AttributeError 'str' has no attribute 'get' in validate_preferences / _onboarding_life_areas) are in backend.err.log. The current code guards against this and I could not reproduce it; these look like old entries."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Settings > Appearance (settings/page.tsx ~L1010-1047 + lib/settings-sync.ts)", "issue": "DATA LOSS. The Theme, Time format and Week start controls call setSettings(), which PATCHes the server, but the controls' value comes from prefsDraft, which is never updated. Clicking 12-hour returns PATCH 200, but the control stays on 24-hour until a reload. Worse, a later change on the Schedule/AI/Notifications tab (savePreferences sends the full stale prefsDraft) silently reverts the server value. Repro: Appearance, click 24-hour (PATCH timeFormat 24h); then Schedule, click Evening; the PATCH body contains timeFormat '12h' and the server ends up at 12h. Fix: route the appearance changes through savePreferences, or update prefsRef/prefsDraft inside setSettings, and refresh the auth profile.", "selector": "main Segmented 'Time format' / 'Week starts' / 'Theme'", "priority": "HIGH"},
+      {"component": "Journal editor (journal-editor.tsx:281)", "issue": "The title placeholder is hard-coded to 'Thursday, October 8, 2026', so it shows the wrong date under the 'Monday, October 26, 2026' heading. It should be derived from the entry date.", "selector": "journal editor title input", "priority": "MEDIUM"},
+      {"component": "Digital Paper > New Page", "issue": "Clicking New Page creates the page immediately (paper-workspace createPage), so Cancel leaves an orphan 'New page' card (cards went from 3 to 4 after Cancel).", "selector": "[data-testid=paper-new-page]", "priority": "MEDIUM"},
+      {"component": "AI chat (local deterministic)", "issue": "The question 'What tasks do I have?' is read as a create-task intent ('I will create \"What tasks do I have\"'). The suggestion card also says 'Added to your inbox' while it is still waiting for Accept/Dismiss.", "selector": "[data-testid=ai-assistant-message]", "priority": "MEDIUM"},
+      {"component": "Goals Quick Add / Today Quick Capture", "issue": "Pressing Enter in the input does nothing (no form submit); only the category or kind chips work. Tasks Quick Add does submit on Enter, so the behaviour is inconsistent.", "selector": "input[aria-label=\"What's your new goal\"], input[aria-label='Capture a thought, task, or note']", "priority": "LOW"},
+      {"component": "Tasks list", "issue": "Completed tasks are hidden by default even though the filter shows 'All Status', and the list says 'No tasks match these filters'. The Priority Breakdown shows '1 Tasks' next to 'No tasks yet.' at the same time.", "selector": "[data-testid=tasks-table]", "priority": "LOW"},
+      {"component": "Onboarding", "issue": "Reloading mid-onboarding resets to step 1 and loses the draft (name reverts to the sign-up name, time zone and areas are cleared). The redirects themselves work.", "selector": "[data-testid=onboarding-step-title]", "priority": "LOW"},
+      {"component": "Templates", "issue": "With an empty library, the empty state says 'No templates match that filter / Clear filters' even though no filter is set.", "selector": "[data-testid=templates-library]", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Integrations page with an empty catalog", "issue": "The page does not crash, but it renders 8 hard-coded providers with active Connect buttons even though GET /integrations/catalog returns []. Clicking Connect sends POST /api/v1/integrations/google_calendar/begin, which returns 404 and shows a raw 'Not Found' toast. Either drive the list from the catalog or disable Connect with a 'Coming soon' label.", "affected_selectors": ["main button:has-text('Connect')"]}
+    ],
+    "design_issues": [
+      {"screen": "AI page hero", "issues": ["The floating decorative icons overlap the hero copy at 1920px ('person◎ understands…', 'personalis▮ suggestions'), so the text is hidden."]},
+      {"screen": "Integrations provider cards", "issues": ["The title and description are squeezed into a narrow column next to the 'Not connected' badge, so the text wraps every 2-3 words."]},
+      {"screen": "Native pickers", "issues": ["Task detail due/scheduled dates, the Calendar event start/end (datetime-local), the Journal date, onboarding rhythm times and the Journal mood select all use the browser's native date/time controls instead of the design-system or shadcn calendar/time picker."]},
+      {"screen": "Mobile Today (390px)", "issues": ["3px horizontal overflow (scrollWidth 393); the header '…' button is clipped at the right edge."]},
+      {"screen": "/styleguide", "issues": ["The autofocus input scrolls the page down on load."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter8_auth_flows.py", "/app/test_reports/pytest/iter8.xml"],
+  "action_items": [
+    "HIGH: Fix the stale prefs in Settings Appearance (UI not updating, and later Schedule/AI/Notification saves revert theme/timeFormat/weekStart on the server)",
+    "HIGH: Build reset/verify email links from an env-configured origin (APP_ORIGIN), not from the request Host/X-Forwarded-Host",
+    "Integrations: hide or disable Connect when the catalog is empty, or implement /integrations/{id}/begin; show friendly errors instead of 'Not Found'",
+    "Journal: remove the hard-coded 'Thursday, October 8, 2026' placeholder",
+    "Paper: don't persist a page until Save, or delete it on Cancel when it is untouched",
+    "Onboarding backend: validate displayName with the same rule as PATCH (no whitespace-only) and require at least 1 life area",
+    "AI local intent: questions ('What tasks do I have?') should not become create-task proposals; fix the 'Added to your inbox' text on pending suggestions",
+    "Make Enter submit in Goals Quick Add and Today Quick Capture",
+    "Validate the remaining preference enums (planningPreference, ai.tone/proactivity, notifications)",
+    "Fix the AI hero icon overlap, the cramped integration cards and the mobile 3px overflow; replace native date/time pickers"
+  ],
+  "critical_code_review_comments": [
+    "apps/web/src/app/(app)/settings/page.tsx is 1920 lines; split it per tab (profile/appearance/schedule/security/...). Two competing preference-write paths (setSettings vs savePreferences) caused the HIGH bug.",
+    "lib/settings-sync.ts setSettings swallows PATCH errors silently (.catch(() => undefined)), so the user gets no feedback when a save fails.",
+    "auth-context.tsx: startAccountSync guards only on activeUser, which is set after await pull(). Two profile changes in quick succession (register, then onboarding refresh) can run startAccountSync twice at the same time, leaking a duplicate os.subscribe (double pushes; I saw 8 PUT /state 409s in the logs). Add an in-flight promise guard.",
+    "onboarding/page.tsx is 774 lines; extract the step components. The draft is not persisted, so a reload loses progress.",
+    "The register and login pages have no data-testids (inputs are reachable only by id/name); the onboarding testids are good.",
+    "Raw <a href> links ('Add instantly' in Tasks, 'Write' in Today Quick Capture) cause full page reloads; use next/link."
+  ],
+  "onboarding_enhancement_suggestions": [
+    "Save the draft and current step (localStorage or server) so a reload resumes where the user left off",
+    "Add time format (12h/24h) and week start to the 'Preferences' or 'Rhythm' step; they currently fall back to defaults and must be changed in Settings",
+    "Searchable time-zone combobox with the detected zone highlighted, instead of a free-text input",
+    "Offer optional starter content (sample tasks/goals/habits for the chosen life areas) and a 'Skip for now' path",
+    "Show a final summary or confirmation step, plus a short product tour or checklist on /today after finishing",
+    "Ask for a first name only (it currently prefills the full 'First Last' name), and show inline validation messages instead of only disabling Continue",
+    "Use design-system time pickers for working hours and sleep instead of native inputs"
+  ],
+  "updated_files": ["/app/backend/tests/test_iter8_auth_flows.py"],
+  "success_rate": {"backend": "100% (94/94 tests; 6 minor validation/security issues found by review and curl)", "frontend": "~80% (core flows work; 1 HIGH, 3 MEDIUM, 4 LOW UI bugs; 1 integration issue)"},
+  "test_credentials": "demo / DemoPass123!; mailtest / TestPass123!; new onboarding user: riley038831@example.com / TestPass123!x (displayName Sam, America/New_York, prefs 12h/sunday/evening)",
+  "seed_data_creation": "The demo account now has TEST_task_39221_ed (completed), TEST_habit, TEST_event, TEST_nbnote, TEST_paper plus 2 orphan 'New page', TEST_goal, one untitled note, and one AI conversation with a pending suggestion. API-created users with t* handles (TEST_State, TEST_X, Riley/Sam) exist. For mailtest, revoke-others was run and 2 reset and 2 verify emails were sent to delivered+personalos@resend.dev.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run the backend regression with --deselect backend/tests/test_python_backend.py::test_mailtest_send_now_once. The login form uses input[name=email] (accepts handle) and input[name=password]. Register uses #first-name, #last-name, #email, #password plus a checkbox, then 'Create Account'. Sign out is in the avatar button (display name) menu, menuitem 'Sign out'. Settings tabs are at /settings?tab=appearance|schedule|security. To verify the HIGH appearance bug fix: change Time format, then Schedule > Evening, then GET /api/v1/users/me; timeFormat must persist. Integrations Connect -> 404 /integrations/{id}/begin. Each email kind is rate-limited to 3 per hour per user (allow_send_now).",
+  "rca of the issue": "Appearance revert: the Settings page holds prefsDraft/prefsRef from the profile. Appearance calls lib/settings-sync.setSettings, which updates the local OS store and PATCHes partial prefs, but never touches prefsDraft. The Segmented value reads prefsDraft, so it shows the old value. The next savePreferences call merges the patch into the stale prefsDraft and PATCHes the full preferences object, overwriting the timeFormat/weekStart/theme just saved. Mitigation: use a single write path (savePreferences) for the appearance controls too."
+}
