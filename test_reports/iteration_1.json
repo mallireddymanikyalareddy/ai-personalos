@@ -1,0 +1,46 @@
+{
+  "summary": "Tested backend (8 pytest: auth register/login/me, AI chat 401/422/SSE error) and UI (landing, register+4-step onboarding -> /today, demo login, Today/Tasks/Habits/Goals/Notes/Journal/Calendar/AI render, task create+reload, GPT 6 Luna selection + fallback). Found and FIXED a CRITICAL session leak in backend/server.py proxy: shared httpx.AsyncClient stored Set-Cookie from login responses in its cookie jar and replayed them on every proxied request, so anonymous visitors got the last-logged-in user's session (/api/v1/auth/me returned demo user with no cookie). After fix all 8 backend tests pass; accounts persist across `supervisorctl restart backend`.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "ALL proxied /api/v1/* (backend/server.py proxy)", "issue": "FIXED by testing agent: httpx client cookie jar persisted upstream session cookies -> cross-user session hijack. Now uses CookieJar(DefaultCookiePolicy(allowed_domains=[])) so no cookies are stored.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "/api/healthz", "issue": "Not routed (404); health only on upstream /healthz. Fine, informational."},
+      {"endpoint": "POST /api/ai/chat", "issue": "Works as expected: 401 without cookie, 422 on empty prompt, 200 SSE with error event 'RateLimitError ... no credits remaining'."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AI module / Today greeting", "issue": "Name empty: AI page shows 'Hi ! 👋' and Today shows 'Good afternoon, there' even after onboarding set display name 'Uitest User'/'Demo'. Local state.profile.displayName not populated from account profile; avatar shows 'Y'.", "selector": "[data-testid=ai-chat]", "priority": "LOW"},
+      {"component": "Tasks AI Task Assistant badge", "issue": "Hardcoded 'GPT-5' badge, inconsistent with selected 'GPT 6 Luna' / LifeOS Local", "selector": "[data-testid=tasks-assistant]", "priority": "LOW"},
+      {"component": "Toast", "issue": "Long 'GPT 6 Luna unavailable: ...' toast text (URL) overflows the toast box on right edge; consider truncating/cleaning the litellm error message (e.g. 'OpenAI account has no credits')", "selector": "toast", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Local-first app data", "issue": "All app data (tasks, notes, AI conversations) stored only in browser localStorage under global key 'personalos:data' (packages/core/src/store/persistence.ts), not namespaced per user and not cleared on logout, and not synced to server. Different accounts on the same browser would share/see the same data; data does not follow the user across devices. Only the account/profile/onboarding persists server-side. Clarify with user given 'data must persist permanently' requirement.", "affected_selectors": []},
+      {"flow": "Next dev server", "issue": "Frontend log warns 'Blocked cross-origin request ... to /_next/* resource. configure allowedDevOrigins in next.config' for *.preview.emergentcf.cloud origins; page load event sometimes >10s. Add allowedDevOrigins.", "affected_selectors": []}
+    ],
+    "design_issues": [
+      {"screen": "Branding", "issues": ["Landing says 'LifeOS', app header 'AI PersonalOS', onboarding 'PersonalOS' - inconsistent (user's code)"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_personalos_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Review the cookie-jar fix in /app/backend/server.py (keep it) - critical security bug in proxy",
+    "Decide on per-user namespacing / clearing of localStorage 'personalos:data' on logout (and optionally server sync) so accounts don't share local data",
+    "Populate local profile displayName after login/onboarding so greetings show the user's name",
+    "Add allowedDevOrigins to apps/web next.config for preview domains",
+    "Optional: sanitize AI error message in toast; replace hardcoded 'GPT-5' badge on Tasks assistant"
+  ],
+  "critical_code_review_comments": [
+    "server.py: shared httpx client must never persist cookies (fixed).",
+    "ai-module.tsx run(): if SSE stream ends with no deltas and no error, UI stays on 'Thinking…' and message content is overwritten with ''. Fall back to result.message when full text is empty.",
+    "server.py proxy buffers entire upstream response (no streaming) - fine for JSON, but large exports will be held in memory.",
+    "server.py lifespan: if Fastify fails to start within 60s it silently continues; consider failing fast/logging."
+  ],
+  "updated_files": ["/app/backend/server.py", "/app/backend/tests/test_personalos_api.py"],
+  "success_rate": {"backend": "100% (8/8 after fix; 7/8 before)", "frontend": "~95% - all requested flows work; minor UI issues"},
+  "seed_data_creation": "Registered test accounts: testc47b9972 / TestPass123! (API) and ui******@example.com accounts via UI (password TestPass123!x). Demo account onboarding completed. Demo browser localStorage task 'TEST_Buy groceries' (local only).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=<preview url> pytest /app/backend/tests/test_personalos_api.py (frontend/.env does not exist, set env var manually). Login page inputs #email/#password; register #first-name/#last-name/#email/#password + [role=checkbox] terms; onboarding needs an area (e.g. 'Work') at step 2 and 'Open my OS' at step 4. AI model selector button[aria-label='Choose AI model'], composer [data-testid=ai-composer], send [data-testid=ai-send]."
+}

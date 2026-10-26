@@ -4,6 +4,7 @@ import os
 import subprocess
 import uuid
 from contextlib import asynccontextmanager
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 
 import httpx
 from dotenv import load_dotenv
@@ -28,7 +29,7 @@ async def lifespan(_: FastAPI):
     global proc, client
     env = {**os.environ, "PORT": API_PORT, "HOST": "127.0.0.1", "PGLITE_DATA_DIR": os.path.join(ROOT, "data", "pglite")}
     proc = subprocess.Popen(["npm", "run", "start", "--workspace", "@personalos/api"], cwd=ROOT, env=env, start_new_session=True)
-    client = httpx.AsyncClient(base_url=UPSTREAM, timeout=60)
+    client = httpx.AsyncClient(base_url=UPSTREAM, timeout=60, cookies=CookieJar(policy=DefaultCookiePolicy(allowed_domains=[])))
     for _ in range(120):
         try:
             await client.get("/healthz")
@@ -80,7 +81,16 @@ async def ai_chat(body: ChatRequest, request: Request):
                 elif isinstance(ev, StreamDone):
                     break
         except Exception as exc:
-            yield f"data: {json.dumps({'error': str(exc)[:300]})}\n\n"
+            msg = str(exc)
+            if "credits" in msg or "quota" in msg:
+                msg = "your OpenAI account has no credits left"
+            elif "RateLimit" in msg:
+                msg = "OpenAI rate limit reached, try again shortly"
+            elif "AuthenticationError" in msg or "API key" in msg:
+                msg = "the OpenAI API key was rejected"
+            else:
+                msg = "the AI service failed to respond"
+            yield f"data: {json.dumps({'error': msg})}\n\n"
 
     return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
