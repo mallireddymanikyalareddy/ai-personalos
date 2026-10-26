@@ -22,6 +22,12 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - Monday briefing email: opt-in in Settings > Notifications, preview send, background loop in server.py (every 15 min, Monday >=7am user tz), Emergent managed email (Resend), digest.py; Fastify /api/v1/digest + token-protected /internal/v1/digest/*
 - Branding unified to PersonalOS (BrandMark component replaces LifeOS logo bitmaps; hero mockup bitmap still shows old name)
 - PGlite safety: graceful child shutdown + port wait (data dir was corrupted once by concurrent processes; restored from checkpoint)
+## Done (2026-10-26, iteration 4-5: deployment re-architecture)
+- Backend rebuilt as pure Python FastAPI + MongoDB (backend/server.py, auth.py, db.py, digest.py); same /api/v1 contract; bcrypt + httpOnly pos_session cookie sessions; brute-force limit (ip+identifier 5/15min, identifier 20/15min; cf-connecting-ip trusted)
+- Node Fastify/PGlite API (apps/api) no longer used
+- Frontend static export: frontend/package.json `build` -> Next export (STATIC_EXPORT=1, distDir .next-export) copied to frontend/build; dev uses distDir .next-dev
+- Notebook routes moved to /notebook/view?book=&page=
+- .gitignore no longer ignores .env; frontend/.env added
 ## Backlog
 - P0: user to add OpenAI credits (currently 'no credits' error)
 - P1: offline edits queue indicator / sync status badge

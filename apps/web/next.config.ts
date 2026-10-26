@@ -15,6 +15,7 @@ const nextConfig: NextConfig = {
   ...(staticExport
     ? { output: "export" as const, distDir: ".next-export" }
     : {
+        distDir: ".next-dev",
         async rewrites() {
           return [{ source: "/api/:path*", destination: `${apiUrl}/api/:path*` }];
         },

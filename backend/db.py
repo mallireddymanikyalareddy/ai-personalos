@@ -14,5 +14,6 @@ async def ensure_indexes() -> None:
     await db.sessions.create_index("user_id")
     await db.tokens.create_index("token_hash", unique=True)
     await db.login_attempts.create_index([("key", 1), ("at", -1)])
+    await db.login_attempts.create_index([("ident", 1), ("at", -1)])
     await db.app_state.create_index("user_id", unique=True)
     await db.digest_prefs.create_index("user_id", unique=True)

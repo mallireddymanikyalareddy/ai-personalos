@@ -129,6 +129,9 @@ def platform_of(ua: str) -> tuple[str, str]:
 
 
 def client_ip(request: Request) -> str | None:
+    cf = request.headers.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()
     fwd = request.headers.get("x-forwarded-for", "")
     return fwd.split(",")[-1].strip() if fwd else (request.client.host if request.client else None)
 
@@ -235,13 +238,15 @@ class LoginIn(BaseModel):
 @router.post("/auth/login")
 async def login(body: LoginIn, request: Request, response: Response):
     ident = body.identifier.strip().lower()
-    key = ident
-    fails = await db.login_attempts.count_documents({"key": key, "at": {"$gte": now() - FAIL_WINDOW}})
-    if fails >= MAX_FAILS:
+    key = f"{client_ip(request)}:{ident}"
+    window = {"$gte": now() - FAIL_WINDOW}
+    pair_fails = await db.login_attempts.count_documents({"key": key, "at": window})
+    ident_fails = await db.login_attempts.count_documents({"ident": ident, "at": window})
+    if pair_fails >= MAX_FAILS or ident_fails >= MAX_FAILS * 4:
         raise ApiError(429, "RATE_LIMITED", "Too many failed sign-in attempts. Try again in 15 minutes.")
     user = await db.users.find_one({"$or": [{"handle": ident}, {"email": ident}]}, {"_id": 0})
     if not user or not check_password(body.password, user["password_hash"]):
-        await db.login_attempts.insert_one({"key": key, "at": now()})
+        await db.login_attempts.insert_one({"key": key, "ident": ident, "at": now()})
         raise ApiError(401, "INVALID_CREDENTIALS", "Incorrect handle/email or password.")
     await db.login_attempts.delete_many({"key": key})
     return await issue_session(user, request, response)

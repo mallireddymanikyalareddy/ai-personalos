@@ -16,3 +16,4 @@ coverage/
 
 .next-export/
 /frontend/build/
+.next-dev/

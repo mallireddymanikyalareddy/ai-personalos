@@ -1,0 +1,36 @@
+{
+  "summary": "Retest of the iteration 4 fixes. Backend: the regression suite test_python_backend.py passes 36/36 (it sent 1 mailtest email). The new test_iter5_fixes.py passes 4/4: (1) 5 wrong passwords with 5 different X-Forwarded-For values, then the 6th attempt returns 429 RATE_LIMITED. The correct password and a case/whitespace variant of the identifier are also blocked, and other identifiers are unaffected. (2) PUT /api/v1/digest with enabled set to 'yes', 'true', 1, 0, null or missing returns 400 VALIDATION_FAILED; true/false works for mailtest and persists. (3) The demo account is onboarded (GET /users/me/onboarding returns completed=true). UI: demo login lands on /today and stays there. Sync: 3 tasks added rapidly on /tasks are all on the server and the badge ends at 'Saved'. A task added and then reloaded after 300 ms (push debounce is 1500 ms, so the pagehide keepalive flush was exercised) persists, and it shows in a fresh context. Briefing: with GPT 6 Luna selected, a full navigation away 150 ms after /today loads leaves no error in sessionStorage. On return the real 'no credits' error is shown and cached, which is correct. Smoke checks pass for Journal (evening card), Settings > Notifications (weekly email toggle persists after reload) and the AI page. Static build: `yarn build` exits 0 in 40s and build/index.html, today.html and notebook/view.html exist. FAILED: the preview dev server does NOT keep working after the build. /login gave one transient 500, then returned 200 HTML, but every /_next/static chunk returned 404 and the page was blank, until `supervisorctl restart frontend`.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/v1/auth/login", "issue": "The rate limit is now keyed only on the identifier, so anyone can lock a known account (e.g. demo) out for 15 minutes with 5 bad attempts (targeted lockout / DoS). Consider a combined key, e.g. identifier plus a trusted client IP (the rightmost XFF hop added by the ingress), or a per-identifier limit with a higher threshold."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Static build vs dev server", "issue": "Running `cd /app/frontend && yarn build` breaks the running `next dev` preview: HTML returns 200 but /_next/static/chunks/main-app.js, app/layout.js and layout.css return 404, so the page is blank. Server log: 'Could not find the module ... in the React Client Manifest' and '__webpack_modules__[moduleId] is not a function'.", "selector": "n/a", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/ai hero", "issues": ["Floating decorative icons overlap the hero paragraph text ('person… understands', 'personalis… suggestions')"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_python_backend.py", "/app/backend/tests/test_iter5_fixes.py", "/app/test_reports/pytest/pytest_results_iter5.xml", "/app/test_reports/pytest/pytest_iter5_fixes.xml"],
+  "action_items": [
+    "HIGH: Stop the static export overwriting the dev server's .next. Root cause: in Next 15.5 build/index.js, when output:'export' has a custom distDir, the export goes to distDir but config.distDir is forced to '.next' for the build artefacts, so `next build` rewrites the .next directory that `next dev` is serving. Fix, for example: give the dev (non-export) config its own distDir such as '.next-dev', or run the export from a copy of the app. Then verify the preview still loads after `yarn build` without a restart.",
+    "MEDIUM: Reconsider identifier-only rate limiting, which allows targeted account lockout",
+    "LOW: The /ai hero decorative icons overlap the body text",
+    "LOW: The mailtest account is not onboarded (login lands on /onboarding). Onboard it if it is meant to be a ready test account"
+  ],
+  "critical_code_review_comments": [
+    "account-sync.ts flushOnHide: the keepalive PUT uses knownVersion. If a push() is in flight at pagehide, knownVersion is stale, the keepalive request gets a 409, and the edit is silently lost (no merge is possible during unload). Keepalive bodies are also capped at 64KB, so large states will fail to flush silently. Consider the in-flight case, and a localStorage dirty flag that is pushed on the next load.",
+    "account-sync.ts push(): concurrent callers that arrive during an in-flight push get the original promise, which resolves before the follow-up pendingAgain push finishes. This is fine for the UI but means `await push()` does not guarantee everything has flushed (e.g. endAccountSession).",
+    "ai-recap-card.tsx: transient detection uses /network/i on the message, so 'Failed to fetch' is caught only via the TypeError check. This works in Chromium; Safari's 'Load failed' is also a TypeError, so it is OK. The SPA unmount case is not aborted (no AbortController), so the stream keeps running after navigation."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter5_fixes.py"],
+  "success_rate": {"backend": "100% (40/40)", "frontend": "88% (7/8 checks; dev server breaks after build)"},
+  "seed_data_creation": "Throwaway users test_rl_*, test_sync_*, test_brief_* and test_set_* (password GoodPass1234!) were created. Digest was disabled for test_set_*.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run REACT_APP_BACKEND_URL=<preview> pytest /app/backend/tests/test_python_backend.py /app/backend/tests/test_iter5_fixes.py (the first sends 1 mailtest email). The onboarding flag is only exposed via GET /api/v1/users/me/onboarding (completed), not /auth/me. A quick onboard via API: POST /api/v1/users/me/onboarding {timezone:'UTC', lifeAreaNames:[]}. The /tasks quick add is [aria-label='Quick add task'] + Enter; the sync badge is [data-testid=sync-status-badge]; the briefing is [data-testid=today-briefing] and [data-testid=today-briefing-error]. The model picker is [aria-label='Choose AI model'] -> menuitem 'GPT 6 Luna'. After running yarn build you must `sudo supervisorctl restart frontend` (until the distDir fix lands), and the first compile takes ~20s."
+}
