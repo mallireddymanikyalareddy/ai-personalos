@@ -295,7 +295,7 @@ export default function OnboardingPage() {
           <div className="mb-3">
             <StepDots step={step} />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">
+          <h1 data-testid="onboarding-step-title" className="text-2xl font-semibold tracking-tight text-ink">
             {step === 0 && "Tell the OS about you"}
             {step === 1 && "What matters to you right now?"}
             {step === 2 && "Set your daily rhythm"}
@@ -333,6 +333,7 @@ export default function OnboardingPage() {
             <Field label="What should we call you?" htmlFor="ob-name" required>
               <Input
                 id="ob-name"
+                data-testid="onboarding-name-input"
                 value={draft.displayName}
                 onChange={(event) => update({ displayName: event.target.value })}
                 placeholder="Your name"
@@ -348,6 +349,7 @@ export default function OnboardingPage() {
             >
               <Input
                 id="ob-tz"
+                data-testid="onboarding-timezone-input"
                 list="ob-timezones"
                 value={draft.timezone}
                 onChange={(event) => update({ timezone: event.target.value })}
@@ -363,6 +365,7 @@ export default function OnboardingPage() {
             <Field label="Language" htmlFor="ob-locale" required>
               <Select
                 id="ob-locale"
+                data-testid="onboarding-locale-select"
                 value={
                   LOCALES.some((entry) => entry.value === draft.locale)
                     ? draft.locale
@@ -392,6 +395,7 @@ export default function OnboardingPage() {
                   key={area.name}
                   type="button"
                   aria-pressed={active}
+                  data-testid={`onboarding-life-area-${area.name.toLowerCase()}`}
                   onClick={() => toggleLifeArea(area.name)}
                   className={
                     "flex items-start gap-3 rounded-xl border px-4 py-3.5 text-left transition-all duration-150 " +
@@ -732,6 +736,7 @@ export default function OnboardingPage() {
           <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-5 py-4 sm:px-8">
             <Button
               variant="ghost"
+              data-testid="onboarding-back-button"
               onClick={() => setStep((current) => Math.max(0, current - 1))}
               disabled={step === 0 || busy}
             >
@@ -742,6 +747,7 @@ export default function OnboardingPage() {
                 <Button
                   variant="primary"
                   size="lg"
+                  data-testid="onboarding-finish-button"
                   onClick={submit}
                   loading={busy}
                   disabled={!stepValid}
@@ -752,6 +758,7 @@ export default function OnboardingPage() {
                 <Button
                   variant="primary"
                   size="lg"
+                  data-testid="onboarding-continue-button"
                   onClick={() => setStep((current) => Math.min(STEPS.length - 1, current + 1))}
                   disabled={!stepValid}
                 >

@@ -7,6 +7,7 @@ import type { ProfileResponse } from "@personalos/api-contract/account";
 import { ApiError, accountApi, authApi, isNetworkFailure } from "@/lib/api";
 import { getOS } from "@/store/os";
 import { endAccountSession, startAccountSync } from "@/lib/account-sync";
+import { applyAccountProfile } from "@/lib/apply-profile";
 
 export type AuthStatus = "loading" | "anonymous" | "authenticated" | "offline";
 
@@ -69,28 +70,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (!profile) return;
-    void startAccountSync(profile.id, profile.displayName).catch(() => undefined);
-  }, [profile]);
-
-  React.useEffect(() => {
-    if (!profile) return;
-    const planning = getOS().getState().settings.planning;
-    const workingHours = profile.preferences.workingHours;
-    getOS().updateSettings({
-      theme: profile.preferences.theme,
-      timeFormat: profile.preferences.timeFormat === "12h" ? 12 : 24,
-      weekStart: profile.preferences.weekStart === "sunday" ? 0 : 1,
-      defaultPlanningView: profile.preferences.defaultPlanningView,
-      planning: workingHours
-        ? {
-            ...planning,
-            enabled: workingHours.enabled,
-            dayStart: workingHours.start,
-            dayEnd: workingHours.end,
-            workDays: workingHours.days,
-          }
-        : planning,
-    });
+    let cancelled = false;
+    const apply = () => {
+      if (!cancelled) applyAccountProfile(profile);
+    };
+    apply();
+    // Re-apply after the account's saved data loads so server-side profile settings win.
+    void startAccountSync(profile.id, profile.displayName).catch(() => undefined).finally(apply);
+    return () => {
+      cancelled = true;
+    };
   }, [profile]);
 
   const login = React.useCallback(
