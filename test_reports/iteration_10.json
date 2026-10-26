@@ -1,0 +1,36 @@
+{
+  "summary": "Retested the open items from iteration 9. Backend: 131 of 131 tests pass after the corrected 413 tests, 7 of them in the new test_iter10_fixes.py. workingHours.days [true] now returns 400. The 413 middleware rejects a 27MB Content-Length before the body is read when called directly. Through the public URL a real 27MB body is flaky: it returned 413 twice and 502 twice. Paper works: Save page with no edits keeps the page (6->7, still 7 after reload). Move to trash moves it to Trash (Trash 0->1) and Undo restores it. Cancel, X, Escape and a backdrop click leave no orphan page. Local AI: 'What tasks do I have?' and 'show my tasks' list the 2 open tasks, and 'remind me to call mom' suggests 'call mom'. One item is still failing: 'Can you remind me to buy milk?' still suggests a task titled 'Can you remind me to buy milk'. Regression checks passed: Today, Paper with existing pages and the AI page all load.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "Body size limit (public ingress)", "issue": "A real 27MB PUT /api/v1/state through the public URL returned 413 in 2 of 4 attempts and Cloudflare 502 in 2 of 4. The backend answers 413 and closes before the ingress has finished uploading the body, so the proxy sometimes reports 502. A direct call to the backend always returns 413 before the body is read. This is an infrastructure race, not an app bug. The client cannot rely on seeing code PAYLOAD_TOO_LARGE, so treat 502 on a large save as 'too large', or enforce the limit at the ingress."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Local AI create_task (packages/core/src/engines/ai/assistant.ts:116-117, 409-415)", "issue": "'Can you remind me to buy milk?' still suggests the task 'Can you remind me to buy milk'. assistant.ts has its own copy of stripCommandPrefix that does not strip polite prefixes ('please', 'can you', 'could you', 'would you') or the trailing '?'. It also calls it on parsed.title, the raw capture title, ahead of intent.slots.title, which is the version already cleaned by intents.ts. Fix: delete the copy in assistant.ts, export stripCommandPrefix from intents.ts and use it, or put intent.slots.title first.", "selector": "[data-testid=ai-proposals]", "priority": "LOW"},
+      {"component": "Paper page dialog", "issue": "In the first run, pressing Escape right after the New Page dialog opened did not close it. When the test waited 500ms after opening, Escape closed it correctly. The dialog's key handler or focus is probably attached after the open animation. Also, a page created by New Page stays as an orphan 'New page' if the user reloads or leaves while the dialog is still open.", "selector": "[data-testid=paper-new-page]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AI hero", "issues": ["Small floating icons still overlap the subtitle text ('person[icon]alOS', 'personalis[icon]ed')"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter10_fixes.py", "/app/test_reports/pytest/pytest_iter10.xml"],
+  "action_items": [
+    "Local AI: in assistant.ts create_task, use the stripCommandPrefix from intents.ts (which handles polite prefixes and '?') and delete the duplicate copy, or put intent.slots.title before parsed.title",
+    "Optional: client should treat a 502 on a very large state save as 'payload too large', or set the body-size limit at the ingress",
+    "Optional: make Escape work as soon as the Paper dialog opens; fix the overlap of the AI hero icons"
+  ],
+  "critical_code_review_comments": [
+    "stripCommandPrefix is duplicated in intents.ts and assistant.ts, and the two copies have different rules. This duplication caused the remaining 'Can you remind me' bug.",
+    "assistant.ts answer_question sends any question that matches /\\btasks?\\b/ to openTasksAnswer. For example, 'what did I write about task planning?' would list tasks instead of searching notes. Consider requiring a possessive or listing phrase such as 'my tasks', 'what tasks' or 'show tasks'."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter10_fixes.py"],
+  "success_rate": {"backend": "100% (131/131), with the public 413 path flaky (2 of 4 attempts returned 502)", "frontend": "92% (11/12 targeted checks)"},
+  "seed_data_creation": "Demo Paper now has extra untitled 'New page' pages (All Pages 6 -> 9): 2 from the Save and Undo tests, and 1 orphan left because a test browser closed with the dialog open.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=<frontend/.env url> pytest backend/tests --deselect backend/tests/test_python_backend.py::test_mailtest_send_now_once. test_iter10_fixes raw-socket 413 tests hit the backend directly (BACKEND_DIRECT_URL, default http://localhost:8001), because Cloudflare rejects a Content-Length that does not match the body. The public 413 test retries up to 3 times. The AI page shows a 'PersonalOS Local' badge; ai-model-label is not rendered there. Paper counts come from [data-testid=paper-folders] text ('All Pages N', 'Trash N').",
+  "rca of the issue": "Can-you-remind: assistant.ts:117 calls a local stripCommandPrefix on parsed.title. That copy only strips a 'remind me to' that sits at the very start of the text, so 'Can you remind me to buy milk' comes through unchanged. The fix was made only in intents.ts, whose cleaned slots.title is then overridden by parsed.title."
+}
