@@ -433,33 +433,59 @@ def validate_preferences(prefs: dict) -> None:
             raise invalid(f"preferences.{'.'.join(path)}", "must be HH:MM in 24h time")
 
 
-@router.patch("/users/me")
-async def patch_profile(request: Request, auth=Depends(require_auth)):
-    user, _ = auth
-    body = await request.json()
-    if not isinstance(body, dict) or not any(v is not None for v in body.values()):
+def _display_name(value) -> dict:
+    if not isinstance(value, str) or not 1 <= len(value.strip()) <= 64:
+        raise invalid("displayName", "must be 1-64 characters")
+    return {"display_name": value.strip()}
+
+
+def _timezone(value) -> dict:
+    if not valid_tz(str(value)):
+        raise invalid("timezone", "must be a valid IANA timezone")
+    return {"timezone": value}
+
+
+def _locale(value) -> dict:
+    return {"locale": str(value)[:35]}
+
+
+def _valid_avatar(url) -> bool:
+    if url is None:
+        return True
+    return isinstance(url, str) and len(url) <= 256_000 and url.startswith(("https://", "data:image/"))
+
+
+def _avatar(value) -> dict:
+    if not _valid_avatar(value):
+        raise invalid("avatarUrl", "must be an https URL or a base64 data image")
+    return {"avatar_url": value}
+
+
+PROFILE_FIELDS = {"displayName": _display_name, "timezone": _timezone, "locale": _locale, "avatarUrl": _avatar}
+
+
+def validate_profile_update(body, user: dict) -> dict:
+    if not isinstance(body, dict) or all(v is None for v in body.values()):
         raise invalid("(root)", "at least one field is required")
     update: dict = {"updated_at": now()}
-    if "displayName" in body:
-        if not isinstance(body["displayName"], str) or not 1 <= len(body["displayName"].strip()) <= 64:
-            raise invalid("displayName", "must be 1-64 characters")
-        update["display_name"] = body["displayName"].strip()
-    if "timezone" in body:
-        if not valid_tz(str(body["timezone"])):
-            raise invalid("timezone", "must be a valid IANA timezone")
-        update["timezone"] = body["timezone"]
-    if "locale" in body:
-        update["locale"] = str(body["locale"])[:35]
-    if "avatarUrl" in body:
-        url = body["avatarUrl"]
-        if url is not None and not (isinstance(url, str) and len(url) <= 256_000 and (url.startswith("https://") or url.startswith("data:image/"))):
-            raise invalid("avatarUrl", "must be an https URL or a base64 data image")
-        update["avatar_url"] = url
+    for field, handler in PROFILE_FIELDS.items():
+        if field in body:
+            update.update(handler(body[field]))
     if "preferences" in body:
         validate_preferences(body["preferences"])
         update["preferences"] = deep_merge(user.get("preferences") or {}, body["preferences"])
-    await db.users.update_one({"id": user["id"]}, {"$set": update})
-    return profile(await db.users.find_one({"id": user["id"]}, {"_id": 0}))
+    return update
+
+
+async def apply_user_update(user_id: str, update: dict) -> dict:
+    await db.users.update_one({"id": user_id}, {"$set": update})
+    return profile(await db.users.find_one({"id": user_id}, {"_id": 0}))
+
+
+@router.patch("/users/me")
+async def patch_profile(request: Request, auth=Depends(require_auth)):
+    user, _ = auth
+    return await apply_user_update(user["id"], validate_profile_update(await request.json(), user))
 
 
 @router.get("/users/me/onboarding")
@@ -468,29 +494,35 @@ async def get_onboarding(auth=Depends(require_auth)):
     return {"completed": user.get("onboarding_completed_at") is not None, "profile": profile(user), "lifeAreaCatalog": LIFE_AREA_CATALOG}
 
 
-@router.post("/users/me/onboarding")
-async def post_onboarding(request: Request, auth=Depends(require_auth)):
-    user, _ = auth
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise invalid("(root)", "must be an object")
-    tz = str(body.get("timezone", ""))
-    if not valid_tz(tz):
-        raise invalid("timezone", "must be a valid IANA timezone", "Onboarding failed schema validation.")
-    names = body.get("lifeAreaNames") or []
+def _onboarding_life_areas(names) -> list:
     catalog = {a["name"] for a in LIFE_AREA_CATALOG}
     unknown = [n for n in names if n not in catalog]
     if unknown:
         raise ApiError(400, "VALIDATION_FAILED", "Onboarding failed schema validation.",
                        [{"field": "lifeAreaNames", "issue": f'unknown life area "{n}"'} for n in unknown])
+    return names[:12]
+
+
+def validate_onboarding(body, user: dict) -> dict:
+    if not isinstance(body, dict):
+        raise invalid("(root)", "must be an object")
+    tz = str(body.get("timezone", ""))
+    if not valid_tz(tz):
+        raise invalid("timezone", "must be a valid IANA timezone", "Onboarding failed schema validation.")
     prefs = body.get("preferences") or {}
     validate_preferences(prefs)
-    update = {"timezone": tz, "locale": str(body.get("locale") or "en")[:35], "life_areas": names[:12],
+    update = {"timezone": tz, "locale": str(body.get("locale") or "en")[:35],
+              "life_areas": _onboarding_life_areas(body.get("lifeAreaNames") or []),
               "preferences": deep_merge(user.get("preferences") or {}, prefs), "onboarding_completed_at": now(), "updated_at": now()}
     if body.get("displayName"):
         update["display_name"] = str(body["displayName"]).strip()[:64]
-    await db.users.update_one({"id": user["id"]}, {"$set": update})
-    return profile(await db.users.find_one({"id": user["id"]}, {"_id": 0}))
+    return update
+
+
+@router.post("/users/me/onboarding")
+async def post_onboarding(request: Request, auth=Depends(require_auth)):
+    user, _ = auth
+    return await apply_user_update(user["id"], validate_onboarding(await request.json(), user))
 
 
 @router.get("/integrations/catalog")

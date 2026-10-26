@@ -29,32 +29,47 @@ async def digest_item(user: dict) -> dict:
             "timezone": user.get("timezone", "UTC"), "envelope": state["envelope"] if state else None}
 
 
+async def claim_digest_week(user: dict) -> str | None:
+    if not user or not user.get("email"):
+        return None
+    local = digest.local_now(user.get("timezone") or "UTC")
+    if local.weekday() != 0 or local.hour < 7:
+        return None
+    week = digest.iso_week(local)
+    claimed = await db.digest_prefs.find_one_and_update(
+        {"user_id": user["id"], "enabled": True, "last_sent_week": {"$ne": week}},
+        {"$set": {"last_sent_week": week}},
+    )
+    return week if claimed else None
+
+
+async def send_weekly_digest(user: dict, previous_week: str | None) -> bool:
+    """Send one digest; returns False when sending should pause (billing/limits)."""
+    try:
+        await digest.send_digest(await digest_item(user))
+    except digest.EmailUnavailable as exc:
+        logging.warning("Weekly digest not sent: %s", exc)
+        if str(exc) in BILLING_CODES:
+            await db.digest_prefs.update_one({"user_id": user["id"]}, {"$set": {"last_sent_week": previous_week}})
+            return False
+    except Exception:
+        logging.exception("Weekly digest failed for %s", user["id"])
+    return True
+
+
+async def run_digest_pass() -> None:
+    async for pref in db.digest_prefs.find({"enabled": True}, {"_id": 0}):
+        user = await db.users.find_one({"id": pref["user_id"]}, {"_id": 0})
+        if not await claim_digest_week(user):
+            continue
+        if not await send_weekly_digest(user, pref.get("last_sent_week")):
+            break
+
+
 async def digest_loop():
     while True:
         try:
-            async for pref in db.digest_prefs.find({"enabled": True}, {"_id": 0}):
-                user = await db.users.find_one({"id": pref["user_id"]}, {"_id": 0})
-                if not user or not user.get("email"):
-                    continue
-                local = digest.local_now(user.get("timezone") or "UTC")
-                week = digest.iso_week(local)
-                if local.weekday() != 0 or local.hour < 7:
-                    continue
-                claimed = await db.digest_prefs.find_one_and_update(
-                    {"user_id": user["id"], "enabled": True, "last_sent_week": {"$ne": week}},
-                    {"$set": {"last_sent_week": week}},
-                )
-                if not claimed:
-                    continue
-                try:
-                    await digest.send_digest(await digest_item(user))
-                except digest.EmailUnavailable as exc:
-                    logging.warning("Weekly digest not sent: %s", exc)
-                    if str(exc) in BILLING_CODES:
-                        await db.digest_prefs.update_one({"user_id": user["id"]}, {"$set": {"last_sent_week": pref.get("last_sent_week")}})
-                        break
-                except Exception:
-                    logging.exception("Weekly digest failed for %s", user["id"])
+            await run_digest_pass()
         except Exception:
             logging.exception("Digest loop error")
         await asyncio.sleep(900)

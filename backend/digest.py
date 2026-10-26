@@ -64,31 +64,48 @@ class _EmailScan(HTMLParser):
             self._href, self._text = None, []
 
 
-def _assert_safe_email(subject: str, html: str) -> None:
-    scan = _EmailScan()
-    scan.feed(html)
+def _check_no_forms(scan: "_EmailScan") -> None:
     if scan.tags & {"form", "input", "textarea", "select"}:
         raise ValueError("No forms or input fields in email (G2)")
+
+
+def _check_no_credential_asks(subject: str, html: str) -> None:
     body = f"{subject}\n{html}".lower()
-    for p in _CRED_ASK:
-        if p in body:
-            raise ValueError(f"Email asks the recipient for credentials: {p!r} (G2)")
+    hit = next((p for p in _CRED_ASK if p in body), None)
+    if hit:
+        raise ValueError(f"Email asks the recipient for credentials: {hit!r} (G2)")
+
+
+def _check_url(url: str) -> None:
+    low = url.strip().lower()
+    if low.startswith(("mailto:", "tel:", "cid:", "#")):
+        return
+    if not low.startswith("https://"):
+        raise ValueError(f"Email links/assets must be absolute https: {url!r} (G3)")
+    parsed = urlparse(low)
+    if not _host_ok(parsed.hostname or "") or parsed.username is not None:
+        raise ValueError(f"Shortened, numeric-host or credential-bearing URL: {url!r} (G3)")
+
+
+def _check_anchor(href: str, text: str) -> None:
+    real = urlparse(href.strip().lower()).hostname or ""
+    if not real:
+        return
+    for m in _HOSTISH.finditer(text):
+        if not _same_site(m.group(1).lower(), real):
+            raise ValueError(f"Anchor text {m.group(1)!r} ≠ real link host {real!r} (G3)")
+
+
+def _assert_safe_email(subject: str, html: str) -> None:
+    """Outgoing-content safety guard (not recipient address validation)."""
+    scan = _EmailScan()
+    scan.feed(html)
+    _check_no_forms(scan)
+    _check_no_credential_asks(subject, html)
     for url in scan.urls:
-        low = url.strip().lower()
-        if low.startswith(("mailto:", "tel:", "cid:", "#")):
-            continue
-        if not low.startswith("https://"):
-            raise ValueError(f"Email links/assets must be absolute https: {url!r} (G3)")
-        host = urlparse(low).hostname or ""
-        if not _host_ok(host) or urlparse(low).username is not None:
-            raise ValueError(f"Shortened, numeric-host or credential-bearing URL: {url!r} (G3)")
+        _check_url(url)
     for href, text in scan.anchors:
-        real = urlparse(href.strip().lower()).hostname or ""
-        if not real:
-            continue
-        for m in _HOSTISH.finditer(text):
-            if not _same_site(m.group(1).lower(), real):
-                raise ValueError(f"Anchor text {m.group(1)!r} ≠ real link host {real!r} (G3)")
+        _check_anchor(href, text)
 
 
 class EmailUnavailable(Exception):
@@ -124,22 +141,36 @@ def local_now(tz: str) -> datetime:
         return datetime.now(timezone.utc)
 
 
+def _rows(state: dict, key: str) -> list[dict]:
+    return [r for r in (state.get(key) or {}).values() if isinstance(r, dict)]
+
+
+def _due_key(task: dict) -> float:
+    return task.get("dueAt") or 0
+
+
+def _open_tasks(state: dict) -> list[dict]:
+    return [t for t in _rows(state, "tasks") if t.get("status") not in DONE]
+
+
+def _split_by_due(tasks: list[dict], now_ms: float, week_end_ms: float) -> tuple[list[dict], list[dict]]:
+    dated = sorted((t for t in tasks if t.get("dueAt")), key=_due_key)
+    overdue = [t for t in dated if t["dueAt"] < now_ms]
+    due_week = [t for t in dated if now_ms <= t["dueAt"] <= week_end_ms]
+    return overdue, due_week
+
+
 def _collect(envelope: dict | None, now: datetime) -> dict:
     state = (envelope or {}).get("state") or {}
-    week_end = (now + timedelta(days=7)).timestamp() * 1000
     now_ms = now.timestamp() * 1000
-    tasks = [t for t in (state.get("tasks") or {}).values() if isinstance(t, dict) and t.get("status") not in DONE]
-    overdue = [t for t in tasks if t.get("dueAt") and t["dueAt"] < now_ms]
-    due_week = [t for t in tasks if t.get("dueAt") and now_ms <= t["dueAt"] <= week_end]
-    goals = [g for g in (state.get("goals") or {}).values() if isinstance(g, dict) and g.get("status") == "active"]
-    habits = [h for h in (state.get("habits") or {}).values() if isinstance(h, dict) and not h.get("archivedAt")]
-    key = lambda t: t.get("dueAt") or 0  # noqa: E731
+    tasks = _open_tasks(state)
+    overdue, due_week = _split_by_due(tasks, now_ms, now_ms + 7 * 86_400_000)
     return {
-        "overdue": sorted(overdue, key=key)[:8],
-        "due_week": sorted(due_week, key=key)[:12],
+        "overdue": overdue[:8],
+        "due_week": due_week[:12],
         "open_count": len(tasks),
-        "goals": goals[:8],
-        "habits": habits[:8],
+        "goals": [g for g in _rows(state, "goals") if g.get("status") == "active"][:8],
+        "habits": [h for h in _rows(state, "habits") if not h.get("archivedAt")][:8],
     }
 
 
