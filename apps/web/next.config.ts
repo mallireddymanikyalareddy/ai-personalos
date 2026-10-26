@@ -9,6 +9,7 @@ const apiUrl = (process.env.API_URL ?? "http://localhost:8080").replace(/\/$/, "
 const nextConfig: NextConfig = {
   transpilePackages: ["@personalos/core", "@personalos/api-contract"],
   reactStrictMode: true,
+  allowedDevOrigins: ["*.preview.emergentagent.com", "*.emergentagent.com"],
   outputFileTracingRoot: monorepoRoot,
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${apiUrl}/api/:path*` }];

@@ -10,6 +10,7 @@ import { DropdownMenu } from "@/components/ui/dropdown";
 import { useToast } from "@/components/ui/toast";
 import { aiProvider, AI_PROVIDERS } from "@personalos/core";
 import { useAppState, useOS } from "@/store/use-os";
+import { buildAIContext, streamAIChat, type ChatTurn } from "@/lib/ai-stream";
 
 import { AIChat, type ChatEntry, type ChatSuggestion } from "./ai-chat";
 import { useSpeechInput } from "./use-speech";
@@ -108,8 +109,20 @@ export function AIModule() {
       if (result.kind === "proposal" && proposals.length > 0) {
         toast(`${proposals.length} proposal${proposals.length === 1 ? "" : "s"} ready to review`);
       }
+      if (providerId === "openai") {
+        const history: ChatTurn[] = entries.slice(-10).map((entry) => ({ role: entry.role, text: entry.text }));
+        const setText = (text: string) =>
+          setEntries((prev) => prev.map((entry) => (entry.id === assistantMessage.id ? { ...entry, text } : entry)));
+        setText("Thinking…");
+        streamAIChat({ prompt: trimmed, context: buildAIContext(os.getState(), result.message), history }, setText)
+          .then((text) => os.updateMessage(assistantMessage.id, { content: text }))
+          .catch((error: Error) => {
+            setText(result.message);
+            toast(`GPT 6 Luna unavailable: ${error.message}`);
+          });
+      }
     },
-    [ensureConversation, now, os, toast, provider.label],
+    [ensureConversation, now, os, toast, provider.label, providerId, entries],
   );
 
   const suggestions: ChatSuggestion[] = React.useMemo(() => {

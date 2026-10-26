@@ -11,7 +11,24 @@ async function main(): Promise<void> {
   let db: Db | undefined;
   let pool: Pool | undefined;
 
-  if (config.DATABASE_URL) {
+  if (!config.DATABASE_URL && process.env.PGLITE_DATA_DIR) {
+    const { PGlite } = await import("@electric-sql/pglite");
+    const { drizzle } = await import("drizzle-orm/pglite");
+    const { migrate } = await import("drizzle-orm/pglite/migrator");
+    const schema = await import("./db/schema");
+    const { MIGRATIONS_FOLDER } = await import("./db/index");
+    const client = new PGlite(process.env.PGLITE_DATA_DIR);
+    const local = drizzle({ client, schema });
+    await migrate(local, { migrationsFolder: MIGRATIONS_FOLDER });
+    db = local as unknown as Db;
+    const database = db;
+    checks.push({
+      name: "database",
+      run: async () => {
+        await database.execute(sql`select 1`);
+      },
+    });
+  } else if (config.DATABASE_URL) {
     ({ db, pool } = createDb(config.DATABASE_URL));
     if (config.NODE_ENV === "production") {
       console.warn(

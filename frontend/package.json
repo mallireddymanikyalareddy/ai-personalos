@@ -1,0 +1,7 @@
+{
+  "name": "personalos-frontend-runner",
+  "private": true,
+  "scripts": {
+    "start": "cd .. && API_URL=http://127.0.0.1:8001 npm run dev --workspace @personalos/web -- -p 3000 -H 0.0.0.0"
+  }
+}

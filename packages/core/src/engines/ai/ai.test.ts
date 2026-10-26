@@ -495,7 +495,10 @@ describe("AI: feedback, pinning and providers", () => {
     expect(aiProvider("local").available).toBe(true);
     expect(aiProvider(null).id).toBe("local");
     const openai = aiProvider("openai");
-    expect(openai.available).toBe(false);
-    expect(openai.reason).toContain("Settings");
+    expect(openai.available).toBe(true);
+    expect(openai.label).toBe("GPT 6 Luna");
+    const anthropic = aiProvider("anthropic");
+    expect(anthropic.available).toBe(false);
+    expect(anthropic.reason).toContain("Settings");
   });
 });

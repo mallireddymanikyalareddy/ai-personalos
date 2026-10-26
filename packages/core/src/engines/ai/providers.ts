@@ -15,10 +15,9 @@ export const AI_PROVIDERS: AIProviderOption[] = [
   },
   {
     id: "openai",
-    label: "OpenAI GPT",
-    detail: "Bring your own API key",
-    available: false,
-    reason: "Add an OpenAI key in Settings → Integrations to enable this model.",
+    label: "GPT 6 Luna",
+    detail: "OpenAI, using your API key",
+    available: true,
   },
   {
     id: "anthropic",
