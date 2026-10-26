@@ -88,6 +88,13 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(auth_router)
 
 
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next):
+    if int(request.headers.get("content-length") or 0) > 26 * 1024 * 1024:
+        return error_response(ApiError(413, "PAYLOAD_TOO_LARGE", "Request body is too large."))
+    return await call_next(request)
+
+
 @app.exception_handler(ApiError)
 async def api_error_handler(_: Request, exc: ApiError):
     return error_response(exc)

@@ -301,7 +301,9 @@ function stripCommandPrefix(text: string): string {
   return text
     .replace(/^(add|create|new)\s+(a\s+)?(task|to-?do)\s*[:\-]\s*/i, "")
     .replace(/^(todo|to-?do)\s*[:\-]\s*/i, "")
+    .replace(/^(please\s+|can you\s+|could you\s+|would you\s+)+/i, "")
     .replace(/^(remind me to|i need to|i have to|i should)\s+/i, "")
+    .replace(/\?\s*$/, "")
     .replace(/^(break|decompose|split)\s+(down|up|this|the|my|that|it)\s+(task|work|item)\s*/i, "")
     .trim();
 }

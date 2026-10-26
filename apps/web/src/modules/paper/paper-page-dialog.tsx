@@ -48,10 +48,12 @@ export function PaperPageDialog({
   pageId,
   onClose,
   onOpenCanvas,
+  onCommit,
 }: {
   pageId: ID | null;
   onClose: () => void;
   onOpenCanvas?: (id: ID) => void;
+  onCommit?: () => void;
 }) {
   const os = useOS();
   const state = useAppState();
@@ -102,6 +104,7 @@ export function PaperPageDialog({
       template,
     });
     toast("Page saved", { tone: "success" });
+    onCommit?.();
     onClose();
   };
 
@@ -114,6 +117,7 @@ export function PaperPageDialog({
         onClick: () => os.updatePaperPage(page.id, { status: "active" }),
       },
     });
+    onCommit?.();
     onClose();
   };
 

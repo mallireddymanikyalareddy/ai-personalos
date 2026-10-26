@@ -730,6 +730,9 @@ export function PaperWorkspace() {
       <PaperPageDialog
         pageId={pageDialogId}
         onClose={closePageDialog}
+        onCommit={() => {
+          freshPage.current = null;
+        }}
         onOpenCanvas={(id) => {
           freshPage.current = null;
           setPageDialogId(null);

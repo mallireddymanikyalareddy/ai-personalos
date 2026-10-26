@@ -120,7 +120,7 @@ class TestOnboarding:
         assert fresh.get(f"{V1}/users/me/onboarding").json()["completed"] is True
 
     def test_valid_with_display_name(self, fresh):
-        r = fresh.post(f"{V1}/users/me/onboarding", json={"timezone": "UTC", "displayName": "TEST Onb"})
+        r = fresh.post(f"{V1}/users/me/onboarding", json={"timezone": "UTC", "displayName": "TEST Onb", "lifeAreaNames": ["Work"]})
         assert r.status_code == 200 and r.json()["displayName"] == "TEST Onb"
 
 

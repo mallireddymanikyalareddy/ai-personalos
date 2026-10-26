@@ -464,7 +464,7 @@ def _validate_pref_enums(prefs: dict) -> None:
     if model is not None and not (isinstance(model, str) and 1 <= len(model) <= 64):
         raise invalid("preferences.ai.model", "must be 1-64 characters")
     days = _pref_value(prefs, ("workingHours", "days"))
-    if days is not None and not (isinstance(days, list) and all(isinstance(d, int) and 0 <= d <= 6 for d in days)):
+    if days is not None and not (isinstance(days, list) and all(isinstance(d, int) and not isinstance(d, bool) and 0 <= d <= 6 for d in days)):
         raise invalid("preferences.workingHours.days", "must be a list of weekday numbers 0-6")
 
 

@@ -261,7 +261,9 @@ export function runAssistant(
 
     case "answer_question": {
       const query = (intent.slots.query as string | undefined) ?? input;
-      result = answerQuestion(state, query, now);
+      result = /\b(tasks?|to-?dos?)\b/i.test(input)
+        ? openTasksAnswer(state, context)
+        : answerQuestion(state, query, now);
       break;
     }
 
@@ -416,6 +418,28 @@ function missingTarget(what: string, context: ReturnType<typeof buildAIContext>)
   return {
     kind: "answer",
     message: `Tell me ${what} to work with, or mention it by name. (${contextSummary(context)})`,
+    capability: "answer_question",
+    citations: [],
+    proposals: [],
+    access: context.access,
+    contextCounts: context.counts,
+  };
+}
+function openTasksAnswer(state: AppState, context: { access: AIResult["access"]; counts: AIResult["contextCounts"] }): AIResult {
+  const open = Object.values(state.tasks)
+    .filter((task) => !["done", "cancelled", "archived"].includes(task.status))
+    .sort((a, b) => b.priority - a.priority || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity));
+  const lines = open.slice(0, 10).map((task) => {
+    const due = task.dueAt != null ? ` (due ${new Date(task.dueAt).toLocaleDateString()})` : "";
+    return `- ${task.title}${due}`;
+  });
+  const message =
+    open.length === 0
+      ? "You have no open tasks right now."
+      : `You have ${open.length} open task${open.length === 1 ? "" : "s"}:\n${lines.join("\n")}${open.length > 10 ? `\n…and ${open.length - 10} more.` : ""}`;
+  return {
+    kind: "answer",
+    message,
     capability: "answer_question",
     citations: [],
     proposals: [],

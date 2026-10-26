@@ -1,0 +1,47 @@
+{
+  "summary": "Checked the iteration-8 fixes. Backend: all 125 tests pass (new test_iter9_fixes.py has 18 tests; I also corrected 1 out-of-date test in test_iter7_refactor.py). UI on desktop: Settings Appearance (the HIGH bug), the onboarding draft, Integrations, Journal placeholder, Goals and Today Enter-to-submit, the Write link, Local AI intents, state sync with reload and sign-out/sign-in (0 409s), plus quick checks of Today, Tasks, Notes and Settings. Two Paper bugs are still open: clicking 'Save page' on a new page the user has not renamed or typed in deletes it, and 'Move to trash' on a new page deletes it permanently. All other targeted fixes work.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/v1/state", "issue": "The 413 check reads Content-Length inside the handler. FastAPI has already read and parsed the whole body into StateIn by then, so a large request still uses the memory. Chunked requests send no Content-Length and skip the check. Enforce the limit in middleware or at the ingress."},
+      {"endpoint": "PATCH /api/v1/users/me", "issue": "workingHours.days accepts booleans (isinstance(True, int) is True), so [true] is stored as a day. Exclude bool in the check."},
+      {"endpoint": "auth.origin_of", "issue": "Fixed: X-Forwarded-Host is ignored (unit-tested). When APP_URL is not set it falls back to the Host header. That is only safe while the ingress routes on Host, so set APP_URL in production."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Paper PaperPageDialog save()", "issue": "New Page, then 'Save page' without renaming or typing (or after only setting tags, favourite or folder): the toast says 'Page saved' but the page is deleted (All Pages went 6 -> 7 -> 6). save() calls onClose(), which is closePageDialog. That function sees the name is still 'New page' and the text is empty, then calls deletePaperPage.", "selector": "[data-testid=paper-new-page] -> dialog 'Save page'", "priority": "HIGH"},
+      {"component": "Paper PaperPageDialog moveToTrash()", "issue": "'Move to trash' on a new page deletes it permanently: Trash stays at 0 and the toast's 'Undo' does nothing because the page no longer exists. The cause is the same: closePageDialog deletes the untouched page after it was trashed.", "selector": "dialog 'Move to trash'", "priority": "MEDIUM"},
+      {"component": "Local AI (intents)", "issue": "'What tasks do I have?' and 'show my tasks' no longer create task suggestions (fixed). But they fall through to note search and reply 'I could not find anything in your notes about \"what tasks have\"', even though the user has pending tasks. Task questions should list the tasks.", "selector": "[data-testid=ai-composer]", "priority": "MEDIUM"},
+      {"component": "Local AI (intents)", "issue": "'Can you remind me to buy milk?' creates a task titled 'Can you remind me to buy milk'. The prefix strip only matches 'remind me to' at the very start.", "selector": "[data-testid=ai-assistant-message]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AI hero", "issues": ["Small floating icons still overlap the subtitle text ('person[icon]alOS', 'personalis[icon]ed')"]},
+      {"screen": "Integrations", "issues": ["The 'Not connected' badge squeezes the description into a narrow column", "The header reads '8 available · 0 ready to connect', which is confusing"]},
+      {"screen": "Tasks", "issues": ["Priority Breakdown shows '2 Tasks' and 'No tasks yet.' at the same time when tasks have no priority"]},
+      {"screen": "Journal", "issues": ["The date control is still a native date input, and Mood is a native select"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter9_fixes.py", "/app/test_reports/pytest/pytest_results_iter9.xml"],
+  "action_items": [
+    "Paper: in PaperPageDialog save() and moveToTrash(), clear the freshPage marker before calling onClose (e.g. an onSaved/onCommitted callback that sets freshPage.current = null), so an explicit Save or Trash never deletes the page",
+    "Local AI: route task questions ('what tasks do I have', 'show my tasks') to an answer that lists the user's tasks instead of the note-search fallback",
+    "Local AI: strip polite prefixes such as 'can you', 'please' or 'could you' before 'remind me to'",
+    "Optional: enforce the 25MB state limit before the body is parsed; reject booleans in workingHours.days; set APP_URL in production"
+  ],
+  "critical_code_review_comments": [
+    "settings/page.tsx setAppearance: os.updateSettings(local) is not rolled back when the PATCH fails. The server copy reverts but the local theme, time format and week start do not.",
+    "account-sync.ts mergeEnvelopes on 409: entities are merged by updatedAt with no tombstones, so an item deleted on one device comes back if the other device still has it",
+    "account-sync.ts flushOnHide uses a keepalive fetch. Browsers cap keepalive bodies at about 64KB, so large states are silently not flushed. The response is also ignored, so knownVersion goes stale after a bfcache restore (one extra 409 merge, which recovers).",
+    "settings/page.tsx is 1925 lines; split it by tab",
+    "auth.origin_of fix is correct; set APP_URL in production rather than relying on the Host header"
+  ],
+  "updated_files": ["/app/backend/tests/test_iter9_fixes.py", "/app/backend/tests/test_iter7_refactor.py (test_valid_with_display_name now sends lifeAreaNames, which is required by design)"],
+  "success_rate": {"backend": "100% (125/125)", "frontend": "about 90% (10 of 11 targeted fixes verified; the Paper fix is only partly working)"},
+  "test_credentials": "demo / DemoPass123!, mailtest / TestPass123! (from /app/memory/test_credentials.md). Throwaway users were registered: test_<hex> (API) and test_onb_<hex>@example.com (UI).",
+  "seed_data_creation": "Demo account now has these test items: tasks TEST_capture_enter_iter9 and TEST_sync_iter9, goal TEST_goal_enter_iter9, Paper pages TEST_renamed_iter9 and one 'New page' with body 'TEST typed body iter9'. One password-reset email went to the mailtest inbox (with X-Forwarded-Host: evil.tld).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the backend regression with: REACT_APP_BACKEND_URL=<preview url> pytest backend/tests --deselect backend/tests/test_python_backend.py::test_mailtest_send_now_once. Run test_iter7_refactor.py as a whole module, because its tests depend on run order. Settings segmented controls are role=radio with aria-checked. Paper: 'All Pages N' in the folder sidebar is a reliable page count. AI composer is [data-testid=ai-composer] and send is [data-testid=ai-send]. To retest the Paper fix: New Page -> Save page with no changes, and the count must go up by 1. Not tested: mobile and tablet layouts, the email inbox content (no access to the Resend key, so origin_of was unit-tested instead)."
+}
