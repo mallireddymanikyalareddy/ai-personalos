@@ -10,6 +10,7 @@ async function main(): Promise<void> {
   const checks: ReadinessCheck[] = [];
   let db: Db | undefined;
   let pool: Pool | undefined;
+  let closeLocal: (() => Promise<void>) | undefined;
 
   if (!config.DATABASE_URL && process.env.PGLITE_DATA_DIR) {
     const { PGlite } = await import("@electric-sql/pglite");
@@ -18,6 +19,7 @@ async function main(): Promise<void> {
     const schema = await import("./db/schema");
     const { MIGRATIONS_FOLDER } = await import("./db/index");
     const client = new PGlite(process.env.PGLITE_DATA_DIR);
+    closeLocal = () => client.close();
     const local = drizzle({ client, schema });
     await migrate(local, { migrationsFolder: MIGRATIONS_FOLDER });
     db = local as unknown as Db;
@@ -57,6 +59,7 @@ async function main(): Promise<void> {
       .close()
       .then(async () => {
         if (pool) await pool.end();
+        if (closeLocal) await closeLocal();
       })
       .then(() => process.exit(0))
       .catch(() => process.exit(1));

@@ -44,6 +44,7 @@ import { JournalGallery, MAX_FILE_BYTES } from "./journal-gallery";
 import { JournalInsights } from "./journal-insights";
 import { JournalTimeline } from "./journal-timeline";
 import { JournalWorkspace } from "./journal-workspace";
+import { JournalEveningRecap } from "./journal-evening-recap";
 
 type Tab = "journal" | "timeline" | "insights" | "gallery" | "trash";
 
@@ -452,6 +453,8 @@ export function JournalModule() {
           Search covers words, tags, people, places, activities, dates, and months.
         </Alert>
       ) : null}
+
+      {tab === "journal" ? <JournalEveningRecap /> : null}
 
       {tab === "journal" ? (
         <JournalWorkspace

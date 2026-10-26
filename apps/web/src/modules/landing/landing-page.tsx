@@ -30,7 +30,7 @@ import { useThemeEffect } from "@/lib/theme";
 import { getOS } from "@/store/os";
 import { useAppState } from "@/store/use-os";
 
-// Palette sampled from the LifeOS landing mockup.
+// Palette sampled from the PersonalOS landing mockup.
 const C = {
   navy: "#000034",
   ink: "#1b1b3a",
@@ -132,7 +132,7 @@ const STATS: Array<{ value: string; label: string; icon: LucideIcon; star?: bool
 const TESTIMONIALS = [
   {
     quote:
-      "LifeOS brought my work, notes and goals into one place. I'm more organized and much more productive.",
+      "PersonalOS brought my work, notes and goals into one place. I'm more organized and much more productive.",
     name: "Ravi Kumar",
     role: "Product Manager",
     avatar: "/landing/avatar-ravi.png",
@@ -194,9 +194,9 @@ export function LandingPage() {
     >
       {/* Top navigation */}
       <header className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
-        <Link href="/" aria-label="LifeOS home" className="shrink-0">
+        <Link href="/" aria-label="PersonalOS home" className="shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/landing/logo.png" alt="LifeOS" className="h-9 w-auto" />
+          <img src="/landing/logo.png" alt="PersonalOS" className="h-9 w-auto" />
         </Link>
 
         <nav aria-label="Primary" className="hidden items-center gap-7 lg:flex">
@@ -299,7 +299,7 @@ export function LandingPage() {
               className="inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white"
               style={PRIMARY_BUTTON}
             >
-              {signedIn ? "Open LifeOS" : "Get Started Free"}
+              {signedIn ? "Open PersonalOS" : "Get Started Free"}
               <ArrowRight className="size-4" aria-hidden="true" />
             </Link>
             <a
@@ -328,7 +328,7 @@ export function LandingPage() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/landing/hero-devices.png"
-            alt="LifeOS dashboard on a laptop and the mobile app showing today's plan"
+            alt="PersonalOS dashboard on a laptop and the mobile app showing today's plan"
             className="relative z-10 w-full drop-shadow-[0_30px_50px_rgba(68,56,225,0.18)]"
           />
         </div>
@@ -537,7 +537,7 @@ export function LandingPage() {
             Simple pricing, <span style={{ color: C.purple }}>no surprises</span>
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-[17px]" style={{ color: C.gray }}>
-            LifeOS is free while the foundation is being built. No credit card, no trial timer.
+            PersonalOS is free while the foundation is being built. No credit card, no trial timer.
           </p>
         </div>
         <div className="mt-10 grid gap-5 md:grid-cols-2">
@@ -549,7 +549,7 @@ export function LandingPage() {
               </span>
             </div>
             <p className="mt-2 text-sm leading-relaxed" style={{ color: C.gray }}>
-              Everything currently in LifeOS, available today.
+              Everything currently in PersonalOS, available today.
             </p>
             <ul className="mt-5 space-y-2.5 text-[15px]" style={{ color: C.navy }}>
               {["All productivity tools", "Local-first data ownership", "AI assistant and planning", "No credit card required"].map((item) => (
@@ -564,7 +564,7 @@ export function LandingPage() {
               className="mt-6 inline-flex h-11 items-center gap-2 rounded-xl px-5 text-sm font-semibold text-white"
               style={PRIMARY_BUTTON}
             >
-              {signedIn ? "Open LifeOS" : "Start free"}
+              {signedIn ? "Open PersonalOS" : "Start free"}
               <ArrowRight className="size-4" aria-hidden="true" />
             </Link>
           </div>
@@ -611,9 +611,9 @@ export function LandingPage() {
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { title: "Getting started", body: "Create your account and open your OS.", href: signedIn ? "/today" : "/register" },
-            { title: "Feature tour", body: "See what ships inside LifeOS today.", href: "#features" },
+            { title: "Feature tour", body: "See what ships inside PersonalOS today.", href: "#features" },
             { title: "Privacy", body: "How your local and account data is handled.", href: "/privacy" },
-            { title: "Terms", body: "The rules for using LifeOS.", href: "/terms" },
+            { title: "Terms", body: "The rules for using PersonalOS.", href: "/terms" },
           ].map((item) => (
             <a
               key={item.title}
@@ -642,7 +642,7 @@ export function LandingPage() {
               className="text-[34px] font-extrabold tracking-tight sm:text-[42px]"
               style={{ fontFamily: "var(--font-jakarta), var(--font-inter), system-ui, sans-serif" }}
             >
-              Start building your LifeOS today
+              Start building your PersonalOS today
             </h2>
             <p className="mt-3 max-w-xl text-[17px] text-white/85">
               Organize your work, plan your goals, capture ideas and achieve more — all in one place.
@@ -653,7 +653,7 @@ export function LandingPage() {
                 className="inline-flex h-12 items-center gap-2 rounded-xl bg-white px-6 text-[15px] font-semibold"
                 style={{ color: C.purpleDeep }}
               >
-                {signedIn ? "Open LifeOS" : "Get Started Free"}
+                {signedIn ? "Open PersonalOS" : "Get Started Free"}
                 <ArrowRight className="size-4" aria-hidden="true" />
               </Link>
               <a
@@ -680,7 +680,7 @@ export function LandingPage() {
           <div className="flex flex-wrap items-start justify-between gap-8">
             <div className="max-w-sm">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/landing/logo.png" alt="LifeOS" className="h-8 w-auto" />
+              <img src="/landing/logo.png" alt="PersonalOS" className="h-8 w-auto" />
               <p className="mt-3 text-sm leading-relaxed" style={{ color: C.gray }}>
                 Your personal operating system for planning, creating, focusing and growing.
               </p>
@@ -701,7 +701,7 @@ export function LandingPage() {
             </nav>
           </div>
           <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-5 text-xs" style={{ borderColor: C.line, color: C.gray }}>
-            <span>© {new Date().getFullYear()} LifeOS. All rights reserved.</span>
+            <span>© {new Date().getFullYear()} PersonalOS. All rights reserved.</span>
             <span>Local-first by design.</span>
           </div>
         </div>

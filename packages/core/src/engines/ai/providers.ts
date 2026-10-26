@@ -9,7 +9,7 @@ export interface AIProviderOption {
 export const AI_PROVIDERS: AIProviderOption[] = [
   {
     id: "local",
-    label: "LifeOS Local",
+    label: "PersonalOS Local",
     detail: "Deterministic, fully offline, private",
     available: true,
   },

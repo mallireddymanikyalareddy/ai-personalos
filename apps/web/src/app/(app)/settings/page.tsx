@@ -54,6 +54,7 @@ import { accountApi, errorMessage, fieldError } from "@/lib/api";
 import { setSettings } from "@/lib/settings-sync";
 import { useAuth } from "@/modules/auth/auth-context";
 import { useAppState, useOS } from "@/store/use-os";
+import { WeeklyEmailCard } from "@/modules/settings/weekly-email-card";
 
 type TabId =
   | "profile"
@@ -1349,6 +1350,8 @@ export default function SettingsPage() {
               </Card>
             </>
           )}
+
+          {tab === "notifications" && prefs && <WeeklyEmailCard />}
 
           {tab === "notifications" && prefs && (
             <Card

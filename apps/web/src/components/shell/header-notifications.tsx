@@ -90,7 +90,7 @@ export function HeaderNotifications() {
   };
 
   const sendTestAlert = async () => {
-    const shown = await showBrowserAlert("AI PersonalOS", {
+    const shown = await showBrowserAlert("PersonalOS", {
       body: "Browser alerts are working on this device.",
       tag: "personalos:test",
       url: "/today",

@@ -1,0 +1,259 @@
+import ipaddress
+import logging
+import os
+import re
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
+from html import escape
+from html.parser import HTMLParser
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
+
+import httpx
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+logger = logging.getLogger("digest")
+
+EMAIL_BASE_URL = "https://integrations.emergentagent.com"
+DONE = {"done", "cancelled", "archived"}
+
+_SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "goo.gl", "rebrand.ly")
+_CRED_ASK = ("reply with your password", "reply with the code", "send your password", "cvv",
+             "send us your password", "enter your password below", "confirm your card number",
+             "your full card number", "seed phrase", "recovery phrase", "verify your card",
+             "social security number", "confirm your bank details")
+_HOSTISH = re.compile(r"\b(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,})", re.I)
+
+
+def _host_ok(host: str) -> bool:
+    if not host or "xn--" in host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    return not any(host == s or host.endswith("." + s) for s in _SHORTENERS)
+
+
+def _same_site(shown: str, real: str) -> bool:
+    return shown == real or real.endswith("." + shown) or shown.endswith("." + real)
+
+
+class _EmailScan(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.tags, self.urls, self.anchors = set(), [], []
+        self._href, self._text = None, []
+
+    def handle_starttag(self, tag, attrs):
+        self.tags.add(tag.lower())
+        self.urls += [v for k, v in attrs if k.lower() in ("href", "src") and v]
+        if tag.lower() == "a":
+            self._href = dict((k.lower(), v) for k, v in attrs).get("href")
+            self._text = []
+
+    def handle_data(self, data):
+        if self._href is not None:
+            self._text.append(data)
+
+    def handle_endtag(self, tag):
+        if tag.lower() == "a" and self._href is not None:
+            self.anchors.append((self._href, "".join(self._text)))
+            self._href, self._text = None, []
+
+
+def _assert_safe_email(subject: str, html: str) -> None:
+    scan = _EmailScan()
+    scan.feed(html)
+    if scan.tags & {"form", "input", "textarea", "select"}:
+        raise ValueError("No forms or input fields in email (G2)")
+    body = f"{subject}\n{html}".lower()
+    for p in _CRED_ASK:
+        if p in body:
+            raise ValueError(f"Email asks the recipient for credentials: {p!r} (G2)")
+    for url in scan.urls:
+        low = url.strip().lower()
+        if low.startswith(("mailto:", "tel:", "cid:", "#")):
+            continue
+        if not low.startswith("https://"):
+            raise ValueError(f"Email links/assets must be absolute https: {url!r} (G3)")
+        host = urlparse(low).hostname or ""
+        if not _host_ok(host) or urlparse(low).username is not None:
+            raise ValueError(f"Shortened, numeric-host or credential-bearing URL: {url!r} (G3)")
+    for href, text in scan.anchors:
+        real = urlparse(href.strip().lower()).hostname or ""
+        if not real:
+            continue
+        for m in _HOSTISH.finditer(text):
+            if not _same_site(m.group(1).lower(), real):
+                raise ValueError(f"Anchor text {m.group(1)!r} ≠ real link host {real!r} (G3)")
+
+
+class EmailUnavailable(Exception):
+    pass
+
+
+async def send_email(*, to: str, subject: str, html: str) -> str | None:
+    _assert_safe_email(subject, html)
+    payload = {"to": [to], "subject": subject, "html": html, "from_name": os.environ["EMAIL_FROM_NAME"]}
+    if os.environ.get("EMAIL_REPLY_TO"):
+        payload["contact_email"] = os.environ["EMAIL_REPLY_TO"]
+    async with httpx.AsyncClient(timeout=30) as http:
+        resp = await http.post(f"{EMAIL_BASE_URL}/api/v1/email/send", headers={"X-Email-Key": os.environ["EMERGENT_EMAIL_KEY"]}, json=payload)
+    if resp.status_code >= 400:
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {}
+        logger.warning("Email send refused: %s %s %s", resp.status_code, data.get("code", ""), data.get("message", ""))
+        raise EmailUnavailable(data.get("code") or f"status {resp.status_code}")
+    return resp.json().get("id")
+
+
+def iso_week(now: datetime) -> str:
+    year, week, _ = now.isocalendar()
+    return f"{year}-W{week:02d}"
+
+
+def local_now(tz: str) -> datetime:
+    try:
+        return datetime.now(ZoneInfo(tz))
+    except Exception:
+        return datetime.now(timezone.utc)
+
+
+def _collect(envelope: dict | None, now: datetime) -> dict:
+    state = (envelope or {}).get("state") or {}
+    week_end = (now + timedelta(days=7)).timestamp() * 1000
+    now_ms = now.timestamp() * 1000
+    tasks = [t for t in (state.get("tasks") or {}).values() if isinstance(t, dict) and t.get("status") not in DONE]
+    overdue = [t for t in tasks if t.get("dueAt") and t["dueAt"] < now_ms]
+    due_week = [t for t in tasks if t.get("dueAt") and now_ms <= t["dueAt"] <= week_end]
+    goals = [g for g in (state.get("goals") or {}).values() if isinstance(g, dict) and g.get("status") == "active"]
+    habits = [h for h in (state.get("habits") or {}).values() if isinstance(h, dict) and not h.get("archivedAt")]
+    key = lambda t: t.get("dueAt") or 0  # noqa: E731
+    return {
+        "overdue": sorted(overdue, key=key)[:8],
+        "due_week": sorted(due_week, key=key)[:12],
+        "open_count": len(tasks),
+        "goals": goals[:8],
+        "habits": habits[:8],
+    }
+
+
+def _prompt_context(data: dict) -> str:
+    def lines(rows, fmt):
+        return "\n".join(fmt(r) for r in rows) or "none"
+    due = lambda t: datetime.fromtimestamp(t["dueAt"] / 1000, timezone.utc).strftime("%a %b %d")  # noqa: E731
+    return (
+        f"Overdue tasks:\n{lines(data['overdue'], lambda t: '- ' + str(t.get('title')) + ' (was due ' + due(t) + ')')}\n\n"
+        f"Due this week:\n{lines(data['due_week'], lambda t: '- ' + str(t.get('title')) + ' (due ' + due(t) + ', ' + str(t.get('priority')) + ')')}\n\n"
+        f"Active goals:\n{lines(data['goals'], lambda g: '- ' + str(g.get('title')) + ' (' + str(round(g.get('progress') or 0)) + '% done)')}\n\n"
+        f"Habits:\n{lines(data['habits'], lambda h: '- ' + str(h.get('title')))}"
+    )
+
+
+async def ai_weekly_plan(name: str, data: dict) -> str | None:
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        return None
+    chat = LlmChat(
+        api_key=key,
+        session_id=str(uuid.uuid4()),
+        system_message="You write short, warm, practical weekly plans for users of PersonalOS. Plain text only, no links, no markdown headings.",
+    ).with_model("openai", "gpt-6-luna")
+    prompt = (
+        f"Write {name}'s plan for this week in 4-6 short bullet lines starting with '- ': what to tackle first (overdue items), "
+        f"how to spread this week's tasks across days, which goal to push forward, and which habit to protect. "
+        f"Finish with one encouraging sentence.\n\n{_prompt_context(data)}"
+    )
+    try:
+        return (await chat.send_message(UserMessage(text=prompt))).strip()
+    except Exception as exc:
+        logger.warning("Weekly plan AI failed: %s", str(exc)[:200])
+        return None
+
+
+def _ai_html(text: str) -> str:
+    items, paras = [], []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith(("- ", "* ", "• ")):
+            items.append(f"<li style=\"margin:0 0 6px\">{escape(line[2:].strip())}</li>")
+        else:
+            paras.append(f"<p style=\"margin:8px 0\">{escape(line)}</p>")
+    lst = f"<ul style=\"padding-left:18px;margin:8px 0\">{''.join(items)}</ul>" if items else ""
+    return lst + "".join(paras)
+
+
+def _section(title: str, rows: list[str]) -> str:
+    if not rows:
+        return ""
+    body = "".join(f"<tr><td style=\"padding:6px 0;border-bottom:1px solid #eee;font-size:14px;color:#333\">{r}</td></tr>" for r in rows)
+    return (f"<h3 style=\"margin:24px 0 8px;font-size:15px;color:#111\">{escape(title)}</h3>"
+            f"<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\">{body}</table>")
+
+
+def _goal_row(g: dict) -> str:
+    pct = max(0, min(100, round(g.get("progress") or 0)))
+    return (f"{escape(str(g.get('title', 'Goal')))} <span style=\"color:#666\">— {pct}%</span>"
+            f"<div style=\"margin-top:4px;height:6px;background:#eee;border-radius:3px\">"
+            f"<div style=\"width:{pct}%;height:6px;background:#4f46e5;border-radius:3px\"></div></div>")
+
+
+def _due(t: dict) -> str:
+    return datetime.fromtimestamp(t["dueAt"] / 1000, timezone.utc).strftime("%a %b %d")
+
+
+def build_email(name: str, data: dict, plan: str | None, week_label: str) -> tuple[str, str]:
+    brand = os.environ["EMAIL_FROM_NAME"]
+    app_url = os.environ.get("APP_URL", "").rstrip("/")
+    subject = f"Your {brand} plan for the week of {week_label}"
+    plan_html = _ai_html(plan) if plan else "<p style=\"margin:8px 0;color:#666\">Your AI weekly plan wasn't available this time, but here's where things stand.</p>"
+    link = (f"<p style=\"margin:28px 0 0\"><a href=\"{escape(app_url)}/today\" style=\"background:#4f46e5;color:#fff;"
+            f"padding:10px 18px;border-radius:8px;text-decoration:none;font-size:14px\">Open {escape(brand)}</a></p>"
+            if app_url.startswith("https://") else "")
+    html = (
+        "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"background:#f6f6f8\"><tr><td align=\"center\" style=\"padding:24px\">"
+        "<table role=\"presentation\" width=\"600\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:600px;background:#fff;border-radius:12px\">"
+        "<tr><td style=\"padding:28px;font-family:Arial,Helvetica,sans-serif;color:#111\">"
+        f"<p style=\"margin:0;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#4f46e5\">{escape(brand)} · Week of {escape(week_label)}</p>"
+        f"<h2 style=\"margin:8px 0 16px;font-size:22px\">Good morning, {escape(name)}</h2>"
+        f"<h3 style=\"margin:16px 0 4px;font-size:15px\">Your plan for the week (GPT 6 Luna)</h3>{plan_html}"
+        + _section(f"Overdue ({len(data['overdue'])})", [f"{escape(str(t.get('title')))} <span style=\"color:#b91c1c\">— was due {_due(t)}</span>" for t in data["overdue"]])
+        + _section(f"Due this week ({len(data['due_week'])})", [f"{escape(str(t.get('title')))} <span style=\"color:#666\">— {_due(t)}</span>" for t in data["due_week"]])
+        + _section("Goal progress", [_goal_row(g) for g in data["goals"]])
+        + _section("Habits to keep up", [escape(str(h.get("title"))) for h in data["habits"]])
+        + link
+        + f"<p style=\"margin:28px 0 0;font-size:12px;color:#888\">You're receiving this because you turned on the Monday briefing email in {escape(brand)} settings. "
+        f"Turn it off anytime in Settings → Notifications. We never ask for your password by email.</p>"
+        "</td></tr></table></td></tr></table>"
+    )
+    return subject, html
+
+
+async def send_digest(item: dict) -> None:
+    now = local_now(item.get("timezone") or "UTC")
+    name = (item.get("displayName") or "there").split(" ")[0]
+    data = _collect(item.get("envelope"), now)
+    plan = await ai_weekly_plan(name, data)
+    monday = (now - timedelta(days=now.weekday())).strftime("%b %d")
+    subject, html = build_email(name, data, plan, monday)
+    await send_email(to=item["email"], subject=subject, html=html)
+
+
+_recent: dict[str, list[float]] = {}
+
+
+def allow_send_now(user_id: str, limit: int = 3, window: float = 3600) -> bool:
+    now = time.time()
+    hits = [t for t in _recent.get(user_id, []) if now - t < window]
+    if len(hits) >= limit:
+        _recent[user_id] = hits
+        return False
+    _recent[user_id] = hits + [now]
+    return True

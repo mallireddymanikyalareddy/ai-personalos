@@ -13,11 +13,11 @@ export default function TermsPage() {
       </Link>
       <h1 className="mt-6 font-display text-3xl font-extrabold tracking-tight text-ink">Terms of Service</h1>
       <p className="mt-4 text-sm leading-relaxed text-ink-2">
-        These terms describe how you may use LifeOS. By creating an account you agree to use the service
+        These terms describe how you may use PersonalOS. By creating an account you agree to use the service
         lawfully, keep your credentials secure, and understand that your workspace data belongs to you.
       </p>
       <p className="mt-3 text-sm leading-relaxed text-ink-2">
-        LifeOS is provided as-is during the early access period. Features may change, and you can export your
+        PersonalOS is provided as-is during the early access period. Features may change, and you can export your
         workspace at any time from Settings.
       </p>
     </main>

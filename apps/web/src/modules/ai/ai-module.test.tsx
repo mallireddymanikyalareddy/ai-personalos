@@ -413,6 +413,6 @@ describe("regenerate, feedback, search, pin, voice and model", () => {
 
     const disabled = screen.getByRole("menuitem", { name: /OpenAI GPT \(needs API key\)/ });
     expect(disabled.getAttribute("aria-disabled")).toBe("true");
-    expect(screen.getByRole("menuitem", { name: "LifeOS Local" })).toBeDefined();
+    expect(screen.getByRole("menuitem", { name: "PersonalOS Local" })).toBeDefined();
   });
 });

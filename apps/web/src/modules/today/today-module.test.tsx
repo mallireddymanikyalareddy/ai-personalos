@@ -254,7 +254,7 @@ describe("live data", () => {
 
   it("shows the configured assistant provider", () => {
     renderToday();
-    expect(within(screen.getByTestId("today-ai")).getByText("LifeOS Local")).toBeDefined();
+    expect(within(screen.getByTestId("today-ai")).getByText("PersonalOS Local")).toBeDefined();
   });
 
   it("answers a typed question in the AI panel", () => {

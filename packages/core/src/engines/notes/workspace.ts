@@ -252,7 +252,7 @@ export function noteToMarkdown(note: Note): string {
   if (note.tags.length > 0) parts.push(note.tags.map((tag) => `#${tag}`).join(" "), "");
   const body = blocksToMarkdown(note.blocks).trim();
   if (body.length > 0) parts.push(body);
-  parts.push("", `_Exported from LifeOS on ${new Date().toLocaleDateString()}_`);
+  parts.push("", `_Exported from PersonalOS on ${new Date().toLocaleDateString()}_`);
   return parts.join("\n");
 }
 

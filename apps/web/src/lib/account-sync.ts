@@ -14,6 +14,24 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let applyingRemote = false;
 let knownVersion = 0;
 
+export type SyncStatus = "off" | "syncing" | "saved" | "offline" | "error";
+let syncStatus: SyncStatus = "off";
+const statusListeners = new Set<() => void>();
+
+function setStatus(next: SyncStatus): void {
+  syncStatus = next;
+  for (const listener of Array.from(statusListeners)) listener();
+}
+
+export function getSyncStatus(): SyncStatus {
+  return syncStatus;
+}
+
+export function subscribeSyncStatus(listener: () => void): () => void {
+  statusListeners.add(listener);
+  return () => statusListeners.delete(listener);
+}
+
 async function pull(): Promise<RemoteState> {
   const res = await fetch("/api/v1/state", { credentials: "include", cache: "no-store" });
   if (!res.ok) throw new Error(`state pull failed (${res.status})`);
@@ -57,6 +75,17 @@ async function push(): Promise<void> {
     clearTimeout(timer);
     timer = null;
   }
+  setStatus("syncing");
+  try {
+    await pushOnce();
+    setStatus("saved");
+  } catch {
+    setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "error");
+    timer = setTimeout(() => void push(), 15000);
+  }
+}
+
+async function pushOnce(): Promise<void> {
   let envelope = JSON.parse(getOS().exportData()) as Envelope;
   let res = await put(envelope);
   if (res.status === 409) {
@@ -67,7 +96,8 @@ async function push(): Promise<void> {
     }
     res = await put(envelope);
   }
-  if (res.ok) knownVersion = ((await res.json()) as { version: number }).version;
+  if (!res.ok) throw new Error(`state push failed (${res.status})`);
+  knownVersion = ((await res.json()) as { version: number }).version;
 }
 
 function applyRemote(remote: RemoteState): void {
@@ -107,9 +137,11 @@ export async function startAccountSync(userId: string, displayName: string): Pro
   if (displayName && os.getState().profile.displayName !== displayName) os.updateProfile({ displayName });
   activeUser = userId;
   if (!remote.envelope) await push();
+  else setStatus("saved");
   unsubscribe = os.subscribe(() => {
     if (applyingRemote) return;
     if (timer) clearTimeout(timer);
+    setStatus("syncing");
     timer = setTimeout(() => void push(), PUSH_DELAY_MS);
   });
   document.addEventListener("visibilitychange", onVisible);
@@ -121,6 +153,7 @@ export function stopAccountSync(): void {
   if (timer) clearTimeout(timer);
   timer = null;
   activeUser = null;
+  setStatus("off");
   document.removeEventListener("visibilitychange", onVisible);
 }
 

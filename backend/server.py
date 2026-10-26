@@ -1,6 +1,8 @@
 import asyncio
 import json
+import logging
 import os
+import secrets
 import subprocess
 import uuid
 from contextlib import asynccontextmanager
@@ -15,6 +17,8 @@ from pydantic import BaseModel, Field
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
+import digest  # noqa: E402
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 API_PORT = "8080"
 UPSTREAM = f"http://127.0.0.1:{API_PORT}"
@@ -22,12 +26,44 @@ HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "te", "upgrade",
 
 proc = None
 client = None
+INTERNAL_TOKEN = secrets.token_hex(32)
+INTERNAL_HEADERS = {"x-internal-token": INTERNAL_TOKEN}
+
+
+async def digest_loop():
+    while True:
+        try:
+            res = await client.get("/internal/v1/digest/subscribers", headers=INTERNAL_HEADERS)
+            for item in res.json().get("items", []) if res.status_code == 200 else []:
+                now = digest.local_now(item.get("timezone") or "UTC")
+                week = digest.iso_week(now)
+                if now.weekday() != 0 or now.hour < 7 or item["pref"].get("lastSentWeek") == week:
+                    continue
+                try:
+                    await digest.send_digest(item)
+                    await client.post(f"/internal/v1/digest/users/{item['id']}/sent", headers=INTERNAL_HEADERS, json={"week": week})
+                except digest.EmailUnavailable as exc:
+                    logging.warning("Weekly digest not sent: %s", exc)
+                    if str(exc) == "undeliverable_recipient":
+                        await client.post(f"/internal/v1/digest/users/{item['id']}/sent", headers=INTERNAL_HEADERS, json={"week": week})
+                        continue
+                    break
+                except Exception:
+                    logging.exception("Weekly digest failed for %s", item["id"])
+        except Exception:
+            logging.exception("Digest loop error")
+        await asyncio.sleep(900)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global proc, client
-    env = {**os.environ, "PORT": API_PORT, "HOST": "127.0.0.1", "PGLITE_DATA_DIR": os.path.join(ROOT, "data", "pglite")}
+    env = {**os.environ, "PORT": API_PORT, "HOST": "127.0.0.1", "PGLITE_DATA_DIR": os.path.join(ROOT, "data", "pglite"), "INTERNAL_TOKEN": INTERNAL_TOKEN}
+    subprocess.run(["fuser", "-k", "-TERM", f"{API_PORT}/tcp"], capture_output=True)
+    for _ in range(20):
+        if subprocess.run(["fuser", f"{API_PORT}/tcp"], capture_output=True).returncode != 0:
+            break
+        await asyncio.sleep(0.5)
     proc = subprocess.Popen(["npm", "run", "start", "--workspace", "@personalos/api"], cwd=ROOT, env=env, start_new_session=True)
     client = httpx.AsyncClient(base_url=UPSTREAM, timeout=60, cookies=CookieJar(policy=DefaultCookiePolicy(allowed_domains=[])))
     for _ in range(120):
@@ -36,15 +72,21 @@ async def lifespan(_: FastAPI):
             break
         except httpx.HTTPError:
             await asyncio.sleep(0.5)
+    loop_task = asyncio.create_task(digest_loop())
     yield
+    loop_task.cancel()
     await client.aclose()
     os.killpg(proc.pid, 15)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, 9)
 
 
 app = FastAPI(lifespan=lifespan)
 
 SYSTEM_PROMPT = (
-    "You are the AI assistant inside LifeOS, a personal operating system for tasks, goals, habits, notes and planning. "
+    "You are the AI assistant inside PersonalOS, a personal operating system for tasks, goals, habits, notes and planning. "
     "Answer concisely and practically, grounded in the user's data provided below. Use short markdown lists when helpful. "
     "Never claim you changed data; any changes are offered as proposals the user reviews separately.\n\nUSER DATA:\n"
 )
@@ -95,8 +137,35 @@ async def ai_chat(body: ChatRequest, request: Request):
     return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+@app.post("/api/digest/send-now")
+async def digest_send_now(request: Request):
+    me = await client.get("/api/v1/auth/me", headers={"cookie": request.headers.get("cookie", "")})
+    user = me.json().get("user") if me.status_code == 200 else None
+    if not user:
+        return JSONResponse({"detail": "Please sign in first"}, status_code=401)
+    if not user.get("email"):
+        return JSONResponse({"detail": "Add an email address to your account first"}, status_code=400)
+    if not digest.allow_send_now(user["id"]):
+        return JSONResponse({"detail": "You've sent a few previews already. Try again in an hour."}, status_code=429)
+    res = await client.get(f"/internal/v1/digest/users/{user['id']}", headers=INTERNAL_HEADERS)
+    if res.status_code != 200:
+        return JSONResponse({"detail": "Could not load your data"}, status_code=502)
+    try:
+        await digest.send_digest(res.json())
+    except digest.EmailUnavailable as exc:
+        if str(exc) == "undeliverable_recipient":
+            return JSONResponse({"detail": f"We couldn't deliver to {user['email']}. Check the address in your account"}, status_code=422)
+        return JSONResponse({"detail": "Email is temporarily unavailable"}, status_code=503)
+    except Exception:
+        logging.exception("Preview digest failed")
+        return JSONResponse({"detail": "Failed to send email"}, status_code=502)
+    return {"status": "sent", "to": user["email"]}
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 async def proxy(path: str, request: Request):
+    if path.startswith("internal"):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
     headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_HEADERS}
     upstream = await client.request(request.method, f"/{path}", params=request.query_params, headers=headers, content=await request.body())
     out = Response(content=upstream.content, status_code=upstream.status_code)

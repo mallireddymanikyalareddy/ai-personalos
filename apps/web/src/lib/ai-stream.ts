@@ -14,12 +14,21 @@ export function buildAIContext(state: AppState, localAnswer: string): string {
   const goals = live(state.goals).filter((g) => g.status === "active").slice(0, 15).map((g) => `- ${g.title}`);
   const habits = live(state.habits).slice(0, 15).map((h) => `- ${h.title}`);
   const notes = live(state.notes).filter((n) => n.status === "active").slice(0, 15).map((n) => `- ${n.title}`);
+  const dayStart = new Date().setHours(0, 0, 0, 0);
+  const doneToday = live(state.tasks)
+    .filter((task) => task.status === "done" && (task.completedAt ?? 0) >= dayStart)
+    .map((task) => `- ${task.title}`);
+  const journalToday = live(state.journalEntries)
+    .filter((entry) => entry.updatedAt >= dayStart)
+    .map((entry) => `- ${entry.title || "Entry"}${entry.mood ? ` (mood: ${entry.mood})` : ""}: ${entry.body.slice(0, 400)}`);
   return [
     `Today: ${new Date().toDateString()}`,
     `Open tasks:\n${tasks.join("\n") || "none"}`,
     `Active goals:\n${goals.join("\n") || "none"}`,
     `Habits:\n${habits.join("\n") || "none"}`,
     `Notes:\n${notes.join("\n") || "none"}`,
+    `Completed today:\n${doneToday.join("\n") || "none"}`,
+    `Journal today:\n${journalToday.join("\n") || "none"}`,
     `Built-in assistant analysis:\n${localAnswer}`,
   ].join("\n\n");
 }

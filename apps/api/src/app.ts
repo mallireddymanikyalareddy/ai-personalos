@@ -19,6 +19,7 @@ import { EncryptedTokenVault } from "./modules/integrations/vault";
 import { createSessionService } from "./modules/auth/sessions";
 import { auditRoutes } from "./modules/audit/routes";
 import { stateRoutes } from "./modules/state/routes";
+import { digestRoutes } from "./modules/digest/routes";
 import { systemRoutes, type ReadinessCheck } from "./modules/system/routes";
 import { sendProblem } from "./plugins/error-handler";
 
@@ -133,6 +134,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     });
     await app.register(auditRoutes, { db });
     await app.register(stateRoutes, { db });
+    await app.register(digestRoutes, { db });
     await app.register(integrationRoutes, {
       config,
       ...(options.integrationFetch ? { fetchFn: options.integrationFetch } : {}),

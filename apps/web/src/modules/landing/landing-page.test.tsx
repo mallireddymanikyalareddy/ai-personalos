@@ -95,6 +95,6 @@ describe("LandingPage", () => {
     render(<LandingPage />);
 
     expect(screen.getByRole("link", { name: "Explore Features" }).getAttribute("href")).toBe("#features");
-    expect(screen.getAllByRole("link", { name: /Open LifeOS/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: /Open PersonalOS/i }).length).toBeGreaterThan(0);
   });
 });

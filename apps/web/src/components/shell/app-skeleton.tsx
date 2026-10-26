@@ -41,7 +41,7 @@ function RowSkeleton() {
 
 export function AppSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading AI PersonalOS">
+    <div aria-busy="true" aria-label="Loading PersonalOS">
       <SidebarSkeleton />
 
       <div className="md:pl-[var(--sidebar-w,16rem)]">

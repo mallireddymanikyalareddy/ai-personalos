@@ -112,7 +112,7 @@ self.addEventListener("push", (event) => {
     payload = { title: event.data.text() };
   }
   event.waitUntil(
-    self.registration.showNotification(payload.title || "AI PersonalOS", {
+    self.registration.showNotification(payload.title || "PersonalOS", {
       body: payload.body || "",
       icon: "/icon-192.png",
       badge: "/icon-192.png",

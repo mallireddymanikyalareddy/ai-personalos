@@ -26,12 +26,12 @@ const jakarta = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: {
-    default: "AI PersonalOS",
-    template: "%s · AI PersonalOS",
+    default: "PersonalOS",
+    template: "%s · PersonalOS",
   },
   description:
     "Your personal operating system — capture, plan, schedule, and remember everything in one place.",
-  applicationName: "AI PersonalOS",
+  applicationName: "PersonalOS",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

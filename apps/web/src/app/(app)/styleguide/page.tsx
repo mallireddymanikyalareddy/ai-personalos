@@ -54,7 +54,7 @@ export default function StyleguidePage() {
       <PageHeader
         icon={Palette}
         title="Design system"
-        subtitle="The visual foundation of AI PersonalOS — semantic tokens, reusable components, verified in both themes."
+        subtitle="The visual foundation of PersonalOS — semantic tokens, reusable components, verified in both themes."
       />
       <div className="mx-auto flex max-w-5xl flex-col gap-10 px-4 pb-16 sm:px-6">
         <nav aria-label="Design system sections" className="flex flex-wrap gap-1.5">

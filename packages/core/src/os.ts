@@ -1916,7 +1916,7 @@ projectProgressFor = (id: ID): number => {
   importData = (json: string): OSImportResult => {
     const state = parseRawState(json);
     if (!state) {
-      return { ok: false, error: "This file is not a valid AI PersonalOS backup." };
+      return { ok: false, error: "This file is not a valid PersonalOS backup." };
     }
     this.store.replaceAll({ ...createInitialState(), ...state, version: SCHEMA_VERSION, hydrated: true });
     this.store.persistNow();

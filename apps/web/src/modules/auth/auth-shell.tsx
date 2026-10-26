@@ -18,7 +18,7 @@ export function AuthShell({
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
       <header className="flex items-center justify-between px-5 py-5 sm:px-8">
-        <Link href="/" aria-label="AI PersonalOS home" className="inline-flex">
+        <Link href="/" aria-label="PersonalOS home" className="inline-flex">
           <Logo className="size-7" />
         </Link>
       </header>

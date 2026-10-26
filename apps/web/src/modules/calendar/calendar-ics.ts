@@ -44,7 +44,7 @@ export function eventsToIcs(events: CalendarEvent[]): string {
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//LifeOS//Calendar//EN",
+    "PRODID:-//PersonalOS//Calendar//EN",
     "CALSCALE:GREGORIAN",
   ];
 

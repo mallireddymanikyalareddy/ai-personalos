@@ -18,6 +18,7 @@ import { setSettings } from "@/lib/settings-sync";
 import { useAppState } from "@/store/use-os";
 import { useAuth } from "@/modules/auth/auth-context";
 import { useRouter } from "next/navigation";
+import { SyncBadge } from "./sync-badge";
 
 export function ThemeToggle({ className }: { className?: string }) {
   const state = useAppState();
@@ -58,12 +59,12 @@ export function TopBar() {
       <div className="grid h-14 w-full grid-cols-[auto_1fr_auto] items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:h-16 lg:px-8">
         <Link
           href="/today"
-          aria-label="AI PersonalOS home"
+          aria-label="PersonalOS home"
           className="flex shrink-0 items-center gap-2 rounded-lg py-1"
         >
           <Logo className="size-7 shrink-0" />
           <span className="hidden text-sm font-semibold tracking-tight text-ink sm:block">
-            AI PersonalOS
+            PersonalOS
           </span>
           <span aria-hidden="true" className="hidden h-4 w-px shrink-0 bg-line xl:block" />
           <Sparkles className="hidden size-4 shrink-0 text-accent xl:block" aria-hidden="true" />
@@ -86,6 +87,7 @@ export function TopBar() {
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+          <SyncBadge />
           <button
             type="button"
             onClick={() => openCapture()}

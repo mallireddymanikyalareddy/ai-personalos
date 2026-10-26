@@ -156,7 +156,7 @@ export function SignupPage() {
         <aside className="relative hidden min-h-dvh flex-col lg:flex">
           <div className="flex flex-1 flex-col px-12 pt-6 xl:px-20">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/auth/signup-logo.png" alt="LifeOS" className="h-[56px] w-auto self-start" />
+            <img src="/auth/signup-logo.png" alt="PersonalOS" className="h-[56px] w-auto self-start" />
             <p className="mt-2 text-[16px]" style={{ color: "#2F3355" }}>
               Your Personal Operating System
             </p>
@@ -167,7 +167,7 @@ export function SignupPage() {
             >
               Create Your
               <br />
-              LifeOS Account
+              PersonalOS Account
             </h1>
             <p className="mt-4 text-[19px] leading-snug" style={{ color: BODY }}>
               Plan, organize, focus and grow — all in one place.
@@ -208,7 +208,7 @@ export function SignupPage() {
           <div className="w-full max-w-[860px]">
             <div className="mb-6 flex items-center gap-3 lg:hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/auth/signup-logo.png" alt="LifeOS" className="h-10 w-auto" />
+              <img src="/auth/signup-logo.png" alt="PersonalOS" className="h-10 w-auto" />
               <span className="text-[13px]" style={{ color: BODY }}>
                 Your Personal Operating System
               </span>
@@ -230,7 +230,7 @@ export function SignupPage() {
                     Create Your Account
                   </h2>
                   <p className="mt-2 text-[15.5px]" style={{ color: BODY }}>
-                    Get started with LifeOS in less than a minute.
+                    Get started with PersonalOS in less than a minute.
                   </p>
                 </div>
                 <div className="hidden shrink-0 items-center gap-3 pt-1 sm:flex">

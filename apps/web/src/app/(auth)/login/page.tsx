@@ -5,7 +5,7 @@ import { LoginPage } from "@/modules/auth/login-page";
 
 export const metadata: Metadata = {
   title: "Sign in",
-  description: "Sign in to LifeOS and continue your productivity journey.",
+  description: "Sign in to PersonalOS and continue your productivity journey.",
 };
 
 export default function LoginRoute() {
