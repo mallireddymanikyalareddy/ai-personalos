@@ -1,8 +1,6 @@
-# Test Credentials
-- Login (handle or email): demo / demo@personalos.app
-- Password: DemoPass123!
-- Register API: POST /api/v1/auth/register {handle, displayName, email, password}
-- Login API: POST /api/v1/auth/login {identifier, password}
-- Extra test users created by testing agent use password TestPass123! (e.g. Alice Tester)
-- Email-deliverable test user: mailtest / TestPass123! (email delivered+personalos@resend.dev — Resend test inbox, safe for "Send me a preview now")
-- Note: demo@personalos.app is NOT deliverable (Resend returns undeliverable_recipient)
+# Test Credentials (MongoDB-backed Python auth, recreated after server rebuild)
+- demo / DemoPass123! (email demo@personalos.app — NOT deliverable by Resend)
+- mailtest / TestPass123! (email delivered+personalos@resend.dev — Resend test inbox, safe for preview email sends)
+- Register: POST /api/v1/auth/register {handle, displayName, email?, password(min 10)}
+- Login: POST /api/v1/auth/login {identifier (handle or email), password}; session cookie pos_session (httpOnly)
+- Brute force: 5 failed logins per ip+identifier in 15 min -> 429 RATE_LIMITED

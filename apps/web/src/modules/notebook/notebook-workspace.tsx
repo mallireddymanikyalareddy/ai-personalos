@@ -577,7 +577,7 @@ function NoteRowMenu({
                 { label: "Edit note", onSelect: () => onEdit(row.id) },
                 {
                   label: "Open in editor",
-                  onSelect: () => window.location.assign(`/notebook/${row.notebookId}/${row.id}`),
+                  onSelect: () => window.location.assign(`/notebook/view?book=${row.notebookId}&page=${row.id}`),
                 },
                 { label: "Move to trash", danger: true, onSelect: () => onTrash(row.id) },
               ],

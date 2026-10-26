@@ -236,6 +236,25 @@ def build_email(name: str, data: dict, plan: str | None, week_label: str) -> tup
     return subject, html
 
 
+async def send_account_link(user: dict, kind: str, url: str) -> None:
+    brand = os.environ["EMAIL_FROM_NAME"]
+    if kind == "reset":
+        subject, intro, cta = f"Reset your {brand} password", "We got a request to reset your password. This link works for 1 hour.", "Choose a new password"
+    else:
+        subject, intro, cta = f"Confirm your email for {brand}", "Confirm this email address for your account. This link works for 24 hours.", "Confirm email"
+    html = (
+        "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"padding:24px;font-family:Arial,sans-serif;color:#111\">"
+        f"<p>Hi {escape(user.get('display_name') or 'there')},</p><p>{escape(intro)}</p>"
+        f"<p style=\"margin:24px 0\"><a href=\"{escape(url)}\" style=\"background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none\">{escape(cta)}</a></p>"
+        f"<p style=\"font-size:12px;color:#888\">If you didn't ask for this, you can ignore this email. Sent by {escape(brand)}. We never ask for your password by email.</p>"
+        "</td></tr></table>"
+    )
+    try:
+        await send_email(to=user["email"], subject=subject, html=html)
+    except EmailUnavailable:
+        logger.warning("Account email (%s) not sent for %s", kind, user["id"])
+
+
 async def send_digest(item: dict) -> None:
     now = local_now(item.get("timezone") or "UTC")
     name = (item.get("displayName") or "there").split(" ")[0]

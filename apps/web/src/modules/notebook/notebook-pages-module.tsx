@@ -191,7 +191,7 @@ export function NotebookPagesModule({ notebookId }: { notebookId: string }) {
             <li key={page.id} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2/60">
               <div className="min-w-0 flex-1">
                 <Link
-                  href={`/notebook/${notebookId}/${page.id}`}
+                  href={`/notebook/view?book=${notebookId}&page=${page.id}`}
                   className="block truncate text-sm font-medium text-ink hover:underline"
                 >
                   {page.title.trim().length > 0 ? page.title : "Untitled page"}

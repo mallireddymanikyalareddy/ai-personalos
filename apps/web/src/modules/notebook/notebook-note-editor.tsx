@@ -107,7 +107,7 @@ export function NoteEditorDialog({
               variant="secondary"
               size="sm"
               onClick={() => {
-                window.location.assign(`/notebook/${page.notebookId}/${page.id}`);
+                window.location.assign(`/notebook/view?book=${page.notebookId}&page=${page.id}`);
               }}
             >
               <ExternalLink className="size-3.5" aria-hidden="true" />

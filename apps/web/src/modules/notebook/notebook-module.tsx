@@ -97,7 +97,7 @@ function NotebookCard({ notebook }: { notebook: Notebook }) {
 
   return (
     <Link
-      href={`/notebook/${notebook.id}`}
+      href={`/notebook/view?book=${notebook.id}`}
       data-testid={`notebook-card-${notebook.id}`}
       className="group flex flex-col rounded-xl border border-line bg-surface p-4 transition-colors hover:border-line-strong hover:bg-surface-2"
     >
@@ -252,7 +252,7 @@ export function NotebookModule() {
               >
                 <div className="min-w-0">
                   <Link
-                    href={`/notebook/${notebook.id}`}
+                    href={`/notebook/view?book=${notebook.id}`}
                     className="truncate text-sm font-medium text-ink hover:underline"
                   >
                     {notebook.title}

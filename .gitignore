@@ -7,11 +7,12 @@ coverage/
 .eslintcache
 .env*.local
 .DS_Store
-.env
-.env.*
-!.env.example
 *.log
 *.pem
 *.p12
 *.pfx
-.vercel//data/
+.vercel/
+/data/
+
+.next-export/
+/frontend/build/

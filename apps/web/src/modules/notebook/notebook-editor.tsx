@@ -112,7 +112,7 @@ export function NotebookEditorModule({
   return (
     <div>
       <Link
-        href={`/notebook/${notebookId}`}
+        href={`/notebook/view?book=${notebookId}`}
         className="mb-3 inline-flex items-center gap-1 text-sm text-ink-3 hover:text-ink"
       >
         <ArrowLeft className="size-3.5" aria-hidden="true" />
@@ -243,7 +243,7 @@ export function NotebookEditorModule({
                     {backlinks.map((source) => (
                       <li key={source.id}>
                         <Link
-                          href={`/notebook/${source.notebookId}/${source.id}`}
+                          href={`/notebook/view?book=${source.notebookId}&page=${source.id}`}
                           className="text-sm text-accent-ink hover:underline"
                         >
                           {source.title}

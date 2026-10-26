@@ -2,53 +2,59 @@ import asyncio
 import json
 import logging
 import os
-import secrets
-import subprocess
 import uuid
 from contextlib import asynccontextmanager
-from http.cookiejar import CookieJar, DefaultCookiePolicy
+from datetime import datetime, timezone
 
-import httpx
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import LlmChat, StreamDone, TextDelta, UserMessage
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from pymongo import ReturnDocument
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 import digest  # noqa: E402
+from auth import ApiError, error_response, iso, public_user, require_auth, router as auth_router  # noqa: E402
+from db import db, ensure_indexes  # noqa: E402
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-API_PORT = "8080"
-UPSTREAM = f"http://127.0.0.1:{API_PORT}"
-HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "te", "upgrade", "content-length", "content-encoding", "host"}
+BILLING_CODES = ("insufficient_credits", "integration_disabled", "daily_limit_reached")
 
-proc = None
-client = None
-INTERNAL_TOKEN = secrets.token_hex(32)
-INTERNAL_HEADERS = {"x-internal-token": INTERNAL_TOKEN}
+
+async def digest_item(user: dict) -> dict:
+    state = await db.app_state.find_one({"user_id": user["id"]}, {"_id": 0})
+    return {"id": user["id"], "email": user.get("email"), "displayName": user["display_name"],
+            "timezone": user.get("timezone", "UTC"), "envelope": state["envelope"] if state else None}
 
 
 async def digest_loop():
     while True:
         try:
-            res = await client.get("/internal/v1/digest/subscribers", headers=INTERNAL_HEADERS)
-            for item in res.json().get("items", []) if res.status_code == 200 else []:
-                now = digest.local_now(item.get("timezone") or "UTC")
-                week = digest.iso_week(now)
-                if now.weekday() != 0 or now.hour < 7 or item["pref"].get("lastSentWeek") == week:
+            async for pref in db.digest_prefs.find({"enabled": True}, {"_id": 0}):
+                user = await db.users.find_one({"id": pref["user_id"]}, {"_id": 0})
+                if not user or not user.get("email"):
+                    continue
+                local = digest.local_now(user.get("timezone") or "UTC")
+                week = digest.iso_week(local)
+                if local.weekday() != 0 or local.hour < 7:
+                    continue
+                claimed = await db.digest_prefs.find_one_and_update(
+                    {"user_id": user["id"], "enabled": True, "last_sent_week": {"$ne": week}},
+                    {"$set": {"last_sent_week": week}},
+                )
+                if not claimed:
                     continue
                 try:
-                    await digest.send_digest(item)
-                    await client.post(f"/internal/v1/digest/users/{item['id']}/sent", headers=INTERNAL_HEADERS, json={"week": week})
+                    await digest.send_digest(await digest_item(user))
                 except digest.EmailUnavailable as exc:
                     logging.warning("Weekly digest not sent: %s", exc)
-                    if str(exc) in ("insufficient_credits", "integration_disabled", "daily_limit_reached"):
+                    if str(exc) in BILLING_CODES:
+                        await db.digest_prefs.update_one({"user_id": user["id"]}, {"$set": {"last_sent_week": pref.get("last_sent_week")}})
                         break
-                    await client.post(f"/internal/v1/digest/users/{item['id']}/sent", headers=INTERNAL_HEADERS, json={"week": week})
                 except Exception:
-                    logging.exception("Weekly digest failed for %s", item["id"])
+                    logging.exception("Weekly digest failed for %s", user["id"])
         except Exception:
             logging.exception("Digest loop error")
         await asyncio.sleep(900)
@@ -56,33 +62,111 @@ async def digest_loop():
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global proc, client
-    env = {**os.environ, "PORT": API_PORT, "HOST": "127.0.0.1", "PGLITE_DATA_DIR": os.path.join(ROOT, "data", "pglite"), "INTERNAL_TOKEN": INTERNAL_TOKEN}
-    subprocess.run(["fuser", "-k", "-TERM", f"{API_PORT}/tcp"], capture_output=True)
-    for _ in range(20):
-        if subprocess.run(["fuser", f"{API_PORT}/tcp"], capture_output=True).returncode != 0:
-            break
-        await asyncio.sleep(0.5)
-    proc = subprocess.Popen(["npm", "run", "start", "--workspace", "@personalos/api"], cwd=ROOT, env=env, start_new_session=True)
-    client = httpx.AsyncClient(base_url=UPSTREAM, timeout=60, cookies=CookieJar(policy=DefaultCookiePolicy(allowed_domains=[])))
-    for _ in range(120):
-        try:
-            await client.get("/healthz")
-            break
-        except httpx.HTTPError:
-            await asyncio.sleep(0.5)
-    loop_task = asyncio.create_task(digest_loop())
+    await ensure_indexes()
+    task = asyncio.create_task(digest_loop())
     yield
-    loop_task.cancel()
-    await client.aclose()
-    os.killpg(proc.pid, 15)
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, 9)
+    task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(auth_router)
+
+
+@app.exception_handler(ApiError)
+async def api_error_handler(_: Request, exc: ApiError):
+    return error_response(exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_handler(_: Request, exc: RequestValidationError):
+    errors = [{"field": ".".join(str(p) for p in e["loc"][1:]) or "(root)", "issue": e["msg"]} for e in exc.errors()]
+    return error_response(ApiError(400, "VALIDATION_FAILED", "Request failed schema validation.", errors))
+
+
+@app.get("/api/health")
+async def health():
+    await db.command("ping")
+    return {"status": "ok"}
+
+
+class StateIn(BaseModel):
+    envelope: dict
+    baseVersion: int | None = None
+
+
+@app.get("/api/v1/state")
+async def get_state(auth=Depends(require_auth)):
+    doc = await db.app_state.find_one({"user_id": auth[0]["id"]}, {"_id": 0})
+    if not doc:
+        return {"envelope": None, "version": 0}
+    return {"envelope": doc["envelope"], "version": doc["version"], "updatedAt": iso(doc["updated_at"])}
+
+
+@app.put("/api/v1/state")
+async def put_state(body: StateIn, auth=Depends(require_auth)):
+    env = body.envelope
+    if not isinstance(env.get("state"), dict) or not isinstance(env.get("version"), (int, float)):
+        raise ApiError(400, "VALIDATION_FAILED", "State payload failed schema validation.")
+    user_id = auth[0]["id"]
+    current = await db.app_state.find_one({"user_id": user_id}, {"version": 1})
+    current_version = current["version"] if current else 0
+    if body.baseVersion is not None and body.baseVersion < current_version:
+        return JSONResponse({"code": "CONFLICT_VERSION", "version": current_version}, status_code=409)
+    stamp = datetime.now(timezone.utc)
+    doc = await db.app_state.find_one_and_update(
+        {"user_id": user_id},
+        {"$set": {"envelope": env, "updated_at": stamp}, "$inc": {"version": 1}},
+        upsert=True, return_document=ReturnDocument.AFTER, projection={"_id": 0, "version": 1},
+    )
+    return {"version": doc["version"], "updatedAt": iso(stamp)}
+
+
+class DigestIn(BaseModel):
+    enabled: bool
+
+
+async def digest_pref(user: dict) -> dict:
+    doc = await db.digest_prefs.find_one({"user_id": user["id"]}, {"_id": 0}) or {}
+    return {"enabled": doc.get("enabled", False), "lastSentWeek": doc.get("last_sent_week"), "email": user.get("email")}
+
+
+@app.get("/api/v1/digest")
+async def get_digest(auth=Depends(require_auth)):
+    return await digest_pref(auth[0])
+
+
+@app.put("/api/v1/digest")
+async def put_digest(body: DigestIn, auth=Depends(require_auth)):
+    user = auth[0]
+    if body.enabled and not user.get("email"):
+        raise ApiError(400, "VALIDATION_FAILED", "Add an email address to your account first.")
+    await db.digest_prefs.update_one({"user_id": user["id"]}, {"$set": {"enabled": body.enabled}}, upsert=True)
+    return await digest_pref(user)
+
+
+@app.post("/api/digest/send-now")
+async def digest_send_now(request: Request):
+    from auth import current_session
+
+    found = await current_session(request)
+    if not found:
+        return JSONResponse({"detail": "Please sign in first"}, status_code=401)
+    user = found[0]
+    if not user.get("email"):
+        return JSONResponse({"detail": "Add an email address to your account first"}, status_code=400)
+    if not digest.allow_send_now(user["id"]):
+        return JSONResponse({"detail": "You've sent a few previews already. Try again in an hour."}, status_code=429)
+    try:
+        await digest.send_digest(await digest_item(user))
+    except digest.EmailUnavailable as exc:
+        if str(exc) == "undeliverable_recipient":
+            return JSONResponse({"detail": f"We couldn't deliver to {user['email']}. Check the address in your account"}, status_code=422)
+        return JSONResponse({"detail": "Email is temporarily unavailable"}, status_code=503)
+    except Exception:
+        logging.exception("Preview digest failed")
+        return JSONResponse({"detail": "Failed to send email"}, status_code=502)
+    return {"status": "sent", "to": user["email"]}
+
 
 SYSTEM_PROMPT = (
     "You are the AI assistant inside PersonalOS, a personal operating system for tasks, goals, habits, notes and planning. "
@@ -102,10 +186,21 @@ class ChatRequest(BaseModel):
     history: list[ChatTurn] = []
 
 
+def friendly_ai_error(msg: str) -> str:
+    if "credits" in msg or "quota" in msg:
+        return "your OpenAI account has no credits left"
+    if "RateLimit" in msg:
+        return "OpenAI rate limit reached, try again shortly"
+    if "AuthenticationError" in msg or "API key" in msg:
+        return "the OpenAI API key was rejected"
+    return "the AI service failed to respond"
+
+
 @app.post("/api/ai/chat")
 async def ai_chat(body: ChatRequest, request: Request):
-    me = await client.get("/api/v1/auth/me", headers={"cookie": request.headers.get("cookie", "")})
-    if me.status_code != 200:
+    from auth import current_session
+
+    if not await current_session(request):
         return JSONResponse({"detail": "Please sign in to use GPT 6 Luna"}, status_code=401)
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
@@ -122,53 +217,9 @@ async def ai_chat(body: ChatRequest, request: Request):
                 elif isinstance(ev, StreamDone):
                     break
         except Exception as exc:
-            msg = str(exc)
-            if "credits" in msg or "quota" in msg:
-                msg = "your OpenAI account has no credits left"
-            elif "RateLimit" in msg:
-                msg = "OpenAI rate limit reached, try again shortly"
-            elif "AuthenticationError" in msg or "API key" in msg:
-                msg = "the OpenAI API key was rejected"
-            else:
-                msg = "the AI service failed to respond"
-            yield f"data: {json.dumps({'error': msg})}\n\n"
+            yield f"data: {json.dumps({'error': friendly_ai_error(str(exc))})}\n\n"
 
     return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@app.post("/api/digest/send-now")
-async def digest_send_now(request: Request):
-    me = await client.get("/api/v1/auth/me", headers={"cookie": request.headers.get("cookie", "")})
-    user = me.json().get("user") if me.status_code == 200 else None
-    if not user:
-        return JSONResponse({"detail": "Please sign in first"}, status_code=401)
-    if not user.get("email"):
-        return JSONResponse({"detail": "Add an email address to your account first"}, status_code=400)
-    if not digest.allow_send_now(user["id"]):
-        return JSONResponse({"detail": "You've sent a few previews already. Try again in an hour."}, status_code=429)
-    res = await client.get(f"/internal/v1/digest/users/{user['id']}", headers=INTERNAL_HEADERS)
-    if res.status_code != 200:
-        return JSONResponse({"detail": "Could not load your data"}, status_code=502)
-    try:
-        await digest.send_digest(res.json())
-    except digest.EmailUnavailable as exc:
-        if str(exc) == "undeliverable_recipient":
-            return JSONResponse({"detail": f"We couldn't deliver to {user['email']}. Check the address in your account"}, status_code=422)
-        return JSONResponse({"detail": "Email is temporarily unavailable"}, status_code=503)
-    except Exception:
-        logging.exception("Preview digest failed")
-        return JSONResponse({"detail": "Failed to send email"}, status_code=502)
-    return {"status": "sent", "to": user["email"]}
-
-
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
-async def proxy(path: str, request: Request):
-    if path.startswith("internal"):
-        return JSONResponse({"detail": "Not found"}, status_code=404)
-    headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_HEADERS}
-    upstream = await client.request(request.method, f"/{path}", params=request.query_params, headers=headers, content=await request.body())
-    out = Response(content=upstream.content, status_code=upstream.status_code)
-    for k, v in upstream.headers.multi_items():
-        if k.lower() not in HOP_HEADERS:
-            out.headers.append(k, v)
-    return out
+__all__ = ["app", "public_user"]
