@@ -9,6 +9,7 @@ import { documents, workspaces } from "../../db/schema";
 const COLLECTION = "app_state";
 
 const putSchema = z.object({
+  baseVersion: z.number().int().min(0).optional(),
   envelope: z.object({ version: z.number(), savedAt: z.number(), state: z.record(z.string(), z.unknown()) }),
 });
 
@@ -31,13 +32,19 @@ export const stateRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =
   app.put(
     "/api/v1/state",
     { preHandler: (request) => app.authenticate(request), bodyLimit: 25 * 1024 * 1024 },
-    async (request) => {
+    async (request, reply) => {
       const userId = userIdOf(request);
       const parsed = putSchema.safeParse(request.body);
       if (!parsed.success) {
         throw new AppError("VALIDATION_FAILED", { detail: "State payload failed schema validation." });
       }
       const workspace = await db.query.workspaces.findFirst({ where: eq(workspaces.ownerId, userId) });
+      const current = await db.select({ version: documents.version }).from(documents).where(where(userId)).limit(1);
+      const currentVersion = current[0]?.version ?? 0;
+      if (parsed.data.baseVersion !== undefined && parsed.data.baseVersion < currentVersion) {
+        reply.code(409);
+        return { code: "CONFLICT_VERSION", version: currentVersion };
+      }
       const now = new Date();
       const rows = await db
         .insert(documents)

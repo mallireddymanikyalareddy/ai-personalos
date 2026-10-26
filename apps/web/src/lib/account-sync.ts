@@ -20,18 +20,53 @@ async function pull(): Promise<RemoteState> {
   return (await res.json()) as RemoteState;
 }
 
+type Envelope = { version: number; savedAt: number; state: Record<string, unknown> };
+
+function isEntityMap(value: unknown): value is Record<string, { updatedAt?: number }> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const first = Object.values(value)[0] as { id?: unknown; updatedAt?: unknown } | undefined;
+  return first == null || (typeof first === "object" && "id" in first && "updatedAt" in first);
+}
+
+function mergeEnvelopes(local: Envelope, remote: Envelope): Envelope {
+  const state: Record<string, unknown> = { ...remote.state, ...local.state };
+  for (const [key, remoteValue] of Object.entries(remote.state)) {
+    const localValue = local.state[key];
+    if (!isEntityMap(remoteValue) || !isEntityMap(localValue)) continue;
+    const merged = { ...remoteValue };
+    for (const [id, entity] of Object.entries(localValue)) {
+      const other = merged[id];
+      if (!other || (entity.updatedAt ?? 0) >= (other.updatedAt ?? 0)) merged[id] = entity;
+    }
+    state[key] = merged;
+  }
+  return { ...local, state };
+}
+
+async function put(envelope: Envelope): Promise<Response> {
+  return fetch("/api/v1/state", {
+    method: "PUT",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ envelope, baseVersion: knownVersion }),
+  });
+}
+
 async function push(): Promise<void> {
   if (timer) {
     clearTimeout(timer);
     timer = null;
   }
-  const res = await fetch("/api/v1/state", {
-    method: "PUT",
-    credentials: "include",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ envelope: JSON.parse(getOS().exportData()) }),
-    keepalive: false,
-  });
+  let envelope = JSON.parse(getOS().exportData()) as Envelope;
+  let res = await put(envelope);
+  if (res.status === 409) {
+    const remote = await pull();
+    if (remote.envelope) {
+      envelope = mergeEnvelopes(envelope, remote.envelope as Envelope);
+      applyRemote({ envelope, version: remote.version });
+    }
+    res = await put(envelope);
+  }
   if (res.ok) knownVersion = ((await res.json()) as { version: number }).version;
 }
 

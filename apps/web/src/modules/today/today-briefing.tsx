@@ -5,6 +5,8 @@ import * as React from "react";
 import { RefreshCw, Sunrise } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ModelLabel } from "@/components/ai/model-label";
+import { useAppState } from "@/store/use-os";
 import { buildAIContext, streamAIChat } from "@/lib/ai-stream";
 import { getOS } from "@/store/os";
 
@@ -21,6 +23,7 @@ export function TodayBriefing() {
   const [text, setText] = React.useState("");
   const [status, setStatus] = React.useState<"idle" | "loading" | "done" | "error">("idle");
   const [error, setError] = React.useState("");
+  const provider = useAppState().settings.aiProvider ?? "local";
 
   const generate = React.useCallback(async () => {
     setStatus("loading");
@@ -29,24 +32,37 @@ export function TodayBriefing() {
     try {
       const os = getOS();
       const local = os.aiRun("plan my day", { now: Date.now() }).message;
+      if ((os.getState().settings.aiProvider ?? "local") !== "openai") {
+        setText(local);
+        setStatus("done");
+        return;
+      }
       const full = await streamAIChat({ prompt: PROMPT, context: buildAIContext(os.getState(), local), history: [] }, setText);
       window.localStorage.setItem(cacheKey(), full);
       setStatus("done");
     } catch (err) {
+      window.sessionStorage.setItem(`${cacheKey()}:error`, (err as Error).message);
       setError((err as Error).message);
       setStatus("error");
     }
   }, []);
 
   React.useEffect(() => {
-    const cached = window.localStorage.getItem(cacheKey());
+    const usingGpt = getOS().getState().settings.aiProvider === "openai";
+    const cached = usingGpt ? window.localStorage.getItem(cacheKey()) : null;
+    const failed = usingGpt ? window.sessionStorage.getItem(`${cacheKey()}:error`) : null;
     if (cached) {
       setText(cached);
       setStatus("done");
       return;
     }
+    if (failed) {
+      setError(failed);
+      setStatus("error");
+      return;
+    }
     void generate();
-  }, [generate]);
+  }, [generate, provider]);
 
   return (
     <section
@@ -58,7 +74,7 @@ export function TodayBriefing() {
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
           <Sunrise className="size-4 text-accent" aria-hidden="true" />
           Morning briefing
-          <span className="rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-ink-3">GPT 6 Luna</span>
+          <span className="rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-ink-3"><ModelLabel /></span>
         </h2>
         <Button
           variant="secondary"

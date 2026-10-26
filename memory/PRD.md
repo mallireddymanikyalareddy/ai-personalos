@@ -11,7 +11,12 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - Repo running in preview; accounts persist across restarts
 - GPT 6 Luna provider in AI assistant with streaming + fallback to local answer
 - Fixed proxy cookie-jar session leak
+## Done (2026-10-26, iteration 2)
+- Per-account data: GET/PUT /api/v1/state (documents table, collection app_state, baseVersion 409 conflict + client per-entity merge); web lib/account-sync.ts pulls on login, debounced push, clears on logout
+- Name greeting from account displayName (Today + AI chat)
+- Morning briefing card on Today (GPT 6 Luna when selected, local engine otherwise; cached per day)
+- ModelLabel component replaces hardcoded GPT-5 badges in 6 assistant panels
 ## Backlog
 - P0: user to add OpenAI credits (currently 'no credits' error)
-- P1: per-user/server sync of app data (currently browser-only, shared across accounts in same browser)
-- P2: greeting displayName from profile; hardcoded "GPT-5" badges in module rails; branding consistency
+- P1: offline edits queue indicator / sync status badge
+- P2: branding consistency (LifeOS vs AI PersonalOS)
