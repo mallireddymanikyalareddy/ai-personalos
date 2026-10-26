@@ -70,19 +70,47 @@ async function put(envelope: Envelope): Promise<Response> {
   });
 }
 
+let inFlight: Promise<void> | null = null;
+let pendingAgain = false;
+
 async function push(): Promise<void> {
   if (timer) {
     clearTimeout(timer);
     timer = null;
   }
-  setStatus("syncing");
-  try {
-    await pushOnce();
-    setStatus("saved");
-  } catch {
-    setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "error");
-    timer = setTimeout(() => void push(), 15000);
+  if (inFlight) {
+    pendingAgain = true;
+    return inFlight;
   }
+  setStatus("syncing");
+  inFlight = (async () => {
+    try {
+      await pushOnce();
+      setStatus("saved");
+    } catch {
+      setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "error");
+      timer = setTimeout(() => void push(), 15000);
+    }
+  })();
+  await inFlight;
+  inFlight = null;
+  if (pendingAgain) {
+    pendingAgain = false;
+    await push();
+  }
+}
+
+function flushOnHide(): void {
+  if (!activeUser || !timer) return;
+  clearTimeout(timer);
+  timer = null;
+  void fetch("/api/v1/state", {
+    method: "PUT",
+    credentials: "include",
+    keepalive: true,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ envelope: JSON.parse(getOS().exportData()), baseVersion: knownVersion }),
+  });
 }
 
 async function pushOnce(): Promise<void> {
@@ -145,6 +173,7 @@ export async function startAccountSync(userId: string, displayName: string): Pro
     timer = setTimeout(() => void push(), PUSH_DELAY_MS);
   });
   document.addEventListener("visibilitychange", onVisible);
+  window.addEventListener("pagehide", flushOnHide);
 }
 
 export function stopAccountSync(): void {
@@ -155,6 +184,7 @@ export function stopAccountSync(): void {
   activeUser = null;
   setStatus("off");
   document.removeEventListener("visibilitychange", onVisible);
+  window.removeEventListener("pagehide", flushOnHide);
 }
 
 export async function endAccountSession(): Promise<void> {

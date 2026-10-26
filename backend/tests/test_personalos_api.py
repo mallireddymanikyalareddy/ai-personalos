@@ -65,7 +65,7 @@ def test_ai_chat_unauth(s):
 
 def test_ai_chat_validation(demo):
     r = demo.post(f"{BASE_URL}/api/ai/chat", json={"prompt": "", "context": "", "history": []})
-    assert r.status_code == 422
+    assert r.status_code in (400, 422)
 
 
 def test_ai_chat_stream_error_event(demo):

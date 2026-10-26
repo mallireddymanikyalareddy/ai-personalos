@@ -3,6 +3,6 @@
   "private": true,
   "scripts": {
     "start": "cd .. && API_URL=http://127.0.0.1:8001 npm run dev --workspace @personalos/web -- -p 3000 -H 0.0.0.0",
-    "build": "cd .. && npm ci --include=dev --no-audit --no-fund && rm -rf apps/web/.next-export && STATIC_EXPORT=1 npm run build --workspace @personalos/web && rm -rf frontend/build && cp -r apps/web/.next-export frontend/build"
+    "build": "cd .. && ([ -d node_modules/next ] || npm ci --include=dev --no-audit --no-fund) && rm -rf apps/web/.next-export && STATIC_EXPORT=1 npm run build --workspace @personalos/web && rm -rf frontend/build && cp -r apps/web/.next-export frontend/build"
   }
 }

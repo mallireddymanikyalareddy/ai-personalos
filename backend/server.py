@@ -11,7 +11,7 @@ from emergentintegrations.llm.chat import LlmChat, StreamDone, TextDelta, UserMe
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from pymongo import ReturnDocument
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -122,7 +122,7 @@ async def put_state(body: StateIn, auth=Depends(require_auth)):
 
 
 class DigestIn(BaseModel):
-    enabled: bool
+    enabled: StrictBool
 
 
 async def digest_pref(user: dict) -> dict:

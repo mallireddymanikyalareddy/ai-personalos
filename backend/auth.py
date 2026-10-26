@@ -130,7 +130,7 @@ def platform_of(ua: str) -> tuple[str, str]:
 
 def client_ip(request: Request) -> str | None:
     fwd = request.headers.get("x-forwarded-for", "")
-    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else None)
+    return fwd.split(",")[-1].strip() if fwd else (request.client.host if request.client else None)
 
 
 def origin_of(request: Request) -> str:
@@ -235,7 +235,7 @@ class LoginIn(BaseModel):
 @router.post("/auth/login")
 async def login(body: LoginIn, request: Request, response: Response):
     ident = body.identifier.strip().lower()
-    key = f"{client_ip(request)}:{ident}"
+    key = ident
     fails = await db.login_attempts.count_documents({"key": key, "at": {"$gte": now() - FAIL_WINDOW}})
     if fails >= MAX_FAILS:
         raise ApiError(429, "RATE_LIMITED", "Too many failed sign-in attempts. Try again in 15 minutes.")

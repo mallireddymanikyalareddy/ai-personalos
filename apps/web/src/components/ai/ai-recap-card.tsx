@@ -49,8 +49,10 @@ export function AIRecapCard({ id, title, icon: Icon, prompt, localFallback, auto
       window.sessionStorage.removeItem(`${cacheKey(id)}:error`);
       setStatus("done");
     } catch (err) {
-      window.sessionStorage.setItem(`${cacheKey(id)}:error`, (err as Error).message);
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      const transient = err instanceof TypeError || (err as Error).name === "AbortError" || /network/i.test(message);
+      if (!transient) window.sessionStorage.setItem(`${cacheKey(id)}:error`, message);
+      setError(message);
       setStatus("error");
     }
   }, [id, prompt, localFallback]);

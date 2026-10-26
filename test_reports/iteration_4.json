@@ -1,0 +1,54 @@
+{
+  "summary": "Tested the rebuilt Python FastAPI + MongoDB backend (same /api/v1 contract), the static build, and the UI end to end in preview. Backend: the new suite test_python_backend.py passes 36/36. It covers the register/login/me/logout contract, the pos_session httpOnly cookie, 409/400/401/429 error codes, profile PATCH deep-merge, onboarding, password change revoking other sessions, session and device list/revoke, reset request returning 202 with no user enumeration, reset with a bad token returning TOKEN_INVALID, state version increments, 409 on a stale baseVersion, per-user isolation, digest auth and toggle, AI chat SSE 'no credits' error, and one mailtest send-now returning {status:sent}. Legacy suites: 27/29 pass. One failure was an outdated 422 expectation, which I fixed in the test. The other shows that the digest PUT accepts 'yes' as a boolean. Static build: `yarn build` exits 0 in ~44s, and build/index.html, build/today.html and build/notebook/view.html exist. UI (all verified): register -> 4-step onboarding -> Today with the 'Uitest' greeting, Morning briefing and the 'Saved' sync badge. A task, a note and a journal entry all show up after logging in from a fresh browser context. The AI provider choice also carries over. Logout returns to /login, clears the account data from localStorage, and /today redirects to /login. The weekly email toggle persists after reload. The Journal evening reflection card renders. GPT 6 Luna on /ai shows the toast 'GPT 6 Luna unavailable: your OpenAI account has no credits left' and falls back to the local answer. Notebook: 'Open full editor' goes to /notebook/view?book=..&page=.. and the editor renders; the back link goes to /notebook/view?book=.. and the pages list renders; 'New page' works and the page survives a reload. Main finding: the login brute-force limit can be bypassed by spoofing X-Forwarded-For.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/v1/auth/login", "issue": "The brute-force limiter can be bypassed. The key is f'{client_ip}:{identifier}' and client_ip() trusts the first X-Forwarded-For value, which the client controls; ingress passes it through. Verified: 7 wrong passwords, each sent with a different X-Forwarded-For header, all returned 401 (no 429), and the correct password still logged in afterwards. Fix: rate-limit by identifier alone (plus a separate per-IP limit if wanted), or take the right-most/trusted hop instead of the first XFF entry.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "PUT /api/v1/digest", "issue": "{enabled:'yes'} is accepted and stored as true because of Pydantic lax coercion. Use StrictBool. The legacy test test_digest.py::test_digest_put_validation fails because of this."},
+      {"endpoint": "POST /api/digest/send-now, password-reset, verify-email", "issue": "allow_send_now keeps its limits in a process-memory dict, so they reset on every reload or restart. uvicorn --reload watches /app/backend, so editing tests/ resets them too."},
+      {"endpoint": "auth.issue_session", "issue": "find_one_and_update is called with return_document=True. That works because ReturnDocument.AFTER == True, but use ReturnDocument.AFTER for clarity."},
+      {"endpoint": "digest_loop", "issue": "Any EmailUnavailable in BILLING_CODES stops the loop for every remaining subscriber in that 15-minute cycle (break). Acceptable, but consider backoff."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AIRecapCard (Morning briefing)", "issue": "If the briefing fetch is interrupted (for example by navigating or reloading while it is in flight), the message 'Couldn't create this: network error.' is cached in sessionStorage and shown on every later visit in that session until the user clicks refresh. Seen on mobile /today after navigating away mid-request. Fix: don't cache AbortError or TypeError network errors, or retry once.", "selector": "[data-testid=today-briefing]", "priority": "LOW"},
+      {"component": "JournalEditor title", "issue": "The title placeholder is hard-coded as 'Thursday, October 8, 2026' while the entry date is Monday, Oct 26. Use the entry's date.", "selector": "input[id^=journal-title-]", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "yarn build in the preview container", "issue": "The build script runs `npm ci` at the monorepo root, which reinstalls node_modules underneath the running `next dev`. After the build, the preview dev server served a blank page (ENOENT /app/apps/web/.next/routes-manifest.json) until `sudo supervisorctl restart frontend`. This does not affect the deployment build. Note it for local runs, or use `npm ci` only when node_modules is missing.", "affected_selectors": []}
+    ],
+    "design_issues": [
+      {"screen": "Today (mobile 390px)", "issues": ["The header action row (date nav + 'Plan day' + '...') overflows the right edge; the '...' button is clipped"]},
+      {"screen": "Journal / Settings", "issues": ["Mood uses a native <select>, the journal date filter uses the native date picker, and quiet hours use native time inputs (not shadcn components)"]},
+      {"screen": "Notebook workspace", "issues": ["Creating a notebook uses window.prompt('Notebook name'); replace it with an in-app modal"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_python_backend.py", "/app/backend/tests/test_account_state.py", "/app/backend/tests/test_digest.py", "/app/backend/tests/test_personalos_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "HIGH: Make the login rate limit independent of the spoofable X-Forwarded-For (key on identifier, or use a trusted hop)",
+    "Use StrictBool for DigestIn.enabled",
+    "AIRecapCard: don't persist transient network or abort errors to sessionStorage",
+    "Journal title placeholder: use the entry date instead of the hard-coded 'Thursday, October 8, 2026'",
+    "Fix the mobile Today header overflow",
+    "Note: the demo account is not onboarded after the data reset, so login lands on /onboarding. Complete onboarding for demo if it is meant to be a ready demo account",
+    "Optional: legacy test_digest.py internal-path tests target removed Node routes (they pass only because those paths 404); prune them"
+  ],
+  "critical_code_review_comments": [
+    "auth.client_ip(): trusting X-Forwarded-For[0] makes the login limiter bypassable and lets clients forge the stored session IP.",
+    "account-sync.ts: push() calls are not serialised. The initial push and the debounced subscriber push can overlap and produce a 409 (seen once in console during registration). The 409 path merges and retries, so data was not lost, but a mutex or in-flight flag would avoid the extra round trips.",
+    "account-sync.ts: edits made within the 1.5s debounce before a full page reload or tab close are not flushed (no beforeunload/pagehide flush). In tests, with waits of at least 1.5s, all data persisted.",
+    "server.py ai_chat: a new LlmChat with a random session_id is created per request; history is flattened into the prompt. Fine.",
+    "digest.allow_send_now is shared by preview sends and reset/verify links (keys are prefixed). It lives in memory, so it is per-process and does not survive restarts.",
+    "next.config: static export has no /api rewrite, so production relies on ingress routing /api to the backend on the same origin. OK for the Emergent deploy."
+  ],
+  "updated_files": ["/app/backend/tests/test_python_backend.py (new)", "/app/backend/tests/test_personalos_api.py (ai_chat validation now accepts 400)"],
+  "success_rate": {"backend": "97% (36/36 new suite; legacy 28/29 after the test fix; 1 real minor bug plus 1 HIGH security issue found by manual probe)", "frontend": "95% (all requested flows pass; minor UI issues only)"},
+  "test_credentials": "demo / DemoPass123! (exists but NOT onboarded), mailtest / TestPass123!. UI test user created: uitest32583@example.com / TestPass123! (onboarded, has TEST_UI task/note/journal, TEST_UI Book notebook, GPT 6 Luna selected, weekly email ON)",
+  "seed_data_creation": "Many test_<hex> users created by pytest (register-only). The UI user uitest32583@example.com has the weekly digest ENABLED; the digest loop may try to email that undeliverable example.com address on Mondays. One preview email was sent to mailtest (delivered+personalos@resend.dev).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=<preview url> pytest /app/backend/tests/test_python_backend.py (it sends 1 real email via mailtest send-now, max 3/h). Running `cd /app/frontend && yarn build` breaks the running dev server; run `sudo supervisorctl restart frontend` afterwards. Signup selectors: #first-name #last-name #email #password, [aria-labelledby=terms-label], button[type=submit]; onboarding step 2 needs a life area clicked (get_by_text('Work')). Notebook: [aria-label='New notebook'] opens window.prompt; [data-testid=notebook-new-note] opens the edit modal; 'Open full editor' leads to /notebook/view?book&page. Sign out is in the avatar menu (button with the display name) -> menuitem 'Sign out'. Note: get_by_role('button', name='New Note') without exact=True also matches 'New notebook'.",
+  "rca of the issue": "Login rate-limit bypass: auth.py login() builds key=f'{client_ip(request)}:{ident}'; client_ip returns x-forwarded-for.split(',')[0], which the client sets. Changing XFF on each attempt gives a new key, so the count never reaches 5. Reproduce: 7 wrong-password POST /api/v1/auth/login requests with X-Forwarded-For: 1.2.3.N all return 401; then the correct password returns 200. Mitigation: count failures per identifier (and optionally per real IP from the right-most trusted proxy hop)."
+}
