@@ -29,6 +29,7 @@ import { useAuth } from "@/modules/auth/auth-context";
 import { useThemeEffect } from "@/lib/theme";
 import { getOS } from "@/store/os";
 import { useAppState } from "@/store/use-os";
+import { BrandMark } from "@/components/ui/brand-mark";
 
 // Palette sampled from the PersonalOS landing mockup.
 const C = {
@@ -196,7 +197,7 @@ export function LandingPage() {
       <header className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
         <Link href="/" aria-label="PersonalOS home" className="shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/landing/logo.png" alt="PersonalOS" className="h-9 w-auto" />
+          <BrandMark size="md" />
         </Link>
 
         <nav aria-label="Primary" className="hidden items-center gap-7 lg:flex">
@@ -680,7 +681,7 @@ export function LandingPage() {
           <div className="flex flex-wrap items-start justify-between gap-8">
             <div className="max-w-sm">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/landing/logo.png" alt="PersonalOS" className="h-8 w-auto" />
+              <BrandMark size="sm" />
               <p className="mt-3 text-sm leading-relaxed" style={{ color: C.gray }}>
                 Your personal operating system for planning, creating, focusing and growing.
               </p>

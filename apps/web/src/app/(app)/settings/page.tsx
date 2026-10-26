@@ -1366,25 +1366,6 @@ export default function SettingsPage() {
               }
             >
               <div className="space-y-1.5">
-                <Row label="Email digest" hint="A summary of your week or day.">
-                  <Select
-                    aria-label="Email digest"
-                    className="w-36"
-                    value={prefs.notifications.emailDigest}
-                    onChange={(event) =>
-                      savePreferences({
-                        notifications: {
-                          ...prefs.notifications,
-                          emailDigest: event.target.value as "off" | "daily" | "weekly",
-                        },
-                      })
-                    }
-                  >
-                    <option value="off">Off</option>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                  </Select>
-                </Row>
                 <Row label="Daily briefing" hint="A morning summary of your day.">
                   <Switch
                     label="Daily briefing"

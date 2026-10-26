@@ -44,10 +44,9 @@ async def digest_loop():
                     await client.post(f"/internal/v1/digest/users/{item['id']}/sent", headers=INTERNAL_HEADERS, json={"week": week})
                 except digest.EmailUnavailable as exc:
                     logging.warning("Weekly digest not sent: %s", exc)
-                    if str(exc) == "undeliverable_recipient":
-                        await client.post(f"/internal/v1/digest/users/{item['id']}/sent", headers=INTERNAL_HEADERS, json={"week": week})
-                        continue
-                    break
+                    if str(exc) in ("insufficient_credits", "integration_disabled", "daily_limit_reached"):
+                        break
+                    await client.post(f"/internal/v1/digest/users/{item['id']}/sent", headers=INTERNAL_HEADERS, json={"week": week})
                 except Exception:
                     logging.exception("Weekly digest failed for %s", item["id"])
         except Exception:

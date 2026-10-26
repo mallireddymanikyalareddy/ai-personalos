@@ -1,0 +1,47 @@
+{
+  "summary": "Tested Sync badge, Evening reflection (Journal), Morning briefing regression, Weekly briefing email (Settings > Notifications + digest APIs + internal path isolation), branding, and regression (login, per-account sync, AI chat fallback). Backend 29/29 pytest pass (11 new digest tests + 18 regression). Sync badge, weekly email toggle/persist/preview (2 sends total: mailtest -> 'Preview sent to delivered+personalos@resend.dev', demo -> \"We couldn't deliver to demo@personalos.app...\"), GPT 6 Luna 'no credits' error states, and after-5pm auto-run all work. Two real issues: (1) the local 'PersonalOS Local' evening reflection shows 'I will create \"review my day\". Confirm and it lands in your inbox.' because there is no 'review my day' intent; (2) the logo bitmaps on landing header/footer, login and signup still say 'LifeOS'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "uvicorn --reload (supervisor backend)", "issue": "WatchFiles reloads the backend when files in /app/backend/tests/ change (seen in logs when test_digest.py was edited). Each reload kills and restarts the PGlite API child process. That is the same restart pattern that corrupted PGlite before. Exclude tests/ (and *.md/*.json) from the reload watch."},
+      {"endpoint": "POST /api/digest/send-now", "issue": "The rate limiter keeps counts in memory, so they reset on every reload or restart. Failed attempts also count toward the 3/hour limit. Acceptable for now. Not exercised to 429 to save email quota (reviewed in code only)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "JournalEveningRecap (local fallback)", "issue": "With PersonalOS Local selected, the recap text is 'I will create \"review my day\". Confirm and it lands in your inbox.' RCA: journal-evening-recap.tsx calls getOS().aiRun('review my day'). No rule in packages/core/src/engines/ai/intents.ts matches 'review my day' (weekly_review only matches week phrases), so the text falls through to create_task. The same wrong text is also sent as context to GPT 6 Luna. Fix: add a daily_review intent/pattern, or build a dedicated local daily recap (completed today, open items, tomorrow's focus).", "selector": "[data-testid=journal-evening-recap-text]", "priority": "HIGH"},
+      {"component": "Branding logo images", "issue": "/landing/logo.png (landing header and footer) and /auth/signup-logo.png (login and signup, desktop and mobile) are bitmaps showing 'LifeOS', right next to 'Welcome Back to PersonalOS'. This is the main logo, not just the hero mockup. Replace with an SVG/text logo 'PersonalOS' (the app shell already uses an icon + text). /landing/hero-devices.png mockup also shows LifeOS (as expected).", "selector": "header img[src='/landing/logo.png'], img[src='/auth/signup-logo.png']", "priority": "HIGH"},
+      {"component": "Landing page <title>", "issue": "The document title is just 'Home'. app/page.tsx sets metadata title 'Home', and the root layout template '%s · PersonalOS' does not apply to the same segment. Use title: { absolute: 'PersonalOS' } or 'Home · PersonalOS'.", "selector": "title", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings > Notifications", "issues": ["The older 'Email digest: Daily' select in the Notifications card sits directly under the new 'Monday briefing email' card and looks unrelated or non-functional. Confusing; remove it or link it.", "Quiet hours From/Until use the browser's native time inputs"]},
+      {"screen": "Journal header", "issues": ["The date filter uses the browser's native date picker (mm/dd/yyyy + native calendar icon) instead of the shadcn Calendar"]},
+      {"screen": "Today Morning briefing (local)", "issues": ["The local text reads 'I drafted a plan ...: 0 blocks covering 0 min around 0 calendar events' even when a task is due today. Weak content; probably existing behaviour."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_digest.py", "/app/backend/tests/test_account_state.py", "/app/backend/tests/test_personalos_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix the local evening reflection: 'review my day' falls through to the create-task intent (packages/core intents.ts or a dedicated local recap builder)",
+    "Replace the LifeOS logo bitmaps /landing/logo.png and /auth/signup-logo.png with PersonalOS branding (consider regenerating hero-devices.png)",
+    "Set the landing page title to include PersonalOS",
+    "Exclude /app/backend/tests from uvicorn reload watch to avoid PGlite child restarts",
+    "Remove or clarify the old 'Email digest: Daily' select in the Notifications settings",
+    "Optional: package.json description and README still say 'AI PersonalOS' (not user-facing)"
+  ],
+  "critical_code_review_comments": [
+    "ai-recap-card.tsx: the GPT path sends localFallback() output as AI context. With the intent bug, the context says 'I will create review my day'.",
+    "weekly-email-card.tsx: if GET /api/v1/digest fails, the card renders null silently. There is no error or loading state.",
+    "server.py digest_loop: any EmailUnavailable other than undeliverable_recipient stops the loop for every remaining subscriber in that cycle (break). This is intentional for a provider outage, but one bad recipient code could block everyone. Consider continue + backoff.",
+    "server.py proxy: blocks only paths starting with 'internal'. Fastify requireInternal returns 404 without the token, so the layered defence holds. Verified that //internal, /api/../internal, %2E%2E and %69nternal all return 404.",
+    "Today is Monday, after 7am UTC: the digest loop will send to opted-in users within 15 min. Demo has enabled=true, lastSentWeek=2026-W44 (already marked). mailtest was toggled back to off."
+  ],
+  "updated_files": ["/app/backend/tests/test_digest.py"],
+  "success_rate": {"backend": "100% (29/29)", "frontend": "85% (sync badge, recap GPT/error/auto-run, briefing, weekly email, logout, sync OK; local recap text wrong; logo branding fails)"},
+  "test_credentials": "demo / DemoPass123!, mailtest / TestPass123! (from /app/memory/test_credentials.md). mailtest was onboarded via API in this run.",
+  "seed_data_creation": "Added task 'TEST_sync badge task' to the demo account. Registered several test<hex>@example.com users via pytest (digest left disabled). mailtest onboarded (timezone UTC). 2 preview emails sent (mailtest delivered, demo undeliverable).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=<preview url> pytest /app/backend/tests/ (frontend/.env not present at /app/frontend; use the preview URL). Settings notifications: /settings?tab=notifications; the switch is '[data-testid=weekly-email-toggle] [role=switch]' (aria-checked). Model switch: /ai -> aria-label 'Choose AI model' -> menuitem. Today quick add: placeholder 'Add a task'. Use page.clock.set_system_time(18:30) to test the after-5pm auto-run. Send-now preview limit is 3/h/user (in-memory). Editing files in /app/backend/tests triggers a backend reload (and a PGlite child restart), so avoid churn.",
+  "rca of the issue": "Local evening reflection: aiRun('review my day') -> intents.ts has no matching rule -> default create_task -> assistant.ts:147 message 'I will create \"review my day\"...'. Reproduce: log in as demo, select PersonalOS Local, open /journal, click Create in Evening reflection."
+}

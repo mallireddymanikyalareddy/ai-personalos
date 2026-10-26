@@ -8,6 +8,7 @@ import { ArrowRight, Check, Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { errorMessage, fieldError } from "@/lib/api";
 import { AUTH, PROVIDERS, useOAuthStart } from "@/modules/auth/auth-visuals";
 import { useAuth } from "@/modules/auth/auth-context";
+import { BrandMark } from "@/components/ui/brand-mark";
 
 const { ink: INK, body: BODY, muted: MUTED, purple: PURPLE, danger: DANGER } = AUTH;
 
@@ -103,7 +104,7 @@ export function LoginPage() {
           <div className="relative z-10 flex flex-1 flex-col px-12 pt-10 xl:px-20">
             <div className="flex items-center gap-5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/auth/signup-logo.png" alt="PersonalOS" className="h-[56px] w-auto" />
+              <BrandMark size="lg" />
               <span className="h-11 w-px shrink-0" style={{ background: "#C9C7E6" }} aria-hidden="true" />
               <p className="text-[15.5px] leading-[1.25]" style={{ color: "#2F3355" }}>
                 Your Personal
@@ -163,7 +164,7 @@ export function LoginPage() {
           <div className="w-full max-w-[740px]">
             <div className="mb-6 flex items-center gap-3 lg:hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/auth/signup-logo.png" alt="PersonalOS" className="h-10 w-auto" />
+              <BrandMark size="md" />
               <span className="text-[13px]" style={{ color: BODY }}>
                 Your Personal Operating System
               </span>

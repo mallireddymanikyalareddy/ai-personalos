@@ -8,6 +8,7 @@ import { ArrowRight, Check, Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import { ApiError, errorMessage, fieldError } from "@/lib/api";
 import { AUTH, PROVIDERS, useOAuthStart } from "@/modules/auth/auth-visuals";
 import { useAuth } from "@/modules/auth/auth-context";
+import { BrandMark } from "@/components/ui/brand-mark";
 
 const {
   ink: INK,
@@ -156,7 +157,7 @@ export function SignupPage() {
         <aside className="relative hidden min-h-dvh flex-col lg:flex">
           <div className="flex flex-1 flex-col px-12 pt-6 xl:px-20">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/auth/signup-logo.png" alt="PersonalOS" className="h-[56px] w-auto self-start" />
+            <BrandMark size="lg" className="self-start" />
             <p className="mt-2 text-[16px]" style={{ color: "#2F3355" }}>
               Your Personal Operating System
             </p>
@@ -208,7 +209,7 @@ export function SignupPage() {
           <div className="w-full max-w-[860px]">
             <div className="mb-6 flex items-center gap-3 lg:hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/auth/signup-logo.png" alt="PersonalOS" className="h-10 w-auto" />
+              <BrandMark size="md" />
               <span className="text-[13px]" style={{ color: BODY }}>
                 Your Personal Operating System
               </span>
