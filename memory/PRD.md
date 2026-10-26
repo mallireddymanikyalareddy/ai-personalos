@@ -28,7 +28,14 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - Frontend static export: frontend/package.json `build` -> Next export (STATIC_EXPORT=1, distDir .next-export) copied to frontend/build; dev uses distDir .next-dev
 - Notebook routes moved to /notebook/view?book=&page=
 - .gitignore no longer ignores .env; frontend/.env added
+## Done (2026-10-26, iterations 8-11: bug sweep)
+- Settings appearance persisted via preferences; profile (name/tz/prefs) applied to local state after account sync
+- Reset/verify links use APP_URL or Host (never X-Forwarded-Host); stricter onboarding + preference validation; atomic state PUT; 26MB body limit
+- Onboarding draft kept in sessionStorage; testids added
+- Paper orphan pages, journal placeholder, Enter-to-submit (Goals/Today), integrations 'Preparing', local AI task questions & polite prefixes
 ## Backlog
 - P0: user to add OpenAI credits (currently 'no credits' error)
 - P1: offline edits queue indicator / sync status badge
+- P1: onboarding enhancements (first goal/habits, Monday email opt-in, AI model choice, skip-for-later)
+- P2: Tasks 'All status' hides done tasks; Templates empty text; AI hero icon overlap; Paper dialog Escape timing
 - P2: regenerate landing hero mockup image with PersonalOS name; persistent rate limiter for preview emails

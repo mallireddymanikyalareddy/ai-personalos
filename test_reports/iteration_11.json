@@ -1,0 +1,18 @@
+{
+  "summary": "Iteration 11 (frontend only). Checked the stripCommandPrefix fix on the AI page with the PersonalOS Local model selected. 'Can you remind me to buy milk?' suggests the task 'buy milk' with no 'Can you' and no '?'. 'please remind me to call mom' suggests 'call mom'. 'What tasks do I have?' lists the 2 open tasks. Regression: the demo login reaches /today and the Today and AI pages load with no page errors. The vitest polite.test.ts passes.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/packages/core/src/engines/ai/polite.test.ts"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "polite.test.ts only covers 'Can you remind me to buy milk?'. Add cases for 'please remind me to call mom' (exact 'call mom'), 'could you add a task: X?', and an exact-equality check on the title rather than toContain.",
+    "stripCommandPrefix applies its patterns in a fixed order, so 'add a task: please remind me to X' and 'remind me to please X' only work partly. This is a low-priority edge case."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "demo / DemoPass123!",
+  "seed_data_creation": "None. Proposals were not accepted, so no tasks were created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The AI page has a 'Choose AI model' button (role=button) with menuitem 'PersonalOS Local'. The composer is [data-testid=ai-composer], the send button is [data-testid=ai-send], replies are [data-testid=ai-assistant-message] and proposals are [data-testid=ai-proposals]. Login uses input[name=email] (a handle works) and input[name=password], then Enter, then redirects to /today."
+}
