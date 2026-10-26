@@ -1,0 +1,37 @@
+{
+  "summary": "Regression test of the backend complexity refactor (auth.py patch_profile/post_onboarding, digest.py _assert_safe_email/_collect, server.py digest_loop). I reviewed the diff against HEAD~1: apart from one minor ordering change (below), the logic is the same. Regression suites (test_python_backend, test_iter5_fixes, test_iter6_limiter, test_account_state) pass: 52 tests, plus test_iter6_limiter 5/5 after I updated one stale test. The send-now test was deselected so no email was sent. test_iter6_limiter::test_pair_limit_per_ip_logic failed at first. The cause was not this refactor: commit c678949 had changed client_ip() to use XFF[-3], and the test still assumed the rightmost hop was the client. I updated the test to the 3-hop chain and it passes. The new test_iter7_refactor.py passes 32/32. It covers: PATCH /users/me (displayName valid/empty/whitespace/65 chars/non-string, 64 chars OK, timezone valid and Mars/Base -> 400, locale truncated to 35, avatar https/data:image/http -> 400/null clears, preferences deep-merge plus invalid theme/time -> 400, {} and all-null -> 400 (root), non-object -> 400, unauth -> 401); onboarding (bad tz -> 400, unknown area -> 400 with lifeAreaNames and completed stays false, valid with and without displayName); digest._collect (overdue sorted, due this week, done/cancelled excluded, active goals, archived habits excluded, None envelope); _assert_safe_email (rejects form, http, bit.ly, mismatched anchor host, 'send your password' in the body and a credential ask in the subject, numeric host; accepts build_email() with and without a plan); claim_digest_week (None for no user/no email/Tuesday/Monday 06:59, claims once and then None); run_digest_pass with send_digest monkeypatched (completes, sends nothing); send_weekly_digest billing error returns False and rolls back last_sent_week. UI smoke as demo: login -> /today; Settings > Profile name change saves (PATCH 200) and survives a reload; restored to 'Demo'. Settings > Notifications Monday briefing toggle: PUT /v1/digest 200, enabled=true, toast shown, survives a reload, toggled back off.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PATCH /api/v1/users/me", "issue": "Returns 500 (not 400) when preferences.workingHours or preferences.sleepSchedule is not an object, e.g. {\"preferences\":{\"workingHours\":\"x\"}}. Cause: validate_preferences calls (prefs.get(path[0]) or {}).get(...) on a str. This existed before the refactor."},
+      {"endpoint": "POST /api/v1/users/me/onboarding", "issue": "Returns 500 when lifeAreaNames is not iterable, e.g. 5. Cause: _onboarding_life_areas iterates it without a list check. This existed before the refactor. A string such as 'Work' is iterated char-by-char and gets 400 errors per character, which is odd but not a crash."},
+      {"endpoint": "POST /api/v1/users/me/onboarding", "issue": "A small behaviour change from the refactor: life-area validation now runs after preferences validation (it used to run before). When both are invalid, errors[].field is now preferences.* instead of lifeAreaNames. This is harmless but is not strictly 'no behaviour change'."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings > Profile", "issues": ["The Display name, Timezone, Language and Save changes elements have no data-testid. This is a testability gap; the test had to use labels and roles."]},
+      {"screen": "Settings > Notifications", "issues": ["The quiet hours From/Until fields use the browser's native time input instead of a styled picker. Minor."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter7_refactor.py", "/app/backend/tests/test_iter6_limiter.py", "/app/test_reports/pytest/pytest_iter7_regression.xml", "/app/test_reports/pytest/pytest_iter7_refactor.xml"],
+  "action_items": [
+    "LOW: In validate_preferences, check that workingHours and sleepSchedule are dicts and raise invalid(...) instead of a 500.",
+    "LOW: In _onboarding_life_areas, require a list of strings and return 400 otherwise.",
+    "LOW (optional): Move the _onboarding_life_areas call back before validate_preferences to keep the original error precedence exactly.",
+    "LOW: Add data-testid to the Settings Profile inputs and the Save button."
+  ],
+  "critical_code_review_comments": [
+    "The refactor is correct: PROFILE_FIELDS handlers, validate_profile_update, apply_user_update, the _check_* helpers, _split_by_due (sort then filter is the same as filter then sort), and claim_digest_week/send_weekly_digest/run_digest_pass all keep the original semantics, including the billing break and rollback.",
+    "_timezone stores the raw value but validates str(value). A non-string that happens to be a valid name after str() is unlikely, so this is fine.",
+    "patch_profile and post_onboarding call request.json() without handling invalid JSON. A malformed body would 500 for an authenticated user (unauthenticated requests get 401 first)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter7_refactor.py (new)", "/app/backend/tests/test_iter6_limiter.py (test_pair_limit_per_ip_logic updated to the XFF[-3] 3-hop topology)"],
+  "success_rate": {"backend": "100% (89/89 including the updated limiter test)", "frontend": "100% (login, profile save, weekly email toggle)"},
+  "seed_data_creation": "Throwaway users test_rf_*, test_pb_* and test_rl_* (password GoodPass1234!). TEST_digest_* digest_prefs rows were removed in teardown. Demo is restored: displayName 'Demo', digest disabled.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the regression with --deselect backend/tests/test_python_backend.py::test_mailtest_send_now_once to avoid sending real email. test_iter7_refactor.py imports server/digest directly (sys.path /app/backend) and uses one shared asyncio loop for motor. Settings nav: use main.get_by_text('Notifications', exact=True), because the top-bar bell button has the same name. Settings tab URL: /settings?tab=notifications."
+}

@@ -427,6 +427,9 @@ def validate_preferences(prefs: dict) -> None:
                            ("defaultPlanningView", {"day", "week", "month", "quarter"})]:
         if field in prefs and prefs[field] not in allowed:
             raise invalid(f"preferences.{field}", f"must be one of {sorted(allowed)}")
+    for group in ("workingHours", "sleepSchedule", "notifications", "ai"):
+        if group in prefs and not isinstance(prefs[group], dict):
+            raise invalid(f"preferences.{group}", "must be an object")
     for path in [("workingHours", "start"), ("workingHours", "end"), ("sleepSchedule", "bedtime"), ("sleepSchedule", "wakeTime")]:
         value = (prefs.get(path[0]) or {}).get(path[1])
         if value is not None and not TIME_RE.match(str(value)):
@@ -495,6 +498,8 @@ async def get_onboarding(auth=Depends(require_auth)):
 
 
 def _onboarding_life_areas(names) -> list:
+    if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+        raise invalid("lifeAreaNames", "must be a list of life area names", "Onboarding failed schema validation.")
     catalog = {a["name"] for a in LIFE_AREA_CATALOG}
     unknown = [n for n in names if n not in catalog]
     if unknown:
@@ -509,10 +514,10 @@ def validate_onboarding(body, user: dict) -> dict:
     tz = str(body.get("timezone", ""))
     if not valid_tz(tz):
         raise invalid("timezone", "must be a valid IANA timezone", "Onboarding failed schema validation.")
+    life_areas = _onboarding_life_areas(body.get("lifeAreaNames") or [])
     prefs = body.get("preferences") or {}
     validate_preferences(prefs)
-    update = {"timezone": tz, "locale": str(body.get("locale") or "en")[:35],
-              "life_areas": _onboarding_life_areas(body.get("lifeAreaNames") or []),
+    update = {"timezone": tz, "locale": str(body.get("locale") or "en")[:35], "life_areas": life_areas,
               "preferences": deep_merge(user.get("preferences") or {}, prefs), "onboarding_completed_at": now(), "updated_at": now()}
     if body.get("displayName"):
         update["display_name"] = str(body["displayName"]).strip()[:64]

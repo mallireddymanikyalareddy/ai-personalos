@@ -20,14 +20,16 @@ def _fail(base, h, headers=None):
     return requests.post(f"{base}/auth/login", json={"identifier": h, "password": "wrongpass!!"}, headers=headers or {})
 
 
-# Logic: per (ip, ident) 5 failures -> 429 for that ip; other ip still allowed (rightmost XFF is the client)
+# Logic: per (ip, ident) 5 failures -> 429 for that ip; other ip still allowed
+# client_ip() uses XFF[-3] (client, cloudflare, gcp-lb topology) since commit c678949
 def test_pair_limit_per_ip_logic():
     h = _register()
+    chain = "9.9.9.9, 172.64.0.1, 34.111.104.211"
     for _ in range(5):
-        assert _fail(LOCAL, h, {"X-Forwarded-For": "9.9.9.9, 10.0.0.1"}).status_code == 401
-    assert _fail(LOCAL, h, {"X-Forwarded-For": "9.9.9.9, 10.0.0.1"}).status_code == 429
-    # spoofing left-most entry does not bypass (rightmost is used)
-    assert _fail(LOCAL, h, {"X-Forwarded-For": "5.5.5.5, 10.0.0.1"}).status_code == 429
+        assert _fail(LOCAL, h, {"X-Forwarded-For": chain}).status_code == 401
+    assert _fail(LOCAL, h, {"X-Forwarded-For": chain}).status_code == 429
+    # spoofing a prepended left-most entry does not bypass (XFF[-3] is used)
+    assert _fail(LOCAL, h, {"X-Forwarded-For": "5.5.5.5, " + chain}).status_code == 429
     # a different client ip can still log in with the right password
     r = requests.post(f"{LOCAL}/auth/login", json={"identifier": h, "password": "GoodPass1234!"},
                       headers={"X-Forwarded-For": "10.0.0.2"})
