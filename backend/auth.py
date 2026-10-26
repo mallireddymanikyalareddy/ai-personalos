@@ -133,7 +133,10 @@ def client_ip(request: Request) -> str | None:
     if cf:
         return cf.strip()
     fwd = request.headers.get("x-forwarded-for", "")
-    return fwd.split(",")[-1].strip() if fwd else (request.client.host if request.client else None)
+    parts = [p.strip() for p in fwd.split(",") if p.strip()]
+    if parts:
+        return parts[-3] if len(parts) >= 3 else parts[0]
+    return request.client.host if request.client else None
 
 
 def origin_of(request: Request) -> str:

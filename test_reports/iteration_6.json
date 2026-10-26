@@ -1,0 +1,32 @@
+{
+  "summary": "Focused retest of the 2 fixes from iteration 5. (1) Dev server after static build: PASS. `yarn build` exited 0 in 37s and produced .next-export and frontend/build. The frontend was not restarted. /login returned 200 and all 7 /_next/static chunks returned 200. In the browser, the mailtest login landed on /today and a reload worked, with no 4xx /_next responses and no page errors. (2) Login limiter: the logic is correct, but it does not work behind the real ingress. Tests against the backend directly (localhost:8001 with controlled headers) pass: 5 failures per (ip+identifier) give 429, spoofing the left-most XFF entry does not bypass it, a different client IP can still log in, the identifier-wide cap of 20 works, and cf-connecting-ip is preferred. Through the public URL, spoofed XFF still gets 429 after 5 failures. However, header probing showed that the preview ingress sends `X-Forwarded-For: <client>, <cloudflare-ip>, <gcp-lb-ip 34.111.104.211>`, and cf-connecting-ip is not forwarded (a client that sends it gets 403 at the edge). So client_ip() always resolves to the shared GCP LB IP 34.111.104.211, not the real client (my egress IP was 35.193.209.116). Every user therefore shares the same 'ip', the pair key is effectively identifier-only, and 5 bad attempts from anywhere still lock out an account for everyone. The targeted-lockout issue from iteration 5 is NOT actually fixed in this deployment topology. (3) mailtest is onboarded: completed=true and the UI lands on /today. Regression: test_python_backend.py passed 35/35 (send_now_once was deselected so no email was sent). test_iter5_fixes.py passed 4/4 unchanged, because its expectations still hold. The new test_iter6_limiter.py passed 5/5.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/v1/auth/login (auth.py client_ip)", "issue": "Rightmost XFF hop is the GCP load balancer (34.111.104.211), identical for all users, so (ip+identifier) limiting degenerates to identifier-only at 5 failures and targeted account lockout is still possible. Real client is XFF[-3] in this topology (client, cloudflare, gcp-lb). cf-connecting-ip is never present at the backend."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/login", "issues": ["Login inputs and submit button have no data-testid (only brand-mark). Minor testability gap."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter6_limiter.py", "/app/backend/tests/test_iter5_fixes.py", "/app/backend/tests/test_python_backend.py", "/app/test_reports/pytest/pytest_iter6.xml", "/app/test_reports/pytest/pytest_results_iter6.xml"],
+  "action_items": [
+    "MEDIUM: Fix client_ip() to choose the correct hop. For example, add a TRUSTED_PROXY_HOPS env var (2 for preview: cloudflare + GCP LB) and use xff_parts[-(hops+1)], falling back to the rightmost hop. Do not rely on cf-connecting-ip, which never reaches the backend. Alternatively, accept identifier-level lockout but raise the per-identifier threshold. Note that production deployment may have a different hop count, so verify it there.",
+    "LOW: Add data-testid to the login form inputs and submit button"
+  ],
+  "critical_code_review_comments": [
+    "auth.py login(): the check-then-insert on login_attempts is not atomic, so parallel bad attempts can exceed 5 slightly. This is acceptable.",
+    "auth.py login(): a successful login deletes only the pair-key attempts, not the ident-wide count. This is fine, but it means the 20-cap persists for 15 minutes even after the owner logs in.",
+    "next.config.ts: the dev build uses .next-dev and the export uses .next-export, but `next build` with output:'export' still writes .next (Next forces config.distDir), which is harmless now. Consider adding .next, .next-dev and .next-export to .gitignore."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter6_limiter.py (new). A temporary header-probe route was added to server.py and removed; the file is restored byte-identical."],
+  "success_rate": {"backend": "100% (44/44 tests); limiter fix ineffective behind real ingress", "frontend": "100% (dev server survives build; mailtest lands on /today)"},
+  "seed_data_creation": "Throwaway test_rl_* users (password GoodPass1234!) were created, with login_attempts for them.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The preview XFF chain is 'client, cloudflare-ip, 34.111.104.211'. The test_iter6_limiter.py logic tests hit localhost:8001 directly to control the client IP. If client_ip() changes to use the hop count, update those tests (they currently assume the rightmost hop is the client). Deselect test_mailtest_send_now_once to avoid sending email. The frontend survives `yarn build` without a restart."
+}
