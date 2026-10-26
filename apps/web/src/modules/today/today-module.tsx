@@ -26,6 +26,7 @@ import {
   TodayRoutinesPanel,
 } from "./today-extra";
 import { TodayHero } from "./today-hero";
+import { TodayBriefing } from "./today-briefing";
 import {
   TodayActivityPanel,
   TodayGoalsPanel,
@@ -162,6 +163,7 @@ export function TodayModule() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-4">
           <TodayHero welcome={welcome} stats={stats} day={selectedDay} onAddMemory={() => navigate("/memory")} />
+          <TodayBriefing />
 
           <div className="grid gap-4 lg:grid-cols-2">
             <TodaySchedulePanel entries={schedule} />

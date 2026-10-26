@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { ModelLabel } from "@/components/ai/model-label";
+
 import type { LucideIcon } from "lucide-react";
 
 import {
@@ -52,7 +54,7 @@ export function PaperAssistant({
           <Sparkles className="size-4 text-accent-ink" aria-hidden="true" />
           AI Paper Assistant
         </h2>
-        <span className="rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-ink-3">GPT-5</span>
+        <span className="rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-ink-3"><ModelLabel /></span>
       </header>
 
       <p className="rounded-xl bg-surface-2/70 p-2.5 text-[12px] leading-snug text-ink-3">

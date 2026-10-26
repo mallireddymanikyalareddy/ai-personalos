@@ -6,6 +6,7 @@ import type { ProfileResponse } from "@personalos/api-contract/account";
 
 import { ApiError, accountApi, authApi, isNetworkFailure } from "@/lib/api";
 import { getOS } from "@/store/os";
+import { endAccountSession, startAccountSync } from "@/lib/account-sync";
 
 export type AuthStatus = "loading" | "anonymous" | "authenticated" | "offline";
 
@@ -68,6 +69,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (!profile) return;
+    void startAccountSync(profile.id, profile.displayName).catch(() => undefined);
+  }, [profile]);
+
+  React.useEffect(() => {
+    if (!profile) return;
     const planning = getOS().getState().settings.planning;
     const workingHours = profile.preferences.workingHours;
     getOS().updateSettings({
@@ -105,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = React.useCallback(async () => {
     try {
+      await endAccountSession();
       await authApi.logout();
     } finally {
       setProfile(null);

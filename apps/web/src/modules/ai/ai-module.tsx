@@ -43,7 +43,7 @@ export function AIModule() {
   const now = Date.now();
   const context = os.aiContext(now);
   const conversations = conversationRows(state.aiConversations ? Object.values(state.aiConversations) : []);
-  const greetingName = state.profile?.displayName?.split(" ")[0] ?? "there";
+  const greetingName = state.profile?.displayName?.split(" ")[0] || "there";
   const firstGoal = Object.values(state.goals).find((goal) => goal.status === "active");
   const pendingProposals = os.aiPendingProposals();
   const providerId = state.settings.aiProvider ?? "local";

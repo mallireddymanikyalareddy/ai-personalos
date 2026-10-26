@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { ModelLabel } from "@/components/ai/model-label";
+
 import type { LucideIcon } from "lucide-react";
 
 import {
@@ -309,7 +311,7 @@ export function WorkModeRail({
             Work Mode AI Assistant
           </h2>
           <span className="rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-ink-3">
-            GPT-5
+            <ModelLabel />
           </span>
         </header>
 

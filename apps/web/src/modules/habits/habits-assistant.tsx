@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { ModelLabel } from "@/components/ai/model-label";
+
 import type { LucideIcon } from "lucide-react";
 
 import { BarChart3, CalendarPlus, Heart, Lightbulb, MoreHorizontal, Sparkles } from "lucide-react";
@@ -68,7 +70,7 @@ export function HabitAssistant({
           AI Habit Assistant
         </h2>
         <div className="flex items-center gap-1.5">
-          <Badge tone="outline">GPT-5</Badge>
+          <Badge tone="outline"><ModelLabel /></Badge>
           <DropdownMenu
             align="end"
             sections={[

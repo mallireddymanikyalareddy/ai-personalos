@@ -18,6 +18,7 @@ import { integrationRoutes } from "./modules/integrations/routes";
 import { EncryptedTokenVault } from "./modules/integrations/vault";
 import { createSessionService } from "./modules/auth/sessions";
 import { auditRoutes } from "./modules/audit/routes";
+import { stateRoutes } from "./modules/state/routes";
 import { systemRoutes, type ReadinessCheck } from "./modules/system/routes";
 import { sendProblem } from "./plugins/error-handler";
 
@@ -131,6 +132,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       ...(options.oauthFetch ? { fetchFn: options.oauthFetch } : {}),
     });
     await app.register(auditRoutes, { db });
+    await app.register(stateRoutes, { db });
     await app.register(integrationRoutes, {
       config,
       ...(options.integrationFetch ? { fetchFn: options.integrationFetch } : {}),

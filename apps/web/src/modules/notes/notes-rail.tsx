@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { ModelLabel } from "@/components/ai/model-label";
+
 import type { LucideIcon } from "lucide-react";
 
 import {
@@ -68,7 +70,7 @@ export function NoteAssistant({
           <Sparkles className="size-4 text-accent-ink" aria-hidden="true" />
           AI Notes Assistant
         </h2>
-        <span className="rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-ink-3">GPT-5</span>
+        <span className="rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-ink-3"><ModelLabel /></span>
       </header>
 
       <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 2xl:grid-cols-1">
