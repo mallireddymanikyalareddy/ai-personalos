@@ -4,10 +4,21 @@ import * as React from "react";
 
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import { ACTION_PRICING, AUDIT, inr, LEDGER, PLANS, PROMOTIONS, SETTINGS, SUBSCRIPTIONS, TREND, USAGE, USERS } from "./demo-data";
+import { AUDIT, inr, LEDGER, PLANS, PROMOTIONS, SETTINGS, SUBSCRIPTIONS, TREND, USAGE, USERS } from "./demo-data";
+import { creditRange, LiveNotice, LoadState, shortDate, useAdminData, type LivePlan, type PricingVersion } from "./live";
 import { DataTable, DemoNotice, PageHeader, Panel, Stat, StatusBadge } from "./ui";
 
 const axis = { fontSize: 11, fill: "var(--ink-3)" };
+
+function LivePage({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-6">
+      <PageHeader title={title} description={description} />
+      <LiveNotice text="LIVE RECORDS — loaded from the database. Read-only for now; editing arrives in a later stage." />
+      {children}
+    </div>
+  );
+}
 
 function Page({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
@@ -157,42 +168,58 @@ export function AdminSubscriptions() {
 }
 
 export function AdminPlans() {
+  const { data, error } = useAdminData<{ plans: LivePlan[] }>("plans");
   return (
-    <Page title="Plans & Pricing" description="Versioned plan records. Published changes apply to new subscriptions and the next renewal of existing ones.">
-      <div className="grid gap-4 lg:grid-cols-3">
-        {PLANS.map((plan) => (
-          <div key={plan.id} data-testid={`admin-plan-${plan.id}`} className="rounded-2xl border border-line bg-surface p-5 shadow-card">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-ink">{plan.name}</h3>
-              <span className="text-[11px] text-ink-3">v{plan.version}</span>
-            </div>
-            <p className="mt-3 text-2xl font-semibold text-ink">
-              {inr(plan.monthlyPaise)}
-              <span className="text-sm font-normal text-ink-3">/month</span>
-            </p>
-            <p className="text-xs text-ink-3">
-              {inr(plan.annualPaise)}/year · {inr(Math.round(plan.annualPaise / 12))}/month equivalent
-            </p>
-            <dl className="mt-4 space-y-1.5 text-sm">
-              {[
-                ["Monthly credits", plan.monthlyCredits],
-                ["Annual monthly credits", plan.annualMonthlyCredits],
-                ["Annual bonus (incl.)", plan.annualBonus],
-                ["Trial", `${plan.trialDays} days · ${plan.trialCredits} credits`],
-              ].map(([k, v]) => (
-                <div key={String(k)} className="flex justify-between text-ink-2">
-                  <dt>{k}</dt>
-                  <dd className="font-medium tabular-nums text-ink">{v}</dd>
-                </div>
-              ))}
-            </dl>
-            <button type="button" disabled className="mt-4 w-full rounded-lg border border-line py-2 text-xs font-medium text-ink-3" title="Editing arrives in Stage 5">
-              Edit draft (Stage 5)
-            </button>
+    <LivePage title="Plans & Pricing" description="Versioned plan records. Published changes apply to new subscriptions and the next renewal of existing ones.">
+      {!data ? (
+        <LoadState error={error} testId="admin-plans-state" />
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-3">
+          {data.plans.map((plan) => (
+            <PlanCard key={plan.plan_id} plan={plan} />
+          ))}
+        </div>
+      )}
+    </LivePage>
+  );
+}
+
+function PlanCard({ plan }: { plan: LivePlan }) {
+  const v = plan.current;
+  const rows: [string, React.ReactNode][] = [
+    ["Monthly credits", v.monthly_credits],
+    ["Annual monthly credits", v.annual_monthly_credits],
+    ["Annual bonus (incl.)", v.annual_bonus_credits],
+    ["Trial", `${v.trial_days} days · ${v.trial_credits} credits`],
+    ["Effective from", shortDate(v.effective_at)],
+  ];
+  return (
+    <div data-testid={`admin-plan-${plan.plan_id}`} className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-ink">{plan.name}</h3>
+        <span data-testid={`admin-plan-${plan.plan_id}-version`} className="text-[11px] text-ink-3">
+          v{v.version} · {v.status}
+        </span>
+      </div>
+      <p data-testid={`admin-plan-${plan.plan_id}-price`} className="mt-3 text-2xl font-semibold text-ink">
+        {inr(v.monthly_price_paise)}
+        <span className="text-sm font-normal text-ink-3">/month</span>
+      </p>
+      <p className="text-xs text-ink-3">
+        {inr(v.annual_price_paise)}/year · {inr(Math.round(v.annual_price_paise / 12))}/month equivalent
+      </p>
+      <dl className="mt-4 space-y-1.5 text-sm">
+        {rows.map(([k, val]) => (
+          <div key={k} className="flex justify-between text-ink-2">
+            <dt>{k}</dt>
+            <dd className="font-medium tabular-nums text-ink">{val}</dd>
           </div>
         ))}
-      </div>
-    </Page>
+      </dl>
+      <button type="button" disabled className="mt-4 w-full rounded-lg border border-line py-2 text-xs font-medium text-ink-3" title="Editing arrives in Stage 5">
+        Edit draft (Stage 5)
+      </button>
+    </div>
   );
 }
 
@@ -261,20 +288,29 @@ export function AdminUsage() {
 }
 
 export function AdminActionPricing() {
+  const { data, error } = useAdminData<{ versions: PricingVersion[] }>("pricing");
+  const published = data?.versions.find((v) => v.status === "published");
   return (
-    <Page title="AI Action Pricing" description="Published pricing v1. Every transaction stores the pricing version used when it ran.">
-      <DataTable
-        testId="admin-pricing-table"
-        rows={ACTION_PRICING.map((row) => ({ ...row, id: row.action }))}
-        columns={[
-          { key: "label", label: "Action", render: (r) => <span className="font-medium text-ink">{r.label}</span> },
-          { key: "action", label: "Key", render: (r) => <code className="text-xs">{r.action}</code> },
-          { key: "credits", label: "Credits", align: "right" },
-          { key: "model", label: "Model" },
-          { key: "maxOutput", label: "Max output tok", align: "right" },
-        ]}
-      />
-    </Page>
+    <LivePage
+      title="AI Action Pricing"
+      description={published ? `Published pricing v${published.version}, effective ${shortDate(published.effective_at)}. Every transaction stores the pricing version used when it ran.` : "Every transaction stores the pricing version used when it ran."}
+    >
+      {!published ? (
+        <LoadState error={error ?? (data ? "No published pricing version." : undefined)} testId="admin-pricing-state" />
+      ) : (
+        <DataTable
+          testId="admin-pricing-table"
+          rows={published.actions.map((row) => ({ ...row, id: row.action }))}
+          columns={[
+            { key: "label", label: "Action", render: (r) => <span className="font-medium text-ink">{r.label}</span> },
+            { key: "action", label: "Key", render: (r) => <code className="text-xs">{r.action}</code> },
+            { key: "min_credits", label: "Credits", align: "right", render: (r) => creditRange(r) },
+            { key: "model", label: "Model" },
+            { key: "max_output_tokens", label: "Max output tok", align: "right" },
+          ]}
+        />
+      )}
+    </LivePage>
   );
 }
 

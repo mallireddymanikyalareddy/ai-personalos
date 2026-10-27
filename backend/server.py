@@ -20,6 +20,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 import digest  # noqa: E402
 from admin import promote_configured_admins, router as admin_router  # noqa: E402
 from auth import ApiError, error_response, iso, public_user, require_auth, router as auth_router  # noqa: E402
+from billing import setup_billing  # noqa: E402
 from db import db, ensure_indexes  # noqa: E402
 
 BILLING_CODES = ("insufficient_credits", "integration_disabled", "daily_limit_reached")
@@ -81,6 +82,7 @@ async def digest_loop():
 async def lifespan(_: FastAPI):
     await ensure_indexes()
     await promote_configured_admins()
+    await setup_billing()
     task = asyncio.create_task(digest_loop())
     yield
     task.cancel()

@@ -35,5 +35,13 @@ The initial Super Admin comes from the `ADMIN_EMAILS` environment setting and is
 7. Subscriber UI: credit badge, details panel, confirmation modal, low-credit states
 8. Razorpay test-mode adapter, webhooks (signature verification, dedupe), concurrency and reconciliation tests
 
-## Backup & recovery (to be expanded in Stage 3)
-Atlas continuous backups / snapshots. All migrations are additive and idempotent; rollback means stopping new writes to the new collections, since existing collections are untouched.
+## Stage 3 database setup (done) — `backend/billing.py`
+Runs on server start via `setup_billing()`:
+- Indexes for `plans`, `plan_versions`, `credit_accounts`, `credit_ledger` (unique `id` and `idempotency_key`), `ai_pricing_versions`, `admin_audit`, `schema_migrations`.
+- One-time steps tracked in `schema_migrations` (`stage3_seed_plans_v1`, `stage3_seed_ai_pricing_v1`, `stage3_backfill_credit_accounts`); each is logged to `admin_audit` with actor `system`.
+- Seeds use `$setOnInsert`, so restarts never overwrite records an admin edits later.
+- Every account has a `credit_accounts` row starting at 0; new registrations get one automatically. The ledger starts empty.
+- Read-only admin APIs: `GET /api/v1/admin/plans`, `/pricing`, `/credits/summary`.
+
+## Backup & recovery
+Take an Atlas snapshot before publishing. All Stage 3 changes are additive: existing collections (`users`, `app_state`, …) are untouched. To roll back, deploy the previous build and drop the new collections listed above; to re-run a seed, delete its `schema_migrations` key and restart.
