@@ -2,7 +2,7 @@ import os
 
 from fastapi import APIRouter, Depends, Request
 
-from auth import ApiError, iso, require_auth
+from auth import ApiError, require_auth
 from db import db
 
 ROLES = ("super_admin", "billing_admin", "support_admin", "ai_ops_admin", "analyst")
@@ -58,22 +58,3 @@ async def admin_me(auth=Depends(require_role())):
     user, _ = auth
     return {"id": user["id"], "handle": user["handle"], "email": user.get("email"), "role": user["admin_role"]}
 
-
-def iso_fields(doc: dict, *keys: str) -> dict:
-    return doc | {k: iso(doc[k]) for k in keys if doc.get(k)}
-
-
-@router.get("/plans")
-async def admin_plans(_=Depends(require_role())):
-    plans = await db.plans.find({}, {"_id": 0}).sort("sort", 1).to_list(50)
-    out = []
-    for plan in plans:
-        version = await db.plan_versions.find_one({"plan_id": plan["plan_id"], "version": plan["current_version"]}, {"_id": 0})
-        out.append(iso_fields(plan, "created_at") | {"current": iso_fields(version, "effective_at", "created_at")})
-    return {"plans": out}
-
-
-@router.get("/pricing")
-async def admin_pricing(_=Depends(require_role())):
-    docs = await db.ai_pricing_versions.find({}, {"_id": 0}).sort("version", -1).to_list(50)
-    return {"versions": [iso_fields(d, "effective_at", "created_at", "published_at") for d in docs]}

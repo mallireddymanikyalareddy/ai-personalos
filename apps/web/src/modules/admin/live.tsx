@@ -20,8 +20,10 @@ export type LivePlan = {
   plan_id: string;
   name: string;
   available: boolean;
-  current_version: number;
-  current: PlanVersion;
+  current: PlanVersion | null;
+  scheduled: PlanVersion[];
+  draft: PlanVersion | null;
+  history: PlanVersion[];
 };
 export type PricingAction = {
   action: string;
@@ -37,6 +39,12 @@ export type PricingVersion = {
   effective_at: string;
   actions: PricingAction[];
 };
+export type PricingState = {
+  current: PricingVersion | null;
+  scheduled: PricingVersion[];
+  draft: PricingVersion | null;
+  history: (Omit<PricingVersion, "actions"> & { actions: number })[];
+};
 
 export const AdminRoleContext = React.createContext<{
   role: string;
@@ -46,14 +54,14 @@ export const useAdminRole = () => React.useContext(AdminRoleContext);
 
 export async function adminSend<T>(
   path: string,
-  method: "POST" | "PUT",
+  method: "POST" | "PUT" | "DELETE",
   body: unknown,
 ): Promise<T> {
   const res = await fetch(`/api/v1/admin/${path}`, {
     method,
     credentials: "include",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok)

@@ -1,6 +1,6 @@
 "use client";
 
-import { AdminPlans } from "@/modules/admin/sections";
+import { AdminPlans } from "@/modules/admin/plan-editor";
 
 export default function Page() {
   return <AdminPlans />;

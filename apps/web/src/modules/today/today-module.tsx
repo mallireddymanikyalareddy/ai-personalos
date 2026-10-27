@@ -28,6 +28,7 @@ import {
 import { TodayHero } from "./today-hero";
 import { TodayBriefing } from "./today-briefing";
 import { FinishSetupBanner } from "./finish-setup-banner";
+import { UpgradeCard } from "@/modules/plans/upgrade-card";
 import {
   TodayActivityPanel,
   TodayGoalsPanel,
@@ -164,6 +165,7 @@ export function TodayModule() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-4">
           <FinishSetupBanner />
+          <UpgradeCard />
           <TodayHero welcome={welcome} stats={stats} day={selectedDay} onAddMemory={() => navigate("/memory")} />
           <TodayBriefing />
 

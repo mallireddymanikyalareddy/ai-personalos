@@ -24,6 +24,7 @@ from admin import promote_configured_admins, router as admin_router  # noqa: E40
 from auth import ApiError, error_response, iso, public_user, require_auth, router as auth_router  # noqa: E402
 import credits  # noqa: E402
 from admin_ops import router as admin_ops_router  # noqa: E402
+from plan_admin import admin_router as plan_admin_router, public_router as plans_router  # noqa: E402
 from billing import run_once, setup_billing  # noqa: E402
 from db import db, ensure_indexes  # noqa: E402
 
@@ -99,6 +100,8 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(admin_ops_router)
+app.include_router(plan_admin_router)
+app.include_router(plans_router)
 
 
 @app.middleware("http")

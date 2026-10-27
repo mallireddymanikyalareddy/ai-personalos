@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import Link from "next/link";
+
 import { Sparkles } from "lucide-react";
 
 import { CREDITS_EVENT } from "@/lib/ai-stream";
@@ -80,6 +82,13 @@ export function CreditsCard() {
           <p className="text-[11px] text-ink-3">
             available{balance?.reserved ? ` · ${balance.reserved} held` : ""}
           </p>
+          <Link
+            href="/plans"
+            data-testid="credits-card-view-plans"
+            className="text-[11px] font-medium text-accent-ink hover:underline"
+          >
+            View plans
+          </Link>
         </div>
       </header>
       {balance && balance.available <= LOW_CREDITS && (
@@ -87,8 +96,14 @@ export function CreditsCard() {
           data-testid="credits-card-low"
           className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
         >
-          You&apos;re running low on AI credits. Plans with monthly credits are
-          coming soon.
+          You&apos;re running low on AI credits.{" "}
+          <Link
+            href="/plans"
+            data-testid="credits-card-plans-link"
+            className="underline underline-offset-2"
+          >
+            See plans with monthly credits
+          </Link>
         </p>
       )}
       <h3 className="mt-5 text-xs font-semibold uppercase tracking-wider text-ink-3">
