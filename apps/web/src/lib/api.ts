@@ -220,7 +220,11 @@ export const accountApi = {
     return apiFetch<void>("/api/v1/auth/password", jsonInit("POST", input));
   },
   requestEmailVerification(): Promise<TokenResponse> {
-    return apiFetch<TokenResponse>("/api/v1/auth/verify-email/request", jsonInit("POST"));
+    const origin = typeof window !== "undefined" ? window.location.origin : undefined;
+    return apiFetch<TokenResponse>(
+      "/api/v1/auth/verify-email/request",
+      jsonInit("POST", { origin }),
+    );
   },
   confirmEmailVerification(token: string): Promise<ProfileResponse> {
     return apiFetch<ProfileResponse>(

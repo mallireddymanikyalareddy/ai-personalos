@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: monorepoRoot,
   images: { unoptimized: true },
   ...(staticExport
-    ? { output: "export" as const, distDir: ".next-export" }
+    ? { output: "export" as const, distDir: ".next-export", trailingSlash: true }
     : {
         distDir: ".next-dev",
         async rewrites() {

@@ -28,8 +28,10 @@ function VerifyEmailForm() {
       setError(null);
       try {
         await accountApi.confirmEmailVerification(value);
-        await refresh();
+        // The account is verified at this point. Refresh is best-effort so a profile/sync hiccup
+        // can never turn a successful verification into an error screen.
         setPhase("done");
+        void refresh().catch(() => undefined);
       } catch (caught) {
         setError(caught);
         setPhase("error");

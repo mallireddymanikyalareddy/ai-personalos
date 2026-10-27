@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 import bcrypt
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from db import db
 
@@ -339,8 +339,25 @@ async def consume_token(token: str, kind: str) -> dict:
     return doc
 
 
+def client_origin(value: str | None) -> str | None:
+    """A browser origin supplied by an authenticated user (used for verification links)."""
+    if not value:
+        return None
+    value = value.strip().rstrip("/")
+    if len(value) > 200 or "://" not in value:
+        return None
+    scheme, rest = value.split("://", 1)
+    if scheme not in ("http", "https") or not rest or any(c in rest for c in " \t\r\n"):
+        return None
+    return value
+
+
 class IdentifierIn(BaseModel):
     identifier: str
+
+
+class OriginIn(BaseModel):
+    origin: str = Field(default="", max_length=200)
 
 
 @router.post("/auth/password-reset/request", status_code=202)
@@ -359,7 +376,7 @@ async def reset_request(body: IdentifierIn, request: Request):
             token = await create_token(user["id"], "reset", timedelta(hours=1))
             if digest.email_configured():
                 # Sent in the background so response time doesn't reveal whether the account exists.
-                send_later(digest.send_account_link(user, "reset", f"{origin}/reset-password?token={token}"))
+                send_later(digest.send_account_link(user, "reset", f"{origin}/reset-password/?token={token}"))
             elif origin.startswith(("http://localhost", "http://127.")):
                 # Local development has no email service; hand the link back to the browser.
                 return {"status": "accepted", "devToken": token}
@@ -391,18 +408,20 @@ async def reset_confirm(body: ResetConfirmIn):
 
 
 @router.post("/auth/verify-email/request", status_code=202)
-async def verify_request(request: Request, auth=Depends(require_auth)):
+async def verify_request(request: Request, body: OriginIn | None = None, auth=Depends(require_auth)):
     import digest
 
     user, _ = auth
     if not user.get("email"):
         raise invalid("email", "add an email address first")
     if digest.allow_send_now(f"verify:{user['id']}"):
-        origin = origin_of(request)
+        # The browser knows the public web origin even when an ingress rewrites Host to an internal
+        # service address, so prefer it for authenticated verification links.
+        origin = client_origin(body.origin if body else None) or origin_of(request)
         if origin:
             token = await create_token(user["id"], "verify", timedelta(hours=24))
             if digest.email_configured():
-                send_later(digest.send_account_link(user, "verify", f"{origin}/verify-email?token={token}"))
+                send_later(digest.send_account_link(user, "verify", f"{origin}/verify-email/?token={token}"))
             elif origin.startswith(("http://localhost", "http://127.")):
                 # Local development has no email service; hand the link back to the browser.
                 return {"status": "accepted", "devToken": token}
@@ -418,13 +437,17 @@ async def verify_confirm(body: TokenIn):
     try:
         doc = await consume_token(body.token, "verify")
     except ApiError:
-        # A second open of the same link (email scanners, double clicks) still succeeds if it already verified.
+        # Email scanners, double clicks and React's development double-effect can consume the link
+        # first. A token that was already used for verification is safe to treat as successful.
         used = await db.tokens.find_one({"token_hash": sha(body.token or ""), "kind": "verify", "used_at": {"$ne": None}})
-        user = used and await db.users.find_one({"id": used["user_id"], "email_verified_at": {"$ne": None}}, {"_id": 0})
+        if not used:
+            raise
+        await db.users.update_one({"id": used["user_id"]}, {"$set": {"email_verified_at": now(), "updated_at": now()}})
+        user = await db.users.find_one({"id": used["user_id"]}, {"_id": 0})
         if not user:
             raise
         return profile(user)
-    await db.users.update_one({"id": doc["user_id"]}, {"$set": {"email_verified_at": now()}})
+    await db.users.update_one({"id": doc["user_id"]}, {"$set": {"email_verified_at": now(), "updated_at": now()}})
     return profile(await db.users.find_one({"id": doc["user_id"]}, {"_id": 0}))
 
 

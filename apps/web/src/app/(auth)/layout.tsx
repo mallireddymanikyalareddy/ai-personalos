@@ -16,8 +16,9 @@ export default function AuthGroupLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
 
-  const isPublic = PUBLIC_PATHS.includes(pathname);
-  const isOnboarding = pathname === "/onboarding";
+  const route = pathname.replace(/\/+$/, "").replace(/\.html$/, "") || "/";
+  const isPublic = PUBLIC_PATHS.includes(route);
+  const isOnboarding = route === "/onboarding";
 
   React.useEffect(() => {
     if (status === "loading" || status === "offline") return;
@@ -25,15 +26,15 @@ export default function AuthGroupLayout({ children }: { children: React.ReactNod
       router.replace("/login");
       return;
     }
-    if (status === "authenticated" && isPublic && profile && !STAY_WHEN_SIGNED_IN.includes(pathname)) {
+    if (status === "authenticated" && isPublic && profile && !STAY_WHEN_SIGNED_IN.includes(route)) {
       const next = new URLSearchParams(window.location.search).get("next");
       const safeNext = next && /^\/[a-z0-9/_-]*$/i.test(next) && !next.startsWith("//") ? next : null;
       const target = profile.onboardingCompleted ? (safeNext ?? "/today") : "/onboarding";
-      if (pathname !== target) {
+      if (route !== target) {
         router.replace(target);
       }
     }
-  }, [status, profile, isOnboarding, isPublic, router, pathname]);
+  }, [status, profile, isOnboarding, isPublic, router, pathname, route]);
 
   if (status === "loading") {
     return (
@@ -76,7 +77,7 @@ export default function AuthGroupLayout({ children }: { children: React.ReactNod
   }
 
   if (status === "anonymous" && isOnboarding) return null;
-  if (status === "authenticated" && isPublic && !STAY_WHEN_SIGNED_IN.includes(pathname)) return null;
+  if (status === "authenticated" && isPublic && !STAY_WHEN_SIGNED_IN.includes(route)) return null;
 
   return <>{children}</>;
 }
