@@ -18,6 +18,7 @@ export default function ForgotPasswordPage() {
 
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!identifier.trim()) return;
     setBusy(true);
     setError(null);
     try {
@@ -36,7 +37,10 @@ export default function ForgotPasswordPage() {
         title="Check your inbox"
         subtitle="If an account exists for that email or handle, a reset link is on its way."
         footer={
-          <Link href="/login" className="font-medium text-accent-ink hover:underline">
+          <Link
+            href="/login"
+            className="font-medium text-accent-ink hover:underline"
+          >
             Back to sign in
           </Link>
         }
@@ -45,7 +49,9 @@ export default function ForgotPasswordPage() {
           {sent.devToken && (
             <div className="rounded-lg border border-line bg-surface-2 px-3 py-3 text-sm text-ink-2">
               <p className="font-medium text-ink">Development mode</p>
-              <p className="mt-1 text-ink-3">No email service is connected yet.</p>
+              <p className="mt-1 text-ink-3">
+                No email service is connected yet.
+              </p>
               <Link
                 href={`/reset-password?token=${encodeURIComponent(sent.devToken)}`}
                 className="mt-2 inline-flex font-medium text-accent-ink hover:underline"
@@ -54,7 +60,12 @@ export default function ForgotPasswordPage() {
               </Link>
             </div>
           )}
-          <Button variant="secondary" className="w-full" onClick={() => setSent(null)}>
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={() => setSent(null)}
+            data-testid="forgot-password-again"
+          >
             Send another link
           </Button>
         </div>
@@ -67,7 +78,10 @@ export default function ForgotPasswordPage() {
       title="Reset your password"
       subtitle="Enter your email or handle and we'll send you a reset link."
       footer={
-        <Link href="/login" className="font-medium text-accent-ink hover:underline">
+        <Link
+          href="/login"
+          className="font-medium text-accent-ink hover:underline"
+        >
           Back to sign in
         </Link>
       }
@@ -93,10 +107,18 @@ export default function ForgotPasswordPage() {
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
             placeholder="you@example.com"
+            data-testid="forgot-password-identifier"
             required
           />
         </Field>
-        <Button type="submit" variant="primary" className="w-full" loading={busy}>
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-full"
+          loading={busy}
+          disabled={!identifier.trim()}
+          data-testid="forgot-password-submit"
+        >
           Send reset link
         </Button>
       </form>

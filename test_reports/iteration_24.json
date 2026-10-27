@@ -1,0 +1,42 @@
+{
+  "summary": "Tested the forgot-password flow end to end. BACKEND: new test_iter24_forgot_password.py, 5/5 passed. (1) A request for an existing user, by email in uppercase or by handle, returns 202 {status:accepted} and creates a reset token row. The email send through the Emergent email API raised no 'Email send refused' warning, sent to delivered+fp<tag>@resend.dev. (2) An unknown identifier returns the same 202 body, and a missing identifier returns 400/422. (3) The 3 per hour per user limit works: later requests still return 202 but create no token. (4) Confirm: a password under 10 chars returns 400 with a field error and does not use up the token; bogus and expired tokens return 400 TOKEN_INVALID. (5) A valid token returns 204, the old session's /auth/me goes to 401, the old password gets 401, the new password logs in with 200, and reusing the token returns 400. UI (1920x1080): Login 'Forgot Password?' link opens /forgot-password; submitting an email shows 'Check your inbox' with no dev-token box; 'Send another link' goes back to the form with the value kept. /reset-password?token=bogus shows 'This link is invalid or has expired.'; a short password shows a field error; a valid token (seeded straight into the DB because the real email can't be read) shows 'Password updated' then redirects to /login; the new password works and the old one fails. /reset-password without a token shows a 'Reset token' paste field. All TEST_ users were deleted afterwards. mailtest/demo were not touched.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/v1/auth/password-reset/confirm", "issue": "A successful reset does not cancel the user's other unused reset tokens. After resetting, the other unused reset tokens (3 in the API test, 1 in the UI test) could still be used for up to 1 hour, so an older emailed link can change the password again."},
+      {"endpoint": "POST /api/v1/auth/password-reset/request", "issue": "An empty or whitespace identifier is accepted with 202. There is no length or empty check on IdentifierIn."},
+      {"endpoint": "POST /api/v1/auth/password-reset/request", "issue": "Timing leak: the email is sent inside the request (httpx with a 30s timeout), so an existing account takes about 0.5s and an unknown one about 0.15s. That lets someone tell which accounts exist. Send it as a background task (BackgroundTasks or asyncio.create_task)."},
+      {"endpoint": "POST /api/v1/auth/password-reset/request", "issue": "The rate limiter (digest.allow_send_now) is per user and in memory. It resets on restart and isn't shared across workers, and there is no per-IP limit, so one IP can trigger emails for many accounts."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ForgotPasswordPage", "issue": "Submitting an empty field shows 'Check your inbox' (noValidate form + backend accepts ''). It should block empty submits on the client.", "selector": "#identifier", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/reset-password", "issues": ["With an invalid or expired token, the only error is 'This link is invalid or has expired.' There is no link to /forgot-password to get a new link, and the user can keep resubmitting."]},
+      {"screen": "/forgot-password, /reset-password", "issues": ["No data-testid attributes on the inputs or buttons. Tests had to use #identifier, #password and button text."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter24_forgot_password.py", "/app/backend/tests/iter24_ui_seed.py", "/app/test_reports/pytest/iter24_forgot_password.xml"],
+  "action_items": [
+    "In reset_confirm, after consume_token, mark all other unused reset tokens for that user as used: db.tokens.update_many({user_id, kind:'reset', used_at:None}, {$set:{used_at:now()}})",
+    "Check that identifier is not empty (strip, 1-254 chars) in reset_request and on the client",
+    "Move send_account_link out of the request path (background task) to remove the timing leak",
+    "Add a 'Request a new link' link to /forgot-password when confirm returns TOKEN_INVALID",
+    "Add data-testid to the forgot/reset password inputs and buttons"
+  ],
+  "critical_code_review_comments": [
+    "auth.py reset_request: an origin_of() of None (localhost or a host with a port) quietly skips the send, so nothing is logged if the email isn't sent. Add a warning log.",
+    "auth.py: hashing tokens with sha256, a single-use find_one_and_update and a 1h TTL are good. Validating the password before consume_token correctly keeps a weak-password attempt from using up the token.",
+    "reset_confirm revokes all sessions (good), but there is no 'password changed' notification email to the account owner."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter24_forgot_password.py", "/app/backend/tests/iter24_ui_seed.py"],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% of core flow; 1 low-priority validation bug"},
+  "seed_data_creation": "Temporary TEST users test_fp_<tag> / test_fpui_<tag> with delivered+...@resend.dev emails, all deleted. Reset tokens for the UI test were inserted straight into db.tokens (sha256 hash).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest tests/test_iter24_forgot_password.py. It creates and cleans up its own user and inserts known reset tokens via motor, using MONGO_URL from backend/.env loaded with dotenv and never printed. The in-memory reset limit is 3 per hour per user, so a rerun within an hour on the same user would fail, but each run uses a new user. Don't use mailtest for repeated reset requests.",
+  "test_credentials": "Used /app/memory/test_credentials.md as context. demo and mailtest were not modified."
+}

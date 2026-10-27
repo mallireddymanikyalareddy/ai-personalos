@@ -80,3 +80,8 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 
 ## 2026-06 — Email verification link fix (self-tested)
 - Opening the verification link while signed in showed a blank page/redirect and never confirmed (the (auth) layout hid public pages for signed-in users). /verify-email now stays put. Reopening a used link succeeds if it already verified.
+
+## 2026-06 — Forgot password review (iteration 24 + self-test)
+- Reset link works while signed in (same layout fix as verify-email), and reloads into a signed-out /login afterwards.
+- A successful reset cancels the user's other unused reset links. An empty identifier gives 400. Reset and verify emails are sent in the background (no timing leak). Per-IP limit of 10 reset requests per hour (in memory).
+- UI: send button disabled when empty; an invalid or expired link offers 'Get a new reset link'; testids added.

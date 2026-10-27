@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import os
 import hashlib
@@ -336,13 +337,27 @@ async def reset_request(body: IdentifierIn, request: Request):
     import digest
 
     ident = body.identifier.strip().lower()
+    if not ident:
+        raise invalid("identifier", "enter your email or handle")
+    if not digest.allow_send_now(f"reset-ip:{client_ip(request)}", limit=10):
+        return {"status": "accepted"}
     user = await db.users.find_one({"$or": [{"handle": ident}, {"email": ident}]}, {"_id": 0})
     if user and user.get("email") and digest.allow_send_now(f"reset:{user['id']}"):
         origin = origin_of(request)
         if origin:
             token = await create_token(user["id"], "reset", timedelta(hours=1))
-            await digest.send_account_link(user, "reset", f"{origin}/reset-password?token={token}")
+            # Sent in the background so response time doesn't reveal whether the account exists.
+            send_later(digest.send_account_link(user, "reset", f"{origin}/reset-password?token={token}"))
     return {"status": "accepted"}
+
+
+_pending_sends: set[asyncio.Task] = set()
+
+
+def send_later(coro) -> None:
+    task = asyncio.create_task(coro)
+    _pending_sends.add(task)
+    task.add_done_callback(_pending_sends.discard)
 
 
 class ResetConfirmIn(BaseModel):
@@ -356,6 +371,7 @@ async def reset_confirm(body: ResetConfirmIn):
     doc = await consume_token(body.token, "reset")
     await db.users.update_one({"id": doc["user_id"]}, {"$set": {"password_hash": hash_password(body.password), "updated_at": now()}})
     await db.sessions.update_many({"user_id": doc["user_id"]}, {"$set": {"revoked_at": now()}})
+    await db.tokens.update_many({"user_id": doc["user_id"], "kind": "reset", "used_at": None}, {"$set": {"used_at": now()}})
     return Response(status_code=204)
 
 
@@ -370,7 +386,7 @@ async def verify_request(request: Request, auth=Depends(require_auth)):
         origin = origin_of(request)
         if origin:
             token = await create_token(user["id"], "verify", timedelta(hours=24))
-            await digest.send_account_link(user, "verify", f"{origin}/verify-email?token={token}")
+            send_later(digest.send_account_link(user, "verify", f"{origin}/verify-email?token={token}"))
     return {"status": "accepted"}
 
 
