@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -13,7 +13,6 @@ import { AuthShell } from "@/modules/auth/auth-shell";
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const tokenFromUrl = searchParams.get("token") ?? "";
   const [token, setToken] = React.useState(tokenFromUrl);
   const [password, setPassword] = React.useState("");
@@ -28,7 +27,8 @@ function ResetPasswordForm() {
     try {
       await accountApi.confirmPasswordReset({ token: token.trim(), password });
       setDone(true);
-      window.setTimeout(() => router.replace("/login"), 1200);
+      // Reset signs out every session, so reload into a fresh signed-out state.
+      window.setTimeout(() => window.location.replace("/login"), 1200);
     } catch (caught) {
       setError(caught);
       setBusy(false);

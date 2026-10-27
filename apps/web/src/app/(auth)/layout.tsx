@@ -9,7 +9,7 @@ import { useAuth } from "@/modules/auth/auth-context";
 
 const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email"];
 // Pages that must stay put for signed-in users too (an emailed link opened while logged in).
-const STAY_WHEN_SIGNED_IN = ["/verify-email"];
+const STAY_WHEN_SIGNED_IN = ["/verify-email", "/reset-password"];
 
 export default function AuthGroupLayout({ children }: { children: React.ReactNode }) {
   const { status, profile, refresh } = useAuth();
