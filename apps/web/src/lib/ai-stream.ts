@@ -33,6 +33,9 @@ export function buildAIContext(state: AppState, localAnswer: string): string {
   ].join("\n\n");
 }
 
+export const CREDITS_EVENT = "personalos:credits-changed";
+const notifyCreditsChanged = () => window.dispatchEvent(new Event(CREDITS_EVENT));
+
 export type AIAction = "quick_question" | "daily_plan" | "journal_summary";
 
 export async function streamAIChat(
@@ -47,6 +50,7 @@ export async function streamAIChat(
     body: JSON.stringify({ ...body, action: body.action ?? "quick_question", requestId }),
   });
   if (!res.ok || !res.body) {
+    if (res.status === 402) notifyCreditsChanged();
     const data = await res.json().catch(() => ({}));
     throw new Error((data as { detail?: string }).detail ?? "AI request failed");
   }
@@ -63,7 +67,8 @@ export async function streamAIChat(
     for (const event of events) {
       const line = event.replace(/^data: /, "");
       if (!line) continue;
-      const payload = JSON.parse(line) as { delta?: string; error?: string };
+      const payload = JSON.parse(line) as { delta?: string; error?: string; credits?: { available: number } };
+      if (payload.error || payload.credits) notifyCreditsChanged();
       if (payload.error) throw new Error(payload.error);
       if (payload.delta) {
         full += payload.delta;

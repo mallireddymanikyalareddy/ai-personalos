@@ -70,7 +70,7 @@ async def run_once(key: str, fn) -> bool:
         {"key": key, "completed_at": {"$exists": False}}, {"$set": {"completed_at": now(), "details": details}}, upsert=True)
     if not done.upserted_id and not done.modified_count:
         return False
-    await record_audit("system", f"migration.{key}", "migration", key, "Stage 3 database setup", details=details)
+    await record_audit("system", f"migration.{key}", "migration", key, f"Database setup ({key})", details=details)
     return True
 
 

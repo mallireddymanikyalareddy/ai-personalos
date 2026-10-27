@@ -1,6 +1,6 @@
 import os
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from auth import ApiError, iso, require_auth
 from db import db
@@ -36,12 +36,18 @@ async def ensure_admin_role(user: dict) -> None:
 
 
 def require_role(*allowed: str):
-    async def dep(auth=Depends(require_auth)):
+    async def dep(request: Request, auth=Depends(require_auth)):
         user, session = auth
         await ensure_admin_role(user)
         role = user.get("admin_role")
-        if role not in ROLES or (allowed and role not in allowed and role != "super_admin"):
+        if role not in ROLES:
             raise ApiError(403, "FORBIDDEN", "You don't have access to this admin area.")
+        if allowed and role not in allowed and role != "super_admin":
+            from billing import record_audit
+
+            await record_audit(user["handle"], f"{request.method} {request.url.path}", "route", request.url.path,
+                               "Insufficient role", "denied", role)
+            raise ApiError(403, "FORBIDDEN", "Your admin role can't do this.")
         return user, session
 
     return dep
@@ -71,12 +77,3 @@ async def admin_plans(_=Depends(require_role())):
 async def admin_pricing(_=Depends(require_role())):
     docs = await db.ai_pricing_versions.find({}, {"_id": 0}).sort("version", -1).to_list(50)
     return {"versions": [iso_fields(d, "effective_at", "created_at", "published_at") for d in docs]}
-
-
-@router.get("/credits/summary")
-async def admin_credit_summary(_=Depends(require_role())):
-    rows = await db.credit_accounts.aggregate([{"$group": {
-        "_id": None, "accounts": {"$sum": 1}, "available": {"$sum": "$available"}, "reserved": {"$sum": "$reserved"}}}]).to_list(1)
-    totals = rows[0] if rows else {"accounts": 0, "available": 0, "reserved": 0}
-    return {"accounts": totals["accounts"], "available": totals["available"], "reserved": totals["reserved"],
-            "ledgerEntries": await db.credit_ledger.count_documents({})}

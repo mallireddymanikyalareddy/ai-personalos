@@ -20,8 +20,25 @@ export type LivePlan = { plan_id: string; name: string; available: boolean; curr
 export type PricingAction = { action: string; label: string; min_credits: number; max_credits: number; model: string; max_output_tokens: number };
 export type PricingVersion = { version: number; status: string; effective_at: string; actions: PricingAction[] };
 
+export const AdminRoleContext = React.createContext<string>("analyst");
+export const useAdminRole = () => React.useContext(AdminRoleContext);
+
+export async function adminSend<T>(path: string, method: "POST" | "PUT", body: unknown): Promise<T> {
+  const res = await fetch(`/api/v1/admin/${path}`, {
+    method,
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { detail?: string }).detail ?? "Request failed");
+  return data as T;
+}
+
 export function useAdminData<T>(path: string) {
   const [state, setState] = React.useState<{ data?: T; error?: string }>({});
+  const [tick, setTick] = React.useState(0);
+  const reload = React.useCallback(() => setTick((n) => n + 1), []);
   React.useEffect(() => {
     let alive = true;
     fetch(`/api/v1/admin/${path}`, { credentials: "include", cache: "no-store" })
@@ -34,8 +51,8 @@ export function useAdminData<T>(path: string) {
     return () => {
       alive = false;
     };
-  }, [path]);
-  return state;
+  }, [path, tick]);
+  return { ...state, reload };
 }
 
 export function LiveNotice({ text }: { text: string }) {
@@ -59,4 +76,57 @@ export function LoadState({ error, testId }: { error?: string; testId: string })
 }
 
 export const creditRange = (a: PricingAction) => (a.min_credits === a.max_credits ? String(a.min_credits) : `${a.min_credits}–${a.max_credits}`);
+export const dateTime = (iso: string) =>
+  new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+export const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
+export const ROLE_OPTIONS = [
+  ["super_admin", "Super Admin"],
+  ["billing_admin", "Billing Admin"],
+  ["support_admin", "Support Admin"],
+  ["ai_ops_admin", "AI Operations Admin"],
+  ["analyst", "Read-only Analyst"],
+] as const;
+export const roleLabel = (role: string | null) => ROLE_OPTIONS.find(([k]) => k === role)?.[1] ?? "—";
+
+export type LedgerEntry = {
+  id: string;
+  user_id: string;
+  handle?: string;
+  type: string;
+  credits: number;
+  available_delta: number;
+  reserved_delta: number;
+  reason: string;
+  actor: string;
+  action?: string;
+  created_at: string;
+};
+export type UsageRow = {
+  id: string;
+  handle?: string;
+  action: string;
+  model: string;
+  reserved: number;
+  charged: number;
+  est_output_tokens: number;
+  ms: number;
+  status: string;
+  error?: string | null;
+  created_at: string;
+};
+export type AuditRow = {
+  id: string;
+  actor: string;
+  role: string | null;
+  action: string;
+  target_type: string;
+  target_id: string;
+  reason: string;
+  outcome: string;
+  details: Record<string, unknown>;
+  created_at: string;
+};
+export type UsageTotals = { requests: number; succeeded: number; failed: number; cancelled: number; creditsCharged: number };
+export type TrendPoint = { day: string; requests: number; credits: number };
+
 export const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });

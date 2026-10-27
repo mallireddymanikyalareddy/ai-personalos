@@ -168,3 +168,21 @@ async def history(user_id: str, limit: int) -> list[dict]:
 
     rows = await db.credit_ledger.find({"user_id": user_id}, {"_id": 0, "idempotency_key": 0}).sort("created_at", -1).to_list(limit)
     return [r | {"created_at": iso(r["created_at"])} for r in rows]
+
+
+async def adjust(user_id: str, delta: int, reason: str, key: str, actor: str) -> bool:
+    """Admin add/remove; removals never take available below zero. Returns False on a replayed key."""
+    if delta > 0:
+        return await grant(user_id, delta, "admin_grant", reason, key, actor)
+    if await db.credit_ledger.find_one({"idempotency_key": key}, {"_id": 1}):
+        return False
+    taken = await db.credit_accounts.find_one_and_update(
+        {"user_id": user_id, "available": {"$gte": -delta}}, {"$inc": {"available": delta}, "$set": {"updated_at": now()}})
+    if not taken:
+        raise CreditError(400, "INSUFFICIENT_CREDITS", "The user doesn't have that many available credits to remove.")
+    try:
+        await write_ledger(user_id, "admin_debit", -delta, delta, 0, reason, key, actor)
+    except DuplicateKeyError:
+        await db.credit_accounts.update_one({"user_id": user_id}, {"$inc": {"available": -delta}})
+        return False
+    return True

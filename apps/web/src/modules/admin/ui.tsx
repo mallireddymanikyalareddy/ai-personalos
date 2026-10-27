@@ -77,11 +77,13 @@ export function DataTable<T extends { id: string }>({
   columns,
   testId,
   search,
+  onRowClick,
 }: {
   rows: T[];
   columns: Column<T>[];
   testId: string;
   search?: (row: T) => string;
+  onRowClick?: (row: T) => void;
 }) {
   const [query, setQuery] = React.useState("");
   const visible = search && query ? rows.filter((row) => search(row).toLowerCase().includes(query.toLowerCase())) : rows;
@@ -111,7 +113,12 @@ export function DataTable<T extends { id: string }>({
           </thead>
           <tbody>
             {visible.map((row) => (
-              <tr key={row.id} data-testid={`${testId}-row-${row.id}`} className="border-b border-line/60 last:border-0 hover:bg-surface-2/60">
+              <tr
+                key={row.id}
+                data-testid={`${testId}-row-${row.id}`}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={cn("border-b border-line/60 last:border-0 hover:bg-surface-2/60", onRowClick && "cursor-pointer")}
+              >
                 {columns.map((col) => (
                   <td key={col.key} className={cn("px-4 py-2.5 text-ink-2", col.align === "right" && "text-right tabular-nums")}>
                     {col.render ? col.render(row) : String((row as Record<string, unknown>)[col.key] ?? "—")}

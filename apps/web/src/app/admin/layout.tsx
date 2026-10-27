@@ -21,6 +21,7 @@ import {
 
 import { BrandMark } from "@/components/ui/brand-mark";
 import { cn } from "@/lib/cn";
+import { AdminRoleContext } from "@/modules/admin/live";
 import { useAuth } from "@/modules/auth/auth-context";
 
 const NAV = [
@@ -127,7 +128,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </Link>
         </div>
       </aside>
-      <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8">{children}</main>
+      <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8">
+        <AdminRoleContext.Provider value={access.role}>{children}</AdminRoleContext.Provider>
+      </main>
     </div>
   );
 }

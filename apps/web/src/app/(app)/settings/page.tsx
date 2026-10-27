@@ -54,6 +54,7 @@ import { accountApi, errorMessage, fieldError } from "@/lib/api";
 import { type LocalSettingsPatch } from "@/lib/settings-sync";
 import { useAuth } from "@/modules/auth/auth-context";
 import { useAppState, useOS } from "@/store/use-os";
+import { CreditsCard } from "@/modules/settings/credits-card";
 import { WeeklyEmailCard } from "@/modules/settings/weekly-email-card";
 import { LifeAreasCard } from "@/modules/settings/life-areas-card";
 import { FinishSetupBanner } from "@/modules/today/finish-setup-banner";
@@ -1276,6 +1277,8 @@ export default function SettingsPage() {
               </Card>
             </>
           )}
+
+          {tab === "ai" && <CreditsCard />}
 
           {tab === "ai" && prefs && (
             <>

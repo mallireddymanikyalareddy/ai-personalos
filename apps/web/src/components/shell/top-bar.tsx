@@ -18,6 +18,7 @@ import { setSettings } from "@/lib/settings-sync";
 import { useAppState } from "@/store/use-os";
 import { useAuth } from "@/modules/auth/auth-context";
 import { useRouter } from "next/navigation";
+import { CreditBadge } from "./credit-badge";
 import { SyncBadge } from "./sync-badge";
 
 export function ThemeToggle({ className }: { className?: string }) {
@@ -88,6 +89,7 @@ export function TopBar() {
 
         <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
           <SyncBadge />
+          <CreditBadge />
           <button
             type="button"
             onClick={() => openCapture()}
