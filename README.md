@@ -231,6 +231,7 @@ API tests use PGlite and apply the real Drizzle migrations, so database changes 
 
 - Build the web app with `npm run build`.
 - Set `API_URL` to the deployed API origin before building the web app.
+- Set `APP_URL` to the public web origin (for example `https://ai-personalos.emergent.host`) so emailed password-reset and verification links never use an internal service hostname.
 - Set `DATABASE_URL` and run migrations before starting the API in production.
 - Configure OAuth credentials only for the providers you enable.
 - Serve the app over HTTPS so service workers and browser notifications work.

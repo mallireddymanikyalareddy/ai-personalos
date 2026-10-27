@@ -89,6 +89,8 @@ async def digest_loop():
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if not os.environ.get("APP_URL"):
+        logging.warning("APP_URL is not set; emailed links will use the browser Origin/Referer or Host header.")
     await ensure_indexes()
     await promote_configured_admins()
     await setup_billing()

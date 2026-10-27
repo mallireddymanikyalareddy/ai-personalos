@@ -100,7 +100,13 @@ function VerifyEmailForm() {
       >
         {phase === "error" && error !== null && (
           <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">
-            {errorMessage(error)}
+            {errorMessage(error)}{" "}
+            <Link
+              href="/settings?tab=security"
+              className="font-medium underline underline-offset-2"
+            >
+              Request a new verification email
+            </Link>
           </p>
         )}
         <Field label="Verification token" htmlFor="token" error={fieldError(error, "token")} required>

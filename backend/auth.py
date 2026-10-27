@@ -6,6 +6,7 @@ import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import bcrypt
@@ -143,12 +144,41 @@ def client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+# Public web domains operated by the platform. An Origin/Referer from one of these is safe to use
+# for emailed links when the API's Host header points at an internal service address.
+TRUSTED_LINK_HOSTS = ("emergent.host", "ai-personalos.preview.emergentagent.com")
+
+
+def trusted_browser_origin(value: str | None) -> str | None:
+    """Return a browser origin only when its host is a known public web domain or localhost."""
+    raw = (value or "").strip().rstrip("/")
+    if not raw:
+        return None
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return None
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme not in ("http", "https") or not host:
+        return None
+    local = host in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or host.startswith("127.")
+    trusted = any(host == suffix or host.endswith("." + suffix) for suffix in TRUSTED_LINK_HOSTS)
+    if not (local or trusted):
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
 def origin_of(request: Request) -> str | None:
-    """Public origin for emailed links. Uses APP_URL if set, else the Host header (which the ingress
-    routes on, so it must be this app's domain); client-supplied X-Forwarded-Host is never trusted."""
+    """Public origin for emailed links. Prefers APP_URL, then a trusted browser Origin/Referer (the
+    API is often reverse-proxied under an internal Host), then the Host header. X-Forwarded-Host is
+    never trusted because a direct client can spoof it."""
     configured = os.environ.get("APP_URL", "").strip().rstrip("/")
     if configured.startswith(("https://", "http://")):
         return configured
+    for header in ("origin", "referer"):
+        trusted = trusted_browser_origin(request.headers.get(header))
+        if trusted:
+            return trusted
     host = request.headers.get("host", "").strip().lower()
     if not host:
         return None
@@ -156,10 +186,6 @@ def origin_of(request: Request) -> str | None:
     # Local development runs over plain http and often on a non-default port. The API may be
     # proxied from a different port than the web app, so prefer the browser's own origin.
     if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or hostname.startswith("127."):
-        for header in ("origin", "referer"):
-            value = request.headers.get(header, "").strip()
-            if value.startswith(("http://localhost", "http://127.")):
-                return "/".join(value.split("/", 3)[:3])
         return f"http://{host}"
     if ":" in host:
         return None
