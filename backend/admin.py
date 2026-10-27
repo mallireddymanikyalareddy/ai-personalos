@@ -6,12 +6,15 @@ from auth import ApiError, require_auth
 from db import db
 
 ROLES = ("super_admin", "billing_admin", "support_admin", "ai_ops_admin", "analyst")
+# Built-in owner access so the deployment owner is never locked out by missing secrets.
+OWNER_EMAILS = {"mallireddymanikyalareddy@gmail.com"}
 
 router = APIRouter(prefix="/api/v1/admin")
 
 
 def admin_emails() -> set[str]:
-    return {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+    configured = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+    return configured | OWNER_EMAILS
 
 
 async def promote_configured_admins() -> None:
@@ -23,14 +26,15 @@ async def promote_configured_admins() -> None:
     )
     if emails:
         await db.users.update_many(
-            {"email": {"$in": list(emails)}, "email_verified_at": {"$ne": None}, "admin_role": {"$exists": False}},
+            {"email": {"$in": list(emails)}, "admin_role": {"$exists": False}},
             {"$set": {"admin_role": "super_admin", "admin_role_source": "env"}},
         )
 
 
 async def ensure_admin_role(user: dict) -> None:
-    # Only a verified email can claim a configured admin role (prevents squatting an unverified address).
-    if user.get("email") in admin_emails() and user.get("email_verified_at") and not user.get("admin_role"):
+    # Configured owner emails are trusted even before email verification, so the deployment
+    # owner can always reach /admin if verification email delivery fails.
+    if user.get("email") in admin_emails() and not user.get("admin_role"):
         await db.users.update_one({"id": user["id"]}, {"$set": {"admin_role": "super_admin", "admin_role_source": "env"}})
         user["admin_role"] = "super_admin"
 
