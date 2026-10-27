@@ -85,3 +85,6 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - Reset link works while signed in (same layout fix as verify-email), and reloads into a signed-out /login afterwards.
 - A successful reset cancels the user's other unused reset links. An empty identifier gives 400. Reset and verify emails are sent in the background (no timing leak). Per-IP limit of 10 reset requests per hour (in memory).
 - UI: send button disabled when empty; an invalid or expired link offers 'Get a new reset link'; testids added.
+
+## 2026-06 — Emailed links pointed at the internal cluster host (fixed via config)
+- In production the Host header is ai-personalos.cluster8.deploy.aws.emergentcf.cloud, so reset/verify links went to an unreachable domain. APP_URL (backend secret, live + test) = https://ai-personalos.emergent.host, read by origin_of(). Preview emails now also link to the live site.
