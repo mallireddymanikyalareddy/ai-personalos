@@ -1,0 +1,46 @@
+{
+  "summary": "Tested Stages 5/7: admin ops and user credit screens, both backend and UI. Backend: the new test_iter19_admin_ops.py passed 20/20 with 1 skipped (env-owner check: there is no admin_role_source=env user in the preview DB). test_iter19_concurrency.py passed: 8 parallel posts with the same requestId applied exactly once, for both add and remove. The iter16/17 regression suite passed 30/30. Everything requested works: search by handle/email, user detail with no private content, overview/usage for 7/30/90 days, audit, ledger, summary, add/remove, 400 INSUFFICIENT_CREDITS audited as failed, replay returning applied:false, audit + ledger rows written, ledger sums equal balances for all accounts, role rules (self change 400, unknown role 400, audited), billing_admin (can adjust credits, role change 403 audited as denied), analyst (reads work, adjust 403 audited as denied), mailtest 403 and anonymous 401. UI: every admin page shows the right LIVE/DEMO notice. The range buttons refetch with the right days value. Search filters. The drawer's add, remove and overdraw all show a toast and update the balance and table. Role assign/revoke updates the table, and a billing_admin sees the credit form but no role form. Badge count matches the API, data-low=true at 3, and the badge shows on mobile. Direct load of /settings?tab=ai shows credits-card, the low warning and history with held + returned entries after an openai attempt. ONE BUG: clicking the credit badge goes to /settings?tab=ai but shows the Profile tab.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/v1/admin/users/{id}/role", "issue": "The reason is checked for min_length=5 before .strip(), so '    x' passes and is saved as 'x'. The same applies to the credit adjust reason. Strip before validating (a Pydantic validator, or constr with strip_whitespace)."},
+      {"endpoint": "GET /api/v1/admin/users?q=", "issue": "The query is lowercased, but the regex is case-sensitive, so handles or emails stored with capitals won't match. Use $options:'i' or normalised fields."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CreditBadge -> Settings AI tab", "issue": "Clicking credit-badge changes the URL to /settings?tab=ai, but Settings shows the Profile tab and credits-card is not rendered. This happens from /today and /tasks, and also when already on /settings?tab=profile. A full page load of /settings?tab=ai works. RCA: in app/(app)/settings/page.tsx, tabFromLocation() reads window.location.search in the useState initializer (line 372). During Next.js App Router client navigation, the new page renders before history.pushState updates window.location, so it reads the old URL. The state is also never re-synced when the URL changes. Fix: use useSearchParams() from next/navigation (wrap in Suspense if needed) and derive or sync the tab from it with an effect.", "selector": "[data-testid='credit-badge']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin user drawer", "issues": ["The role form is shown when the super admin opens their own row. Saving always fails with 400 'You can't change your own role.' Hide it or disable it for self.", "Error toasts (for example the overdraw error) look the same as success toasts. Consider an error variant."]},
+      {"screen": "Admin Audit Logs", "issues": ["Target shows raw user UUIDs ('user df161b5f-...') instead of handles, and denied-route targets are cut off ('route /api/v1/admin/user').", "The WHEN column wraps to 4 lines. Use whitespace-nowrap."]},
+      {"screen": "Admin Users table", "issues": ["Clickable rows are <tr onClick> with no tabIndex or keyboard handler, so the drawer can't be opened with the keyboard (a11y)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_admin_ops.py",
+    "/app/backend/tests/test_iter19_concurrency.py",
+    "/app/backend/tests/iter19_cleanup.py",
+    "/app/test_reports/pytest/pytest_iter19.xml"
+  ],
+  "action_items": [
+    "HIGH: Fix the Settings tab not following ?tab= on client-side navigation (credit badge link). Use useSearchParams in app/(app)/settings/page.tsx.",
+    "Minor: strip the reason before the min-length check (role + credit endpoints).",
+    "Minor: make admin user search case-insensitive.",
+    "Minor: hide the role form for your own account. Show handles in the audit target column. Add a nowrap date column."
+  ],
+  "critical_code_review_comments": [
+    "credits.adjust removal: the pre-check, conditional $inc and ledger insert with a DuplicateKeyError rollback are race-safe (verified with 8 concurrent replays).",
+    "CreditForm generates a new requestId on every submit. If the network fails after the server applied the change, a retry applies it again. Generate the requestId once per form intent and reset it only after success.",
+    "set_role passes credit_accounts.find_one without a projection into public_admin_user. This is harmless because fields are picked explicitly, but project {_id:0} for consistency.",
+    "require_role writes denied audit rows on every forbidden call. Consider rate-limiting these rows so the audit log can't be flooded."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter19_admin_ops.py", "/app/backend/tests/test_iter19_concurrency.py", "/app/backend/tests/iter19_cleanup.py"],
+  "success_rate": {"backend": "100%", "frontend": "92% (1 navigation bug)"},
+  "seed_data_creation": "Throwaway tests19* users were created and purged. mailtest was restored to 10 available / 0 reserved, with no admin role and provider set back to local. demo is the only admin.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The users table row testid is admin-users-table-row-{id}. The demo notice testid is admin-demo-notice. Log in through page.request POST /api/v1/auth/login. To check the badge bug: log in as mailtest, open /today, click [data-testid=credit-badge], then expect [data-testid=credits-card] to be visible (currently 0). Run iter19_cleanup.py afterwards to restore mailtest to 10 and purge tests19* users.",
+  "rca of the issue": "Settings tab bug: useState(() => tabFromLocation()) reads window.location during render. During App Router soft navigation, the URL is pushed after the render commit, so the initial value is 'profile'. Reproduce: /today, click the credit badge, the URL becomes ?tab=ai but the Profile panel shows. Mitigation: const params = useSearchParams(); derive the tab from params.get('tab') (or sync with useEffect on params), and keep changeTab using router.replace or history.replaceState."
+}

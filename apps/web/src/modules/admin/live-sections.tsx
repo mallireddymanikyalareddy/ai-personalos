@@ -112,7 +112,7 @@ export function AdminDashboard() {
             <ul className="space-y-1.5 text-sm text-ink-2">
               {data.recentAudit.map((row) => (
                 <li key={row.id}>
-                  <span className="font-medium text-ink">{row.actor}</span> · {row.action} · {row.target_type} {row.target_id.slice(0, 12)} ·{" "}
+                  <span className="font-medium text-ink">{row.actor}</span> · {row.action} · {row.target_label} ·{" "}
                   {dateTime(row.created_at)}
                 </li>
               ))}
@@ -272,11 +272,11 @@ export function AdminAudit() {
           rows={data.entries}
           search={(row) => `${row.actor} ${row.action} ${row.target_id} ${row.reason}`}
           columns={[
-            { key: "created_at", label: "When", render: (r) => dateTime(r.created_at) },
+            { key: "created_at", label: "When", render: (r) => <span className="whitespace-nowrap">{dateTime(r.created_at)}</span> },
             { key: "actor", label: "Admin" },
             { key: "role", label: "Role", render: (r) => r.role?.replace(/_/g, " ") ?? "system" },
             { key: "action", label: "Action", render: (r) => <code className="text-xs">{r.action}</code> },
-            { key: "target_id", label: "Target", render: (r) => `${r.target_type} ${r.target_id.slice(0, 18)}` },
+            { key: "target_id", label: "Target", render: (r) => <span className="break-all">{r.target_type === "route" ? r.target_label : `${r.target_type} ${r.target_label}`}</span> },
             { key: "reason", label: "Reason" },
             { key: "details", label: "Details", render: (r) => <code className="text-[11px]">{JSON.stringify(r.details)}</code> },
             { key: "outcome", label: "Outcome", render: (r) => <StatusBadge value={r.outcome} /> },

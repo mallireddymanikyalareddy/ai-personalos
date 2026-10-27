@@ -117,7 +117,9 @@ export function DataTable<T extends { id: string }>({
                 key={row.id}
                 data-testid={`${testId}-row-${row.id}`}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={cn("border-b border-line/60 last:border-0 hover:bg-surface-2/60", onRowClick && "cursor-pointer")}
+                onKeyDown={onRowClick ? (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onRowClick(row)) : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                className={cn("border-b border-line/60 last:border-0 hover:bg-surface-2/60", onRowClick && "cursor-pointer focus:bg-surface-2 focus:outline-none")}
               >
                 {columns.map((col) => (
                   <td key={col.key} className={cn("px-4 py-2.5 text-ink-2", col.align === "right" && "text-right tabular-nums")}>

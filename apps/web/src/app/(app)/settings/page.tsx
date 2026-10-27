@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { useSearchParams } from "next/navigation";
+
 import {
   Bell,
   Check,
@@ -364,12 +366,24 @@ function SettingsNav({ value, onChange }: { value: TabId; onChange: (tab: TabId)
 }
 
 export default function SettingsPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <SettingsContent />
+    </React.Suspense>
+  );
+}
+
+function SettingsContent() {
   const os = useOS();
   const state = useAppState();
   const { profile, refresh, status } = useAuth();
   const { toast } = useToast();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [tab, setTab] = React.useState<TabId>(() => tabFromLocation());
+  const urlTab = useSearchParams().get("tab");
+  React.useEffect(() => {
+    if (urlTab && TAB_IDS.includes(urlTab as TabId)) setTab(urlTab as TabId);
+  }, [urlTab]);
 
   const [nameDraft, setNameDraft] = React.useState(profile?.displayName ?? "");
   const [tzDraft, setTzDraft] = React.useState(profile?.timezone ?? "UTC");

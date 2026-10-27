@@ -20,7 +20,7 @@ export type LivePlan = { plan_id: string; name: string; available: boolean; curr
 export type PricingAction = { action: string; label: string; min_credits: number; max_credits: number; model: string; max_output_tokens: number };
 export type PricingVersion = { version: number; status: string; effective_at: string; actions: PricingAction[] };
 
-export const AdminRoleContext = React.createContext<string>("analyst");
+export const AdminRoleContext = React.createContext<{ role: string; id: string }>({ role: "analyst", id: "" });
 export const useAdminRole = () => React.useContext(AdminRoleContext);
 
 export async function adminSend<T>(path: string, method: "POST" | "PUT", body: unknown): Promise<T> {
@@ -121,6 +121,7 @@ export type AuditRow = {
   action: string;
   target_type: string;
   target_id: string;
+  target_label: string;
   reason: string;
   outcome: string;
   details: Record<string, unknown>;

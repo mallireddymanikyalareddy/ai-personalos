@@ -23,7 +23,7 @@ export function UserDrawer({ userId, onClose, onChanged }: { userId: string | nu
 }
 
 function UserDetail({ userId, onChanged }: { userId: string; onChanged: () => void }) {
-  const role = useAdminRole();
+  const { role, id: selfId } = useAdminRole();
   const { data, error, reload } = useAdminData<Detail>(`users/${userId}`);
   const changed = () => {
     reload();
@@ -47,7 +47,7 @@ function UserDetail({ userId, onChanged }: { userId: string; onChanged: () => vo
         <Balance label="Held" value={u.reserved} testId="admin-user-reserved" />
       </div>
       {CREDIT_ROLES.includes(role) && <CreditForm userId={userId} onDone={changed} />}
-      {role === "super_admin" && <RoleForm user={u} onDone={changed} />}
+      {role === "super_admin" && userId !== selfId && <RoleForm user={u} onDone={changed} />}
       <div>
         <h3 className="mb-2 text-sm font-semibold text-ink">Credit history</h3>
         <LedgerTable rows={data.ledger} testId="admin-user-ledger" showUser={false} />
@@ -82,12 +82,12 @@ function CreditForm({ userId, onDone }: { userId: string; onDone: () => void }) 
     try {
       const body = { amount: mode === "add" ? n : -n, reason: reason.trim(), requestId: `adm-${crypto.randomUUID()}` };
       const res = await adminSend<{ balance: { available: number } }>(`users/${userId}/credits`, "POST", body);
-      toast(`${mode === "add" ? "Added" : "Removed"} ${n} credits · now ${res.balance.available} available`);
+      toast(`${mode === "add" ? "Added" : "Removed"} ${n} credits · now ${res.balance.available} available`, { tone: "success" });
       setAmount("");
       setReason("");
       onDone();
     } catch (err) {
-      toast((err as Error).message);
+      toast((err as Error).message, { tone: "danger" });
     } finally {
       setBusy(false);
     }
@@ -124,11 +124,11 @@ function RoleForm({ user, onDone }: { user: AdminUserRow; onDone: () => void }) 
     setBusy(true);
     try {
       await adminSend(`users/${user.id}/role`, "PUT", { role: role || null, reason: reason.trim() });
-      toast(role ? `${user.handle} is now ${roleLabel(role)}` : `Removed admin role from ${user.handle}`);
+      toast(role ? `${user.handle} is now ${roleLabel(role)}` : `Removed admin role from ${user.handle}`, { tone: "success" });
       setReason("");
       onDone();
     } catch (err) {
-      toast((err as Error).message);
+      toast((err as Error).message, { tone: "danger" });
     } finally {
       setBusy(false);
     }

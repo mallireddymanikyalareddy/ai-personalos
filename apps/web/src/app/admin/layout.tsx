@@ -45,7 +45,7 @@ const ROLE_LABELS: Record<string, string> = {
   analyst: "Read-only Analyst",
 };
 
-type Access = { state: "loading" } | { state: "denied" } | { state: "ok"; role: string; handle: string };
+type Access = { state: "loading" } | { state: "denied" } | { state: "ok"; role: string; handle: string; id: string };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { status } = useAuth();
@@ -61,8 +61,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) return setAccess({ state: "denied" });
-        const me = (await res.json()) as { role: string; handle: string };
-        setAccess({ state: "ok", role: me.role, handle: me.handle });
+        const me = (await res.json()) as { role: string; handle: string; id: string };
+        setAccess({ state: "ok", role: me.role, handle: me.handle, id: me.id });
       })
       .catch(() => !cancelled && setAccess({ state: "denied" }));
     return () => {
@@ -129,7 +129,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </aside>
       <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8">
-        <AdminRoleContext.Provider value={access.role}>{children}</AdminRoleContext.Provider>
+        <AdminRoleContext.Provider value={{ role: access.role, id: access.id }}>{children}</AdminRoleContext.Provider>
       </main>
     </div>
   );

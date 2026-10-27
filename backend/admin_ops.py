@@ -2,7 +2,9 @@ import re
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import BaseModel, Field, StringConstraints
 
 import credits
 from admin import ROLES, admin_emails, require_role
@@ -11,6 +13,7 @@ from billing import now, record_audit
 from db import db
 
 router = APIRouter(prefix="/api/v1/admin")
+Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=300)]
 
 CREDIT_ROLES = ("billing_admin", "support_admin")
 USER_FIELDS = {"_id": 0, "id": 1, "handle": 1, "email": 1, "display_name": 1, "created_at": 1, "admin_role": 1,
@@ -38,7 +41,7 @@ async def list_users(q: str = "", limit: int = 100, _=Depends(require_role())):
     match = {}
     if q.strip():
         pattern = re.escape(q.strip().lower())
-        match = {"$or": [{"handle": {"$regex": pattern}}, {"email": {"$regex": pattern}}]}
+        match = {"$or": [{"handle": {"$regex": pattern, "$options": "i"}}, {"email": {"$regex": pattern, "$options": "i"}}]}
     users = await db.users.find(match, USER_FIELDS).sort("created_at", -1).to_list(max(1, min(limit, 200)))
     accounts = {a["user_id"]: a async for a in db.credit_accounts.find({"user_id": {"$in": [u["id"] for u in users]}}, {"_id": 0})}
     return {"users": [public_admin_user(u, accounts.get(u["id"])) for u in users], "total": await db.users.count_documents(match)}
@@ -63,7 +66,7 @@ async def user_detail(user_id: str, _=Depends(require_role())):
 
 class CreditAdjustIn(BaseModel):
     amount: int = Field(ge=-10000, le=10000)
-    reason: str = Field(min_length=5, max_length=300)
+    reason: Reason
     requestId: str = Field(min_length=8, max_length=64)
 
 
@@ -88,7 +91,7 @@ async def adjust_credits(user_id: str, body: CreditAdjustIn, auth=Depends(requir
 
 class RoleIn(BaseModel):
     role: str | None
-    reason: str = Field(min_length=5, max_length=300)
+    reason: Reason
 
 
 @router.put("/users/{user_id}/role")
@@ -172,7 +175,9 @@ async def usage(days: int = 7, limit: int = 100, _=Depends(require_role())):
 @router.get("/audit")
 async def audit(limit: int = 100, _=Depends(require_role())):
     rows = await db.admin_audit.find({}, {"_id": 0}).sort("created_at", -1).to_list(max(1, min(limit, 500)))
-    return {"entries": [r | {"created_at": iso(r["created_at"])} for r in rows]}
+    names = await handles_for({r["target_id"] for r in rows if r.get("target_type") == "user"})
+    return {"entries": [r | {"created_at": iso(r["created_at"]),
+                             "target_label": f"@{names[r['target_id']]}" if r["target_id"] in names else r["target_id"]} for r in rows]}
 
 
 @router.get("/overview")
