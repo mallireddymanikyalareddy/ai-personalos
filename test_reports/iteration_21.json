@@ -1,0 +1,39 @@
+{
+  "summary": "Tested plan and AI pricing versioning (draft, publish now, schedule, discard), RBAC, the public /api/v1/plans endpoint, reservations using the live pricing version, the admin UI (/admin/plans, /admin/pricing), the user /plans page, the upgrade card and the Settings credits card. Backend: the new test_iter21_plan_versioning.py passed 20/20. Covered: draft v(n+1) is created and saving again updates the same draft; discard works; validation (trial 91, whitespace reason, negative price, short name) returns 400/422; past effective_at returns 400; publishing or discarding with no draft returns 404; missing, extra or duplicate pricing actions return 400; min>max returns 400; audit rows are written; publish now goes live; a schedule 4s ahead shows in scheduled, does not leak to public, then goes live; billing_admin, analyst and ai_ops_admin can GET but get 403 on all 6 mutations, audited as denied; mailtest gets 403; anonymous gets 401. After a pricing publish, a new reservation and its ledger reserve use the new version and max (3). A held reservation keeps its old version and amount. iter16 was updated for the new shapes. The iter16/17/19/20 regression run had 62 passed and 1 skipped (env owner). UI: the drawer form edits prices in rupees. Save is disabled without a reason or with trial 91. The draft card and publish bar work; publish now shows ₹349 v10 live; scheduling shows admin-plan-ai-scheduled while the live price stays the same. In the pricing form, min>max shows the error and disables save; the draft table highlights the changed row; publish updates live. A billing_admin sees no edit buttons or publish bars. The /plans page shows 3 tiles; the monthly/yearly toggle switches prices; the CTAs are disabled with 'Payments coming soon'; action costs and balance are shown. The upgrade card does not show at 4 credits; it shows 'Only 3 AI credits left', 'Only 1 AI credit left' and 'You're out of AI credits'. Its link goes to /plans; dismiss hides it and it stays hidden after reload. There is no card at 10 credits. In Settings, view-plans is always shown and plans-link only when low. All values were restored. Plans are back to the original values (AI is now v13 with the original values). Pricing is v7, equal to v1. There are no drafts or scheduled versions. mailtest has 10 available and 0 reserved. The throwaway users were purged.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/v1/admin/plans/{id}/publish (scheduled)", "issue": "db.plans.name is set to the draft name immediately, even when effective_at is in the future. GET /admin/plans returns the top-level name 'PersonalOS AI Renamed' while current.name is still 'PersonalOS AI', and the admin card header uses plan.name. Reproduced, then restored. Fix: only update plans.name when publishing now, or derive the name from current."},
+      {"endpoint": "db.plans.current_version", "issue": "The stale field stays at 1 after new versions are published. It is unused now, but misleading. Remove it or keep it in sync."},
+      {"endpoint": "PUT /admin/plans/{id}/draft, PUT /admin/pricing/draft", "issue": "Two concurrent first saves can insert two drafts: find-then-insert has no unique partial index on status=draft. Add a unique partial index (plan_id where status=draft) or use an upsert."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin > Plans & Pricing / AI Action Pricing", "issues": ["The History line includes scheduled (not yet live) versions with no marker, and it grows into a long run-on paragraph (the AI card showed v1-v11). Mark scheduled versions, or show only the last few.", "The publish bar uses the browser's native datetime-local picker instead of the shadcn calendar/date-time picker.", "The changed-row highlight in the pricing draft table is a small neutral badge in the Credits cell only. A row background or 'was X' hint would be clearer."]},
+      {"screen": "Settings > AI credits card", "issues": ["'View plans' wraps onto two lines ('View / plans') in the narrow right column. Add whitespace-nowrap.", "The copy hardcodes 'chat 1, morning briefing 2, evening reflection 2' instead of reading the live pricing. It goes stale after a pricing publish."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter21_plan_versioning.py", "/app/backend/tests/test_iter16_billing_stage3.py", "/app/test_reports/pytest/pytest_iter21.xml", "/app/test_reports/pytest/pytest_iter21_regression.xml"],
+  "action_items": [
+    "In publish_plan, only write plans.name when the version goes live now (or drop the top-level name and use current.name in the admin card).",
+    "Optional: add unique partial indexes for draft rows in plan_versions and ai_pricing_versions.",
+    "Optional: remove or sync plans.current_version.",
+    "Optional: mark scheduled versions in the history line and shorten it; use a shadcn date-time picker; make changed pricing rows more visible.",
+    "Optional: credits-card 'View plans' whitespace-nowrap; source the cost copy from /api/v1/plans."
+  ],
+  "critical_code_review_comments": [
+    "plan_admin.py: plan_state and pricing_state duplicate the current/scheduled/draft/history logic. Extract a shared version_state(versions) helper.",
+    "credits.action_price and pricing_state pick 'current' the same way (latest effective_at <= now, then version). They are consistent, but the logic lives in two places.",
+    "PlanForm has no inline error for out-of-range values (for example a price above the ₹10,00,000 cap). It relies on the server 422 toast."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter21_plan_versioning.py", "/app/backend/tests/test_iter16_billing_stage3.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "demo / DemoPass123! (super_admin), mailtest / TestPass123! from /app/memory/test_credentials.md. Throwaway tests21* role users were created and purged.",
+  "seed_data_creation": "Many plan_versions (AI up to v13) and ai_pricing_versions (up to v7) were created. The current live values equal the originals. Audit rows were written for each action.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_iter21_plan_versioning.py has restore_all(demo), which discards drafts and republishes the original plan/pricing values if they differ. Import and call it after manual tests. Scheduled versions cannot be deleted through the API, so only schedule a few seconds ahead (the UI datetime-local has minute precision, so wait about 2 min before restoring). iter16 now accepts version >= 1. The held-reservation test imports backend credits.py with a fresh motor client in its own event loop."
+}

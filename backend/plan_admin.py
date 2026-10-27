@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, StringConstraints
+from pymongo.errors import DuplicateKeyError
 
 from admin import require_role
 from auth import ApiError, iso
@@ -47,8 +48,12 @@ async def plan_state(plan_id: str) -> dict:
 @admin_router.get("/plans")
 async def admin_plans(_=Depends(require_role())):
     plans = await db.plans.find({}, {"_id": 0}).sort("sort", 1).to_list(50)
-    return {"plans": [{"plan_id": p["plan_id"], "available": p["available"], "name": p["name"]} | await plan_state(p["plan_id"])
-                      for p in plans]}
+    return {"plans": [{"plan_id": p["plan_id"], "available": p["available"]} | await named_state(p) for p in plans]}
+
+
+async def named_state(plan: dict) -> dict:
+    state = await plan_state(plan["plan_id"])
+    return {"name": (state["current"] or {}).get("name", plan["name"])} | state
 
 
 class PlanDraftIn(BaseModel):
@@ -100,8 +105,11 @@ async def save_plan_draft(plan_id: str, body: PlanDraftIn, auth=Depends(OWNER)):
         version = draft["version"]
     else:
         version = await next_version(db.plan_versions, {"plan_id": plan_id})
-        await db.plan_versions.insert_one(fields | {"plan_id": plan_id, "version": version, "status": "draft",
-                                                    "created_at": now(), "created_by": auth[0]["handle"]})
+        try:
+            await db.plan_versions.insert_one(fields | {"plan_id": plan_id, "version": version, "status": "draft",
+                                                        "created_at": now(), "created_by": auth[0]["handle"]})
+        except DuplicateKeyError:
+            raise ApiError(409, "CONFLICT", "Another draft was just saved. Reload and try again.")
     await record_audit(auth[0]["handle"], "plan.draft_save", "plan", plan_id, body.reason, role="super_admin",
                        details={"version": version} | fields)
     return await plan_state(plan_id)
@@ -126,7 +134,6 @@ async def publish_plan(plan_id: str, body: PublishIn, auth=Depends(OWNER)):
         {"$set": {"status": "published", "effective_at": when, "published_at": now(), "published_by": auth[0]["handle"]}})
     if not done:
         raise ApiError(404, "NOT_FOUND", "There is no draft to publish.")
-    await db.plans.update_one({"plan_id": plan_id}, {"$set": {"name": done["name"]}})
     await record_audit(auth[0]["handle"], "plan.publish", "plan", plan_id, body.reason, role="super_admin",
                        details={"version": done["version"], "effective_at": iso(when)})
     return await plan_state(plan_id)
@@ -182,8 +189,11 @@ async def save_pricing_draft(body: PricingDraftIn, auth=Depends(OWNER)):
         await db.ai_pricing_versions.update_one({"version": version, "status": "draft"}, {"$set": {"actions": actions, "updated_at": now()}})
     else:
         version = await next_version(db.ai_pricing_versions, {})
-        await db.ai_pricing_versions.insert_one({"version": version, "status": "draft", "actions": actions,
-                                                 "created_at": now(), "created_by": auth[0]["handle"]})
+        try:
+            await db.ai_pricing_versions.insert_one({"version": version, "status": "draft", "actions": actions,
+                                                     "created_at": now(), "created_by": auth[0]["handle"]})
+        except DuplicateKeyError:
+            raise ApiError(409, "CONFLICT", "Another draft was just saved. Reload and try again.")
     await record_audit(auth[0]["handle"], "pricing.draft_save", "pricing", f"v{version}", body.reason, role="super_admin",
                        details={"version": version})
     return await pricing_state()

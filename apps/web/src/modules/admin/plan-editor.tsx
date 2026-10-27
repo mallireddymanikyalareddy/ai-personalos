@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Drawer } from "@/components/ui/drawer";
 import { useToast } from "@/components/ui/toast";
 
@@ -20,7 +21,7 @@ import {
   type PricingAction,
   type PricingState,
 } from "./live";
-import { DataTable, PageHeader, StatusBadge } from "./ui";
+import { DataTable, PageHeader } from "./ui";
 
 const field =
   "h-9 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink focus:border-accent focus:outline-none";
@@ -70,9 +71,12 @@ export function PublishBar({
   onDone: () => void;
 }) {
   const save = useSave();
-  const [when, setWhen] = React.useState("");
+  const [day, setDay] = React.useState<number | null>(null);
+  const [time, setTime] = React.useState("09:00");
   const [reason, setReason] = React.useState("");
-  const valid = reason.trim().length >= 5;
+  const when = day == null ? null : scheduleAt(day, time);
+  const valid =
+    reason.trim().length >= 5 && (when == null || when > Date.now());
   const publish = async () => {
     const effective_at = when ? new Date(when).toISOString() : null;
     if (
@@ -100,14 +104,24 @@ export function PublishBar({
       <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
         Unpublished draft — subscribers aren&apos;t affected until you publish.
       </p>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-[1fr_7rem_1fr]">
+        <div data-testid={`${testId}-when`}>
+          <DatePicker
+            value={day}
+            onValueChange={setDay}
+            min={startOfToday()}
+            placeholder="Publish now"
+            ariaLabel="Effective date (leave empty to publish now)"
+          />
+        </div>
         <input
-          type="datetime-local"
-          data-testid={`${testId}-when`}
-          value={when}
-          onChange={(e) => setWhen(e.target.value)}
+          type="time"
+          data-testid={`${testId}-time`}
+          value={time}
+          disabled={day == null}
+          onChange={(e) => setTime(e.target.value || "00:00")}
           className={field}
-          aria-label="Effective from (leave empty for now)"
+          aria-label="Effective time"
         />
         <input
           data-testid={`${testId}-reason`}
@@ -117,6 +131,12 @@ export function PublishBar({
           className={field}
         />
       </div>
+      {when != null && when <= Date.now() && (
+        <p className="text-[11px] text-red-600" data-testid={`${testId}-past`}>
+          That time has already passed. Pick a later time, or clear the date to
+          publish now.
+        </p>
+      )}
       <p className="text-[11px] text-ink-3">
         Leave the date empty to publish now. Existing subscribers keep their
         current version until their next renewal.
@@ -282,17 +302,45 @@ function PlanCard({
           {plan.draft ? "Edit draft" : "Edit as new version"}
         </Button>
       )}
-      <p
-        className="text-[11px] text-ink-3"
-        data-testid={`admin-plan-${plan.plan_id}-history`}
-      >
-        History:{" "}
-        {plan.history
-          .map((h) => `v${h.version} (${dateTime(h.effective_at)})`)
-          .join(" · ") || "—"}
-      </p>
+      <HistoryLine
+        testId={`admin-plan-${plan.plan_id}-history`}
+        versions={plan.history}
+      />
     </div>
   );
+}
+
+function HistoryLine({
+  versions,
+  testId,
+}: {
+  versions: { version: number; effective_at: string }[];
+  testId: string;
+}) {
+  const live = versions.filter(
+    (v) => new Date(v.effective_at).getTime() <= Date.now(),
+  );
+  const shown = live.slice(0, 5);
+  return (
+    <p className="text-[11px] text-ink-3" data-testid={testId}>
+      Past live versions:{" "}
+      {shown
+        .map((h) => `v${h.version} (${dateTime(h.effective_at)})`)
+        .join(" · ") || "—"}
+      {live.length > shown.length && ` · +${live.length - shown.length} older`}
+    </p>
+  );
+}
+
+function startOfToday() {
+  return new Date().setHours(0, 0, 0, 0);
+}
+
+function scheduleAt(day: number, time: string) {
+  const [h, m] = time.split(":").map(Number);
+  const d = new Date(day);
+  d.setHours(h || 0, m || 0, 0, 0);
+  return d.getTime();
 }
 
 const PLAN_INPUTS: [keyof PlanVersion, string, "rupees" | "int"][] = [
@@ -456,15 +504,7 @@ export function AdminActionPricing() {
             </div>
           )}
           <PricingTable rows={current.actions} testId="admin-pricing-table" />
-          <p
-            className="text-[11px] text-ink-3"
-            data-testid="admin-pricing-history"
-          >
-            History:{" "}
-            {data.history
-              .map((h) => `v${h.version} (${dateTime(h.effective_at)})`)
-              .join(" · ")}
-          </p>
+          <HistoryLine testId="admin-pricing-history" versions={data.history} />
         </>
       )}
       <Drawer
@@ -494,15 +534,24 @@ function PricingTable({
   compare?: PricingAction[];
   testId: string;
 }) {
-  const changed = (r: PricingAction) => {
+  const before = (r: PricingAction) => {
     const old = compare?.find((c) => c.action === r.action);
-    return (
+    const differs =
       old &&
       (old.min_credits !== r.min_credits ||
         old.max_credits !== r.max_credits ||
-        old.max_output_tokens !== r.max_output_tokens)
-    );
+        old.max_output_tokens !== r.max_output_tokens);
+    return differs ? old : null;
   };
+  const was = (now: React.ReactNode, old: React.ReactNode, same: boolean) =>
+    same ? (
+      now
+    ) : (
+      <span className="font-semibold text-amber-700 dark:text-amber-300">
+        {now}{" "}
+        <span className="text-[11px] font-normal text-ink-3">(was {old})</span>
+      </span>
+    );
   return (
     <DataTable
       testId={testId}
@@ -512,7 +561,15 @@ function PricingTable({
           key: "label",
           label: "Action",
           render: (r) => (
-            <span className="font-medium text-ink">{r.label}</span>
+            <span className="font-medium text-ink">
+              {before(r) && (
+                <span
+                  className="mr-1.5 inline-block size-1.5 rounded-full bg-amber-500 align-middle"
+                  aria-label="changed"
+                />
+              )}
+              {r.label}
+            </span>
           ),
         },
         {
@@ -524,15 +581,33 @@ function PricingTable({
           key: "min_credits",
           label: "Credits",
           align: "right",
-          render: (r) =>
-            changed(r) ? (
-              <StatusBadge value={creditRange(r)} />
-            ) : (
-              creditRange(r)
-            ),
+          render: (r) => {
+            const old = before(r);
+            return old
+              ? was(
+                  creditRange(r),
+                  creditRange(old),
+                  creditRange(r) === creditRange(old),
+                )
+              : creditRange(r);
+          },
         },
         { key: "model", label: "Model" },
-        { key: "max_output_tokens", label: "Max output tok", align: "right" },
+        {
+          key: "max_output_tokens",
+          label: "Max output tok",
+          align: "right",
+          render: (r) => {
+            const old = before(r);
+            return old
+              ? was(
+                  r.max_output_tokens,
+                  old.max_output_tokens,
+                  r.max_output_tokens === old.max_output_tokens,
+                )
+              : r.max_output_tokens;
+          },
+        },
       ]}
     />
   );

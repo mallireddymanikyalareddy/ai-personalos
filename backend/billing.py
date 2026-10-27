@@ -80,7 +80,7 @@ async def seed_plans() -> dict:
             "version": 1, "status": "published", "effective_at": SEED_EFFECTIVE_AT, "created_at": now(), "created_by": "system"}
         await db.plan_versions.update_one({"plan_id": seed["plan_id"], "version": 1}, {"$setOnInsert": version}, upsert=True)
         await db.plans.update_one({"plan_id": seed["plan_id"]}, {"$setOnInsert": {
-            "plan_id": seed["plan_id"], "name": seed["name"], "current_version": 1, "available": True,
+            "plan_id": seed["plan_id"], "name": seed["name"], "available": True,
             "sort": seed["sort"], "created_at": now()}}, upsert=True)
     return {"plans": [s["plan_id"] for s in PLAN_SEEDS]}
 
@@ -112,6 +112,11 @@ async def backfill_credit_accounts() -> dict:
 
 async def setup_billing() -> None:
     await ensure_billing_indexes()
+    await db.plan_versions.create_index("plan_id", name="one_draft_per_plan", unique=True,
+                                        partialFilterExpression={"status": "draft"})
+    await db.ai_pricing_versions.create_index("status", name="one_pricing_draft", unique=True,
+                                              partialFilterExpression={"status": "draft"})
+    await db.plans.update_many({"current_version": {"$exists": True}}, {"$unset": {"current_version": ""}})
     await run_once("stage3_seed_plans_v1", seed_plans)
     await run_once("stage3_seed_ai_pricing_v1", seed_pricing)
     await run_once("stage3_backfill_credit_accounts", backfill_credit_accounts)

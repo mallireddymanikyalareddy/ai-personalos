@@ -53,9 +53,11 @@ class TestPlans:
         assert [p["plan_id"] for p in plans] == ["basic", "ai", "ai_pro"]
         for p in plans:
             assert "_id" not in p and "_id" not in p["current"]
-            assert p["current_version"] == 1
+            # Iter 21: shape is {plan_id,name,available,current,scheduled,draft,history}; versions grow with edits
+            assert {"current", "scheduled", "draft", "history"} <= set(p)
             cur = p["current"]
-            assert cur["version"] == 1 and cur["status"] == "published"
+            assert cur["version"] >= 1 and cur["status"] == "published"
+            assert any(h["version"] == 1 for h in p["history"])
             for k, v in EXPECTED_PLANS[p["plan_id"]].items():
                 assert cur[k] == v, (p["plan_id"], k, cur[k])
                 assert isinstance(cur[k], int)
@@ -66,10 +68,11 @@ class TestPricing:
     def test_pricing(self, demo):
         r = demo.get(f"{API}/admin/pricing")
         assert r.status_code == 200, r.text
-        versions = r.json()["versions"]
-        assert len(versions) == 1
-        v = versions[0]
-        assert v["version"] == 1 and v["status"] == "published"
+        d = r.json()
+        # Iter 21: shape is {current, scheduled, draft, history}; current holds the live actions
+        assert {"current", "scheduled", "draft", "history"} <= set(d)
+        v = d["current"]
+        assert v["version"] >= 1 and v["status"] == "published"
         acts = {a["action"]: a for a in v["actions"]}
         assert len(v["actions"]) == 13 and len(acts) == 13
         assert (acts["document_analysis"]["min_credits"], acts["document_analysis"]["max_credits"]) == (3, 8)
@@ -136,7 +139,8 @@ def _counts():
 # Restart idempotency
 def test_restart_idempotent():
     before = _counts()
-    assert before["plans"] == 3 and before["plan_versions"] == 3 and before["pricing"] == 1
+    # Iter 21: plan/pricing versions grow with admin edits, so only require the v1 seeds to exist
+    assert before["plans"] == 3 and before["plan_versions"] >= 3 and before["pricing"] >= 1
     assert before["audit_mig"] == 4
     assert before["migrations"] == ["stage3_backfill_credit_accounts", "stage3_seed_ai_pricing_v1", "stage3_seed_plans_v1",
                                     "stage4_trial_credits_10"]

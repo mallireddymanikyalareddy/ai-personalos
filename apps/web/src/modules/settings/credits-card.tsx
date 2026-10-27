@@ -68,8 +68,8 @@ export function CreditsCard() {
             credits
           </h2>
           <p className="mt-1 text-xs text-ink-3">
-            GPT 6 Luna answers use credits: chat 1, morning briefing 2, evening
-            reflection 2. Failed answers cost nothing.
+            GPT 6 Luna answers in chat, briefings and reflections use credits
+            (costs are listed on the Plans page). Failed answers cost nothing.
           </p>
         </div>
         <div className="text-right">
@@ -85,7 +85,7 @@ export function CreditsCard() {
           <Link
             href="/plans"
             data-testid="credits-card-view-plans"
-            className="text-[11px] font-medium text-accent-ink hover:underline"
+            className="whitespace-nowrap text-[11px] font-medium text-accent-ink hover:underline"
           >
             View plans
           </Link>
