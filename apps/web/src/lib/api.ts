@@ -183,6 +183,9 @@ export const accountApi = {
   onboardingState(): Promise<OnboardingState> {
     return apiFetch<OnboardingState>("/api/v1/users/me/onboarding");
   },
+  skipOnboarding(timezone?: string): Promise<ProfileResponse> {
+    return apiFetch<ProfileResponse>("/api/v1/users/me/onboarding/skip", jsonInit("POST", { timezone }));
+  },
   completeOnboarding(input: OnboardingInput): Promise<ProfileResponse> {
     return apiFetch<ProfileResponse>("/api/v1/users/me/onboarding", jsonInit("POST", input));
   },

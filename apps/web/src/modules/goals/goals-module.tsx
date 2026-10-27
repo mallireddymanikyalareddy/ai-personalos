@@ -362,6 +362,7 @@ export function GoalsModule() {
                 metrics: editing.metrics,
                 category: editing.category,
                 coverUrl: editing.coverUrl,
+                lifeAreaId: editing.lifeAreaId,
               }
             : undefined
         }

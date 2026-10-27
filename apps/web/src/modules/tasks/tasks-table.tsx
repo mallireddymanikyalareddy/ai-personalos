@@ -10,8 +10,15 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { cn } from "@/lib/cn";
+import { LifeAreaChip } from "@/components/life-area/life-area";
+import { useAppState } from "@/store/use-os";
 
 import { taskPriorityMeta, taskStatusMeta, taskTagColor } from "./tasks-meta";
+
+function TaskLifeArea({ taskId }: { taskId: string }) {
+  const state = useAppState();
+  return <LifeAreaChip lifeAreaId={state.tasks[taskId]?.lifeAreaId} className="ml-1.5 align-middle" />;
+}
 
 export interface TaskTableProps {
   rows: TaskTableRow[];
@@ -112,6 +119,7 @@ export function TaskTable({
                   >
                     {row.title}
                   </button>
+                  <TaskLifeArea taskId={row.id} />
                   {row.subtasks.total > 0 ? (
                     <p className="text-[11px] text-ink-3">
                       {row.subtasks.done}/{row.subtasks.total} subtasks

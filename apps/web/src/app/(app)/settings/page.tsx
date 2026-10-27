@@ -55,6 +55,7 @@ import { type LocalSettingsPatch } from "@/lib/settings-sync";
 import { useAuth } from "@/modules/auth/auth-context";
 import { useAppState, useOS } from "@/store/use-os";
 import { WeeklyEmailCard } from "@/modules/settings/weekly-email-card";
+import { LifeAreasCard } from "@/modules/settings/life-areas-card";
 
 type TabId =
   | "profile"
@@ -753,6 +754,8 @@ export default function SettingsPage() {
           ) : null}
 
           <SectionIntro tab={tab} saving={prefSaving} />
+
+          {tab === "profile" && <LifeAreasCard />}
 
           {tab === "profile" && (
             <>

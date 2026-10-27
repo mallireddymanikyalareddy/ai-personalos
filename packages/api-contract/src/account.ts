@@ -215,6 +215,8 @@ export interface ProfileResponse {
   createdAt: string;
   onboardingCompleted: boolean;
   preferences: UserPreferences;
+  onboardingSkipped?: boolean;
+  lifeAreas?: string[];
 }
 
 export interface SessionInfo {

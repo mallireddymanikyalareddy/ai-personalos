@@ -518,6 +518,7 @@ import {
 } from "./types/workmode";
 import { createEvent, type CalendarEvent, type NewEventInput } from "./types/event";
 import { createGoal, type Goal, type GoalMetric, type NewGoalInput } from "./types/goal";
+import { createLifeArea, type LifeArea } from "./types/planning";
 import {
   createHabit,
   createHabitCheckIn,
@@ -1435,6 +1436,32 @@ projectProgressFor = (id: ID): number => {
     }
     this.store.remove("goals", id);
   };
+
+  /** Make the given life areas active (creating missing ones by name) and archive the rest. */
+  syncLifeAreas = (
+    areas: Array<{ name: string; color?: string | null; icon?: string | null; description?: string }>,
+    now: Timestamp = Date.now(),
+  ): LifeArea[] => {
+    const existing = Object.values(this.store.getState().lifeAreas);
+    const wanted = new Set(areas.map((area) => area.name.toLowerCase()));
+    areas.forEach((area, order) => {
+      const match = existing.find((row) => row.name.toLowerCase() === area.name.toLowerCase());
+      if (match) {
+        if (match.status !== "active" || match.order !== order) this.store.update("lifeAreas", match.id, { status: "active", order });
+      } else {
+        this.store.insert("lifeAreas", createLifeArea({ ...area, order }, now));
+      }
+    });
+    for (const row of existing) {
+      if (!wanted.has(row.name.toLowerCase()) && row.status === "active") this.store.update("lifeAreas", row.id, { status: "archived" });
+    }
+    return this.activeLifeAreas();
+  };
+
+  activeLifeAreas = (): LifeArea[] =>
+    Object.values(this.store.getState().lifeAreas)
+      .filter((area) => area.status === "active")
+      .sort((a, b) => a.order - b.order);
 
   addHabit = (input: NewHabitInput | string, now: Timestamp = Date.now()): Habit => {
     const candidate = typeof input === "string" ? { title: input } : input;

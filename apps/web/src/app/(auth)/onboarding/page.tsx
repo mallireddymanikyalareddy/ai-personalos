@@ -20,6 +20,8 @@ import { Logo } from "@/components/ui/logo";
 import { accountApi, errorMessage, isNetworkFailure } from "@/lib/api";
 import { useAuth } from "@/modules/auth/auth-context";
 
+import { applyFirstSteps, EMPTY_FIRST_STEPS, OnboardingFirstSteps, type FirstSteps } from "./first-steps";
+
 type Draft = {
   displayName: string;
   timezone: string;
@@ -31,9 +33,10 @@ type Draft = {
   defaultPlanningView: UserPreferences["defaultPlanningView"];
   ai: UserPreferences["ai"];
   notifications: UserPreferences["notifications"];
+  firstSteps: FirstSteps;
 };
 
-const STEPS = ["About you", "What matters", "Your rhythm", "Preferences"] as const;
+const STEPS = ["About you", "What matters", "Your rhythm", "Preferences", "First steps"] as const;
 
 const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -74,7 +77,9 @@ function readSavedDraft(profileId: string | undefined): { step: number; draft: D
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { step: number; draft: Draft };
     const step = Math.min(Math.max(0, Number(parsed.step) || 0), STEPS.length - 1);
-    return parsed.draft && typeof parsed.draft.displayName === "string" ? { step, draft: parsed.draft } : null;
+    return parsed.draft && typeof parsed.draft.displayName === "string"
+      ? { step, draft: { ...parsed.draft, firstSteps: { ...EMPTY_FIRST_STEPS, ...parsed.draft.firstSteps } } }
+      : null;
   } catch {
     return null;
   }
@@ -164,7 +169,8 @@ export default function OnboardingPage() {
         .onboardingState()
         .then((next) => {
           if (cancelled) return;
-          if (next.completed) {
+          const resuming = new URLSearchParams(window.location.search).get("resume") === "1";
+          if (next.completed && !(resuming && next.profile?.onboardingSkipped)) {
             router.replace("/today");
             return;
           }
@@ -189,7 +195,8 @@ export default function OnboardingPage() {
               next.profile?.locale && next.profile.locale !== "en"
                 ? next.profile.locale
                 : (detectedLoc ?? next.profile?.locale ?? "en"),
-            lifeAreaNames: [],
+            lifeAreaNames: next.profile?.lifeAreas ?? [],
+            firstSteps: { ...EMPTY_FIRST_STEPS },
             workingHours: pref?.workingHours ?? {
               enabled: true,
               days: [1, 2, 3, 4, 5],
@@ -268,6 +275,22 @@ export default function OnboardingPage() {
           notifications: draft.notifications,
         },
       });
+      await applyFirstSteps(draft.firstSteps, draft.lifeAreaNames);
+      if (profileId) window.sessionStorage.removeItem(draftKey(profileId));
+      await refresh();
+      router.replace("/today");
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  };
+
+  const skip = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await accountApi.skipOnboarding(detectedTimezone());
       if (profileId) window.sessionStorage.removeItem(draftKey(profileId));
       await refresh();
       router.replace("/today");
@@ -306,9 +329,22 @@ export default function OnboardingPage() {
           <Logo className="size-6" />
           <span className="text-sm font-semibold tracking-tight text-ink">PersonalOS</span>
         </div>
-        <span className="text-xs font-medium text-ink-3">
-          Step {step + 1} of {STEPS.length}
-        </span>
+        <div className="flex items-center gap-3">
+          {!state.completed && (
+            <button
+              type="button"
+              data-testid="onboarding-skip-button"
+              onClick={skip}
+              disabled={busy}
+              className="text-xs font-medium text-ink-3 hover:text-ink hover:underline disabled:opacity-50"
+            >
+              Skip for now
+            </button>
+          )}
+          <span className="text-xs font-medium text-ink-3">
+            Step {step + 1} of {STEPS.length}
+          </span>
+        </div>
       </header>
 
       <div className="mx-auto max-w-2xl px-5 sm:px-8">
@@ -330,6 +366,7 @@ export default function OnboardingPage() {
             {step === 1 && "What matters to you right now?"}
             {step === 2 && "Set your daily rhythm"}
             {step === 3 && "Shape how the OS thinks"}
+            {step === 4 && "Start with one goal and a few habits"}
           </h1>
           <p className="mt-1.5 text-sm leading-relaxed text-ink-3">
             {step === 0 &&
@@ -340,8 +377,19 @@ export default function OnboardingPage() {
               "Working hours and sleep windows help the OS plan around your real life."}
             {step === 3 &&
               "Planning style, AI tone, and notifications — tune them once, or come back anytime."}
+            {step === 4 &&
+              "Everything here is optional. Small starts make the biggest difference."}
           </p>
         </div>
+
+        {step === 4 && (
+          <OnboardingFirstSteps
+            value={draft.firstSteps}
+            onChange={(patch) => update({ firstSteps: { ...draft.firstSteps, ...patch } })}
+            lifeAreaNames={draft.lifeAreaNames}
+            hasEmail={Boolean(state.profile?.email)}
+          />
+        )}
 
         {error !== null && (
           <div className="mb-5 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">

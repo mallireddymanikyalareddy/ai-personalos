@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { LifeAreaFilter } from "@/components/life-area/life-area";
+
 import { CheckCircle2, Filter, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 
 import {
@@ -123,7 +125,8 @@ export function TasksModule() {
   const [answer, setAnswer] = React.useState<string | null>(null);
   const [detailId, setDetailId] = React.useState<ID | null>(null);
   const [period, setPeriod] = React.useState("This Month");
-  const [showCompleted, setShowCompleted] = React.useState(false);
+  const [showCompleted, setShowCompleted] = React.useState(true);
+  const [lifeAreaFilter, setLifeAreaFilter] = React.useState<ID | "all">("all");
   const [includeArchived, setIncludeArchived] = React.useState(false);
   const [sort, setSort] = React.useState<SortKey>("due");
   const [presets, setPresets] = React.useState<TaskPreset[]>([]);
@@ -171,8 +174,8 @@ export function TasksModule() {
       default:
         copy.sort((a, b) => (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity));
     }
-    return copy;
-  }, [dashboard.rows, sort, state.tasks]);
+    return lifeAreaFilter === "all" ? copy : copy.filter((row) => state.tasks[row.id]?.lifeAreaId === lifeAreaFilter);
+  }, [dashboard.rows, sort, state.tasks, lifeAreaFilter]);
 
   const periodRange = React.useMemo(() => {
     const today = startOfDay(now);
@@ -871,6 +874,8 @@ export function TasksModule() {
             </div>
           </div>
         ) : null}
+
+        {dashboard.total > 0 ? <LifeAreaFilter value={lifeAreaFilter} onChange={setLifeAreaFilter} /> : null}
 
         {dashboard.total === 0 ? (
           <EmptyState

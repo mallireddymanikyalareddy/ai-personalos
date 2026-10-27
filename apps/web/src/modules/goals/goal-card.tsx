@@ -11,6 +11,13 @@ import { Badge } from "@/components/ui/badge";
 import { ProgressBar } from "@/components/ui/progress";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { cn } from "@/lib/cn";
+import { LifeAreaChip } from "@/components/life-area/life-area";
+import { useAppState } from "@/store/use-os";
+
+function GoalLifeArea({ goalId }: { goalId: string }) {
+  const state = useAppState();
+  return <LifeAreaChip lifeAreaId={state.goals[goalId]?.lifeAreaId} />;
+}
 
 import {
   formatGoalDate,
@@ -74,6 +81,7 @@ export function GoalCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <GoalCategoryBadge category={card.category} />
+          <GoalLifeArea goalId={card.id} />
           <button
             type="button"
             onClick={onOpen}

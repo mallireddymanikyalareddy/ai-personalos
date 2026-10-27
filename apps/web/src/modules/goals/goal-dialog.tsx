@@ -4,8 +4,10 @@ import * as React from "react";
 
 import { Paperclip, Plus, Trash2, X } from "lucide-react";
 
-import type { GoalCategory, GoalHorizon, GoalMetric } from "@personalos/core";
+import type { GoalCategory, GoalHorizon, GoalMetric, ID } from "@personalos/core";
 import { GOAL_CATEGORIES, GOAL_CATEGORY_LABELS } from "@personalos/core";
+
+import { LifeAreaSelect } from "@/components/life-area/life-area";
 
 import { Button } from "@/components/ui/button";
 import { FieldLabel, Input, Textarea } from "@/components/ui/input";
@@ -21,6 +23,7 @@ export interface GoalDialogInput {
   metrics: Array<GoalMetric>;
   category: GoalCategory;
   coverUrl: string | null;
+  lifeAreaId?: ID | null;
 }
 
 export interface GoalDialogProps {
@@ -61,9 +64,11 @@ export function GoalDialog({ open, onClose, onSave, initial }: GoalDialogProps) 
   const [category, setCategory] = React.useState<GoalCategory>("other");
   const [coverUrl, setCoverUrl] = React.useState<string | null>(null);
   const [coverError, setCoverError] = React.useState<string | null>(null);
+  const [lifeAreaId, setLifeAreaId] = React.useState<ID | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
+    setLifeAreaId(initial?.lifeAreaId ?? null);
     setTitle(initial?.title ?? "");
     setDescription(initial?.description ?? "");
     setHorizon(initial?.horizon ?? "quarter");
@@ -78,7 +83,7 @@ export function GoalDialog({ open, onClose, onSave, initial }: GoalDialogProps) 
 
   const handleSave = () => {
     if (!canSave) return;
-    onSave({ title: title.trim(), description: description.trim(), horizon, targetAt, metrics, category, coverUrl });
+    onSave({ title: title.trim(), description: description.trim(), horizon, targetAt, metrics, category, coverUrl, lifeAreaId });
     onClose();
   };
 
@@ -134,6 +139,11 @@ export function GoalDialog({ open, onClose, onSave, initial }: GoalDialogProps) 
             onChange={(e) => setDescription(e.target.value)}
             placeholder="What does done look like?"
           />
+        </div>
+
+        <div>
+          <FieldLabel htmlFor="goal-life-area">Life area</FieldLabel>
+          <LifeAreaSelect id="goal-life-area" testId="goal-life-area-select" value={lifeAreaId} onChange={setLifeAreaId} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">

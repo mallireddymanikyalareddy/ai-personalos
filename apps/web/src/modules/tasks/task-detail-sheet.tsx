@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { LifeAreaSelect } from "@/components/life-area/life-area";
+
 import { Archive, Flag, Hash, Plus, Timer, Trash2, X } from "lucide-react";
 
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -315,6 +317,18 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
               );
             })}
           </div>
+        </div>
+
+        <div>
+          <FieldLabel htmlFor="task-life-area" className="mb-1.5">
+            Life area
+          </FieldLabel>
+          <LifeAreaSelect
+            id="task-life-area"
+            testId="task-life-area-select"
+            value={task.lifeAreaId}
+            onChange={(lifeAreaId) => os.updateTask(task.id, { lifeAreaId })}
+          />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

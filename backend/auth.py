@@ -117,6 +117,8 @@ def profile(user: dict) -> dict:
         "avatarUrl": user.get("avatar_url"),
         "createdAt": iso(user["created_at"]),
         "onboardingCompleted": user.get("onboarding_completed_at") is not None,
+        "onboardingSkipped": bool(user.get("onboarding_skipped")),
+        "lifeAreas": user.get("life_areas") or [],
         "preferences": deep_merge(DEFAULT_PREFERENCES, user.get("preferences") or {}),
     }
 
@@ -513,7 +515,12 @@ def _avatar(value) -> dict:
     return {"avatar_url": value}
 
 
-PROFILE_FIELDS = {"displayName": _display_name, "timezone": _timezone, "locale": _locale, "avatarUrl": _avatar}
+def _life_areas(value) -> dict:
+    return {"life_areas": _onboarding_life_areas(value)}
+
+
+PROFILE_FIELDS = {"displayName": _display_name, "timezone": _timezone, "locale": _locale, "avatarUrl": _avatar,
+                  "lifeAreaNames": _life_areas}
 
 
 def validate_profile_update(body, user: dict) -> dict:
@@ -569,7 +576,8 @@ def validate_onboarding(body, user: dict) -> dict:
     prefs = body.get("preferences") or {}
     validate_preferences(prefs)
     update = {"timezone": tz, "locale": str(body.get("locale") or "en")[:35], "life_areas": life_areas,
-              "preferences": deep_merge(user.get("preferences") or {}, prefs), "onboarding_completed_at": now(), "updated_at": now()}
+              "preferences": deep_merge(user.get("preferences") or {}, prefs), "onboarding_completed_at": now(),
+              "onboarding_skipped": False, "updated_at": now()}
     if body.get("displayName") is not None:
         update.update(_display_name(body["displayName"]))
     return update
@@ -579,6 +587,21 @@ def validate_onboarding(body, user: dict) -> dict:
 async def post_onboarding(request: Request, auth=Depends(require_auth)):
     user, _ = auth
     return await apply_user_update(user["id"], validate_onboarding(await request.json(), user))
+
+
+class SkipOnboardingIn(BaseModel):
+    timezone: str | None = None
+
+
+@router.post("/users/me/onboarding/skip")
+async def skip_onboarding(body: SkipOnboardingIn, auth=Depends(require_auth)):
+    user, _ = auth
+    if user.get("onboarding_completed_at") is not None:
+        return profile(user)
+    update = {"onboarding_completed_at": now(), "onboarding_skipped": True, "updated_at": now()}
+    if body.timezone and valid_tz(body.timezone):
+        update["timezone"] = body.timezone
+    return await apply_user_update(user["id"], update)
 
 
 @router.get("/integrations/catalog")

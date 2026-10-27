@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { LifeAreaChip } from "@/components/life-area/life-area";
+
 import {
   CalendarPlus,
   Flag,
@@ -158,6 +160,7 @@ export function TaskRow({ task, onOpen, showQuickSchedule = false, showProject =
                 {project.name}
               </span>
             )}
+            <LifeAreaChip lifeAreaId={task.lifeAreaId} />
             {task.priority > 0 && (
               <span className={cn("inline-flex items-center gap-1", PRIORITY_TONES[task.priority])}>
                 <Flag className="size-3" aria-hidden="true" />
