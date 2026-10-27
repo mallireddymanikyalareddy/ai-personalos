@@ -4,3 +4,4 @@
 - Register: POST /api/v1/auth/register {handle, displayName, email?, password(min 10)}
 - Login: POST /api/v1/auth/login {identifier (handle or email), password}; session cookie pos_session (httpOnly)
 - Brute force: 5 failed logins per ip+identifier in 15 min -> 429 RATE_LIMITED
+- Admin console: demo has admin_role=super_admin (set in DB; demo email is unverified and not in ADMIN_EMAILS). mailtest has no admin role (403 on /api/v1/admin/me). Do not delete.

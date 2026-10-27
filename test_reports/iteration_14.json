@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 14 tested the Admin Console Stage 1/2 scaffold (backend role gate plus 10 admin screens that show demo data). The review request text was cut off, so I tested what the latest commit added (backend/admin.py and apps/web/src/app/admin/*). Backend: a new file test_iter14_admin.py has 6 tests, and all pass. GET /api/v1/admin/me returns 401 for anonymous users, 200 {role: super_admin} for demo, and 403 FORBIDDEN for mailtest, for a fresh user, and for a user with an unverified email. The full regression suite passes 156/156 when run serially. When run with xdist -n 4, test_iter7 fails because tests share the demo preferences; this is a test isolation problem, not an app bug. Frontend: an anonymous user who opens /admin is sent to /login. Demo reaches the Dashboard: the sidebar shows 'Signed in as demo / Super Admin', the 'DEMONSTRATION DATA' notice is shown, there are 8 stat cards and 2 recharts charts, and the range toggles set aria-pressed. All 9 sub-nav links work, set aria-current=page, and show their title and table rows (users 5, subs 5, ledger 5, usage 4, pricing 13, promos 2, audit 4). Deep links work. Users search filters to 1 row and shows 'No matching records.' when nothing matches. The Back to app link goes to /today. A non-admin user (mailtest) sees admin-access-denied and no table. On mobile (390px) there is no horizontal overflow and the sidebar becomes a nav bar that scrolls sideways. There were no page errors.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "/api/v1/admin/* (role model)", "issue": "The admin role is only ever added, never removed. Taking an email out of ADMIN_EMAILS does not demote that user. The demo account's super_admin role was written straight into the DB, although its email is unverified and not configured."}
+  ]},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Anonymous /admin", "issue": "It redirects to /login without a next/return param, so after login the admin lands on /today instead of /admin.", "affected_selectors": []}
+    ],
+    "design_issues": [
+      {"screen": "Admin Dashboard", "issues": ["The range buttons 'Last 7d/30d/90d' change only aria-pressed. The stats and charts stay the same (acceptable for demo data, but it misleads)", "inr() prints '₹602.2'. Set minimumFractionDigits:2 when the value has a fraction"]},
+      {"screen": "Admin mobile (<lg)", "issues": ["The 'Signed in as / role / Back to app' block is hidden (hidden lg:block), so mobile has no way back to the app and no role label", "The nav scrolls sideways but does not scroll the active item into view (for example /admin/usage)"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter14_admin.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Optional: add ?next=/admin to the admin layout's anonymous redirect",
+    "Optional: show a role and Back to app link in the mobile admin header",
+    "Optional: format inr() with 2 decimals",
+    "Optional: wire up the dashboard range toggles, or hide them until Stage 5"
+  ],
+  "critical_code_review_comments": [
+    "admin.py ensure_admin_role compares user.email with a lowercased ADMIN_EMAILS set. Make sure stored emails are always lowercased",
+    "There is no demotion path: a user who already has admin_role keeps it permanently. Consider syncing roles or adding an audit trail when Stage 5 adds role management",
+    "AdminLayout: if /admin/me fails because of the network, it shows 'Admin access required' (denied) instead of an error with a retry option"
+  ],
+  "updated_files": ["/app/backend/tests/test_iter14_admin.py", "/app/memory/test_credentials.md"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Registered 2 testXXXXXXXXX users (TestPass123!) for 403 checks",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Admin testids: admin-nav-{dashboard|users|subscriptions|plans|credits|usage|pricing|promotions|audit|settings}, admin-page-title, admin-role, admin-demo-notice, admin-access-denied, admin-range-7d/30d/90d, stat-*, chart-usage/plans/cost, admin-{users|subscriptions|ledger|usage|pricing|promotions|audit}-table (+ -search, -row-<id>), admin-plan-<id>, admin-provider-status. Run the pytest suite serially (xdist causes demo-pref races). Login via page.request.post(BASE+'/api/v1/auth/login', data={identifier,password})."
+}

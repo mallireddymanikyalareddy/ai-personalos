@@ -68,7 +68,8 @@ export function LoginPage() {
       } catch {
         // ignore storage failures
       }
-      router.replace("/today");
+      const next = searchParams.get("next");
+      router.replace(next && /^\/[a-z0-9/_-]*$/i.test(next) && !next.startsWith("//") ? next : "/today");
     } catch (caught) {
       setError(caught);
       setBusy(false);

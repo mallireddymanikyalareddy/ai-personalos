@@ -16,17 +16,22 @@ def admin_emails() -> set[str]:
 
 async def promote_configured_admins() -> None:
     emails = admin_emails()
+    # Env-granted roles follow ADMIN_EMAILS: removing an email demotes that user on next start.
+    await db.users.update_many(
+        {"admin_role_source": "env", "email": {"$nin": list(emails)}},
+        {"$unset": {"admin_role": "", "admin_role_source": ""}},
+    )
     if emails:
         await db.users.update_many(
             {"email": {"$in": list(emails)}, "email_verified_at": {"$ne": None}, "admin_role": {"$exists": False}},
-            {"$set": {"admin_role": "super_admin"}},
+            {"$set": {"admin_role": "super_admin", "admin_role_source": "env"}},
         )
 
 
 async def ensure_admin_role(user: dict) -> None:
     # Only a verified email can claim a configured admin role (prevents squatting an unverified address).
     if user.get("email") in admin_emails() and user.get("email_verified_at") and not user.get("admin_role"):
-        await db.users.update_one({"id": user["id"]}, {"$set": {"admin_role": "super_admin"}})
+        await db.users.update_one({"id": user["id"]}, {"$set": {"admin_role": "super_admin", "admin_role_source": "env"}})
         user["admin_role"] = "super_admin"
 
 

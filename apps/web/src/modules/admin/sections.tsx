@@ -41,6 +41,7 @@ export function AdminDashboard() {
             Last {value}
           </button>
         ))}
+        <span className="self-center text-[11px] text-ink-3">Date filters apply once live data is connected.</span>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat testId="stat-users" label="Registered users" value="2,418" />

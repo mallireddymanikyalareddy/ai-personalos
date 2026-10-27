@@ -1,0 +1,39 @@
+# Admin Console + AI Credit Engine — Stage 1 Assessment & Plan
+
+## Current architecture (as inspected)
+- **Frontend:** Next.js 15 (App Router) in `apps/web`. It is built as a static export (`STATIC_EXPORT=1` → `frontend/build`) and served as plain files. Design system: `apps/web/src/components/ui/*` with Tailwind tokens (`bg-surface`, `text-ink`, `border-line`, `accent`); charts use `recharts`.
+- **Local-first app data:** tasks, notes, journal and the other modules live in the browser store (`packages/core`). Each user's data is synced as one copy per account via `PUT /api/v1/state` (`app_state` collection).
+- **Backend:** Python FastAPI (`backend/server.py`, `auth.py`, `admin.py`, `digest.py`, `db.py`) on MongoDB (motor). Every route is under `/api`. The legacy Node API (`apps/api`) is **unused**.
+- **Auth:** custom bcrypt password login with an httpOnly `pos_session` cookie (`sessions` collection), brute-force limits, and password reset / email verification links.
+- **AI:** `POST /api/ai/chat` (GPT 6 Luna through emergentintegrations, user's `OPENAI_API_KEY`) is used by the AI chat, morning briefing and evening reflection. There are no credits or metering yet. The local rule-based assistant runs in the browser.
+- **Email:** Emergent-managed Resend (`digest.py`), used for the Monday briefing and account links.
+- **Payments/subscriptions:** none exist. Razorpay was chosen; its keys have not been collected yet.
+
+## Reuse
+`users` (+ new `admin_role` field), `sessions`, `require_auth`, the `ApiError` problem format, `digest.send_email`, the `/api/ai/chat` streaming code (to be wrapped by the gateway), and the UI kit.
+
+## Risks
+- The AI endpoints are currently free. The gateway must sit in front of `/api/ai/chat` without breaking the briefing/recap cards.
+- MongoDB has no SQL transactions on a standalone node. The ledger will use **atomic conditional updates** (`find_one_and_update` with balance guards) plus unique idempotency-key indexes. Multi-document transactions will be used if Atlas replica sets allow them.
+- The live database is separate from preview, so admin roles must be granted per environment.
+
+## Data model (MongoDB, additive only — no existing collection is changed destructively)
+`plans` (versioned) · `plan_versions` · `subscriptions` · `subscription_events` · `credit_accounts` · `credit_ledger` (immutable, unique `idempotency_key`) · `credit_reservations` · `ai_pricing_versions` (draft/published, effective_at) · `ai_usage` · `promotions` · `promotion_grants` · `admin_audit` (append-only) · `payment_webhook_events` (unique provider event id) · `entitlement_runs` · `reconciliation_items`.
+Money is stored in integer paise and credits as integers. Indexes are created by `ensure_indexes()`; seeds are idempotent upserts.
+
+## Roles
+`super_admin`, `billing_admin`, `support_admin`, `ai_ops_admin`, `analyst`, enforced server-side by `admin.require_role(...)`.
+The initial Super Admin comes from the `ADMIN_EMAILS` environment setting and is granted **only after that email is verified**.
+
+## Stages
+1. Inspection & plan (this document) ✅
+2. Admin Console UI with clearly labelled demonstration data ✅
+3. Schema, indexes and seed plans/pricing
+4. Credit engine: entitlements, reserve → settle/release, ledger, idempotency, resets, annual bonus
+5. Admin APIs and permissions (replacing the demo data) plus audit logging
+6. AI gateway: route `/api/ai/chat`, briefing, recap and future actions through reserve/settle; mock provider for tests
+7. Subscriber UI: credit badge, details panel, confirmation modal, low-credit states
+8. Razorpay test-mode adapter, webhooks (signature verification, dedupe), concurrency and reconciliation tests
+
+## Backup & recovery (to be expanded in Stage 3)
+Atlas continuous backups / snapshots. All migrations are additive and idempotent; rollback means stopping new writes to the new collections, since existing collections are untouched.

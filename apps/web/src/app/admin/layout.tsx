@@ -53,7 +53,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [access, setAccess] = React.useState<Access>({ state: "loading" });
 
   React.useEffect(() => {
-    if (status === "anonymous") router.replace("/login");
+    if (status === "anonymous") router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     if (status !== "authenticated") return;
     let cancelled = false;
     fetch("/api/v1/admin/me", { credentials: "include", cache: "no-store" })
@@ -67,7 +67,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => {
       cancelled = true;
     };
-  }, [status, router]);
+  }, [status, router, pathname]);
 
   if (access.state === "loading") {
     return (
@@ -118,7 +118,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             );
           })}
         </nav>
-        <div className="hidden px-5 py-4 text-xs text-ink-3 lg:block" data-testid="admin-role">
+        <div className="px-5 pb-3 text-xs text-ink-3 lg:py-4" data-testid="admin-role">
           Signed in as <span className="font-medium text-ink">{access.handle}</span>
           <br />
           {ROLE_LABELS[access.role] ?? access.role}
