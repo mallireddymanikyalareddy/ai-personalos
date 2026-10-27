@@ -1,0 +1,37 @@
+{
+  "summary": "Retested the iteration 19 follow-ups. All requested fixes work. Backend: the new test_iter20_admin_followups.py passed 12/12. The regression suites (iter19 admin ops + concurrency, iter16, iter17) passed: 63 passed, 1 skipped (the same env-owner skip as before). UI: clicking credit-badge from /today, /tasks and /settings?tab=profile goes to /settings?tab=ai and shows the AI section with credits-card. Clicking a Settings tab updates ?tab= (profile/security/appearance/ai). Clicking the badge after clicking the Profile tab also works. When demo opens their own row, admin-role-form is not rendered but the credit form is; for mailtest the role form is shown. The overdraw toast uses the danger style (XCircle text-danger icon, border-danger/30), and add/remove toasts use the success style (CheckCircle2 text-success icon). In Audit Logs the Target column shows 'user @mailtest' for live users and the full /api/v1/... path for route rows, and the When column is whitespace-nowrap. The Dashboard 'Recent administrative actions' shows @mailtest. A users row can be reached with one Tab from the search box and opened with Enter. Whitespace-only reasons ('    x') return 400 VALIDATION_FAILED for credits and role, and the UI also disables submit. Search ignores case: MAILTEST, MailTest, '  MAILTEST  ' and RESEND.DEV all find mailtest. mailtest was restored to 10 available / 0 reserved with no admin role.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/v1/admin/audit", "issue": "target_label falls back to the raw user id when the target user no longer exists, e.g. purged test users. 41 of 51 user rows in preview show UUIDs. This is expected, but a '(deleted user)' label would read better."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin > Audit Logs", "issues": ["The Target column is very narrow and uses break-all. '@mailtest' wraps as '@ / mailtest', and UUID or route targets wrap over 6-10 lines, so rows grow up to 241px tall. Give the Target column a min-width (about 180px) or truncate it with a title tooltip.", "The Details JSON is not wrapped or truncated. It pushes the Outcome column off-screen at 1920px and makes the table scroll sideways.", "The audit search does not include target_label (search uses target_id), so searching 'mailtest' does not find rows targeting @mailtest."]},
+      {"screen": "Admin > Users table", "issues": ["A focused row only gets a faint bg-surface-2 and the outline is removed (focus:outline-none). Keyboard users get a weak focus indicator. Add a focus-visible:ring."]},
+      {"screen": "Admin user drawer toast", "issues": ["Grammar: 'Added 1 credits' should be singular for 1."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter20_admin_followups.py", "/app/test_reports/pytest/pytest_iter20.xml"],
+  "action_items": [
+    "Optional: widen the Audit Target column, or truncate it instead of break-all, and truncate the Details column.",
+    "Optional: add target_label to the audit DataTable search string.",
+    "Optional: add a visible focus ring to clickable DataTable rows.",
+    "Optional: use the singular 'credit' when n === 1 in the drawer toast."
+  ],
+  "critical_code_review_comments": [
+    "settings/page.tsx: the useEffect only syncs when urlTab is valid. Client navigation to /settings with no ?tab while already on another tab keeps the old tab instead of going back to profile. This is minor.",
+    "settings/page.tsx is about 1950 lines. Split the tab sections into modules.",
+    "admin_ops.py calls body.reason.strip() although Reason already uses strip_whitespace. This is harmless and redundant."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter20_admin_followups.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "demo / DemoPass123! (super_admin), mailtest / TestPass123! (no role) from /app/memory/test_credentials.md",
+  "seed_data_creation": "A throwaway tests20* user was created and purged by the module fixture. mailtest got admin +1/-1 and a failed overdraw (audited) and was left at 10 available.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "API shapes: /admin/users returns {users,total}, /admin/audit returns {entries}, and errors are flat {code, errors}. Only 200 users are listed in the admin table, so use admin-users-search to find demo/mailtest rows. Toasts are [role=status] with no testid: the danger style is detected by svg.text-danger, success by svg.text-success. Run iter19_cleanup.py after tests to restore mailtest."
+}

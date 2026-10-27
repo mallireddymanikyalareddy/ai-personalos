@@ -18,7 +18,11 @@ export function CreditBadge() {
       href="/settings?tab=ai"
       data-testid="credit-badge"
       data-low={low}
-      title={low ? `Only ${balance.available} AI credits left` : `${balance.available} AI credits available`}
+      title={
+        low
+          ? `Only ${balance.available} AI credits left`
+          : `${balance.available} AI credits available`
+      }
       aria-label={`${balance.available} AI credits available${low ? ", running low" : ""}`}
       className={cn(
         "inline-flex h-7 items-center gap-1 rounded-full border px-2 text-[11px] font-medium tabular-nums transition-colors",
@@ -29,7 +33,9 @@ export function CreditBadge() {
     >
       <Sparkles className="size-3.5" aria-hidden="true" />
       <span data-testid="credit-badge-count">{balance.available}</span>
-      <span className="hidden sm:inline">{low ? "credits left" : "credits"}</span>
+      <span className="hidden sm:inline">
+        {low ? "credits left" : "credits"}
+      </span>
     </Link>
   );
 }

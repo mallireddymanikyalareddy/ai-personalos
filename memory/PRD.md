@@ -64,3 +64,9 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - Briefing double auto-run fixed (in-flight guard in ai-recap-card).
 - The success/charge path is verified with unit tests only; the real OpenAI account has no balance, so live AI calls currently fail and return credits.
 - Next: Stage 5 admin APIs (live users/credits/audit, admin grants), Stage 7 credit badge/history UI, monthly refills, Stage 8 Razorpay.
+
+## 2026-06 — Admin Stages 5 + 7: live admin tools and user credit screens (agent-tested, iterations 19–20 100%)
+- backend/admin_ops.py: live users (search, detail), overview, usage, audit, ledger, credit summary; credit add/remove with reason + requestId idempotency (audited, failed attempts audited); role assignment (super_admin only, not self, env owner locked). Denied role access is audited.
+- Admin UI: Dashboard, Users (drawer with credit form + role form), Credits, Usage, Audit are LIVE. Subscriptions, Promotions and Settings are still DEMO. Plans and Pricing are LIVE read-only.
+- User UI: credit badge in the top bar (amber at 3 or fewer) → Settings › AI credits card with history. Settings tab now syncs from the URL.
+- Remaining: monthly refills and annual bonus (needs subscriptions), Razorpay (Stage 8), live Subscriptions/Promotions/Settings pages, plan/pricing editing with versioning, provider money-cost tracking, MFA.

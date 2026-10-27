@@ -2,7 +2,15 @@
 
 import * as React from "react";
 
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import {
   dateTime,
@@ -21,7 +29,15 @@ import { UserDrawer } from "./user-drawer";
 
 const axis = { fontSize: 11, fill: "var(--ink-3)" };
 
-function LivePage({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+function LivePage({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="space-y-6">
       <PageHeader title={title} description={description} />
@@ -31,7 +47,13 @@ function LivePage({ title, description, children }: { title: string; description
   );
 }
 
-function RangePicker({ days, setDays }: { days: number; setDays: (d: number) => void }) {
+function RangePicker({
+  days,
+  setDays,
+}: {
+  days: number;
+  setDays: (d: number) => void;
+}) {
   return (
     <div className="flex gap-2" role="group" aria-label="Date range">
       {[7, 30, 90].map((value) => (
@@ -64,8 +86,20 @@ function TrendChart({ data, testId }: { data: TrendPoint[]; testId: string }) {
             <XAxis dataKey="day" tick={axis} />
             <YAxis tick={axis} allowDecimals={false} />
             <Tooltip />
-            <Area type="monotone" dataKey="credits" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.15} />
-            <Area type="monotone" dataKey="requests" stroke="#059669" fill="#059669" fillOpacity={0.1} />
+            <Area
+              type="monotone"
+              dataKey="credits"
+              stroke="var(--accent)"
+              fill="var(--accent)"
+              fillOpacity={0.15}
+            />
+            <Area
+              type="monotone"
+              dataKey="requests"
+              stroke="#059669"
+              fill="#059669"
+              fillOpacity={0.1}
+            />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -73,7 +107,14 @@ function TrendChart({ data, testId }: { data: TrendPoint[]; testId: string }) {
   );
 }
 
-type CreditSummary = { accounts: number; available: number; reserved: number; consumed: number; granted: number; removed: number };
+type CreditSummary = {
+  accounts: number;
+  available: number;
+  reserved: number;
+  consumed: number;
+  granted: number;
+  removed: number;
+};
 type Overview = {
   users: number;
   newUsers: number;
@@ -90,33 +131,78 @@ export function AdminDashboard() {
   const [days, setDays] = React.useState(7);
   const { data, error } = useAdminData<Overview>(`overview?days=${days}`);
   return (
-    <LivePage title="Dashboard" description="Accounts, AI usage and credits at a glance.">
+    <LivePage
+      title="Dashboard"
+      description="Accounts, AI usage and credits at a glance."
+    >
       <RangePicker days={days} setDays={setDays} />
       {!data ? (
         <LoadState error={error} testId="admin-overview-state" />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat testId="stat-users" label="Registered users" value={data.users.toLocaleString()} hint={`${data.newUsers} new in ${days}d`} />
-            <Stat testId="stat-admins" label="Admins" value={String(data.admins)} />
-            <Stat testId="stat-ai-requests" label={`AI requests (${days}d)`} value={String(data.usage.requests)}
-              hint={`${data.usage.succeeded} succeeded · ${data.usage.failed} failed · ${data.usage.cancelled} cancelled`} />
-            <Stat testId="stat-credits-charged" label={`Credits charged (${days}d)`} value={String(data.usage.creditsCharged)} />
-            <Stat testId="stat-credits-available" label="Credits available" value={data.credits.available.toLocaleString()} hint="Across all accounts" />
-            <Stat testId="stat-pending" label="Pending holds" value={String(data.pendingHolds)} hint={`${data.staleHolds} older than 10 min`} />
-            <Stat testId="stat-subscribers" label="Active subscribers" value="—" hint="Available once payments are connected" />
-            <Stat testId="stat-mrr" label="MRR" value="—" hint="Available once payments are connected" />
+            <Stat
+              testId="stat-users"
+              label="Registered users"
+              value={data.users.toLocaleString()}
+              hint={`${data.newUsers} new in ${days}d`}
+            />
+            <Stat
+              testId="stat-admins"
+              label="Admins"
+              value={String(data.admins)}
+            />
+            <Stat
+              testId="stat-ai-requests"
+              label={`AI requests (${days}d)`}
+              value={String(data.usage.requests)}
+              hint={`${data.usage.succeeded} succeeded · ${data.usage.failed} failed · ${data.usage.cancelled} cancelled`}
+            />
+            <Stat
+              testId="stat-credits-charged"
+              label={`Credits charged (${days}d)`}
+              value={String(data.usage.creditsCharged)}
+            />
+            <Stat
+              testId="stat-credits-available"
+              label="Credits available"
+              value={data.credits.available.toLocaleString()}
+              hint="Across all accounts"
+            />
+            <Stat
+              testId="stat-pending"
+              label="Pending holds"
+              value={String(data.pendingHolds)}
+              hint={`${data.staleHolds} older than 10 min`}
+            />
+            <Stat
+              testId="stat-subscribers"
+              label="Active subscribers"
+              value="—"
+              hint="Available once payments are connected"
+            />
+            <Stat
+              testId="stat-mrr"
+              label="MRR"
+              value="—"
+              hint="Available once payments are connected"
+            />
           </div>
           <TrendChart data={data.trend} testId="chart-usage" />
-          <Panel title="Recent administrative actions" testId="admin-recent-audit">
+          <Panel
+            title="Recent administrative actions"
+            testId="admin-recent-audit"
+          >
             <ul className="space-y-1.5 text-sm text-ink-2">
               {data.recentAudit.map((row) => (
                 <li key={row.id}>
-                  <span className="font-medium text-ink">{row.actor}</span> · {row.action} · {row.target_label} ·{" "}
-                  {dateTime(row.created_at)}
+                  <span className="font-medium text-ink">{row.actor}</span> ·{" "}
+                  {row.action} · {row.target_label} · {dateTime(row.created_at)}
                 </li>
               ))}
-              {data.recentAudit.length === 0 && <li className="text-ink-3">No actions yet.</li>}
+              {data.recentAudit.length === 0 && (
+                <li className="text-ink-3">No actions yet.</li>
+              )}
             </ul>
           </Panel>
         </>
@@ -142,13 +228,19 @@ export function AdminUsers() {
   const [q, setQ] = React.useState("");
   const [query, setQuery] = React.useState("");
   const [selected, setSelected] = React.useState<string | null>(null);
-  const { data, error, reload } = useAdminData<{ users: AdminUserRow[]; total: number }>(`users?q=${encodeURIComponent(query)}&limit=200`);
+  const { data, error, reload } = useAdminData<{
+    users: AdminUserRow[];
+    total: number;
+  }>(`users?q=${encodeURIComponent(query)}&limit=200`);
   React.useEffect(() => {
     const t = setTimeout(() => setQuery(q), 300);
     return () => clearTimeout(t);
   }, [q]);
   return (
-    <LivePage title="Users" description="Accounts, roles and credit balances. Private content (journal, notes, documents) is never shown here.">
+    <LivePage
+      title="Users"
+      description="Accounts, roles and credit balances. Private content (journal, notes, documents) is never shown here."
+    >
       <input
         data-testid="admin-users-search"
         value={q}
@@ -161,40 +253,85 @@ export function AdminUsers() {
       ) : (
         <>
           <p className="text-xs text-ink-3" data-testid="admin-users-count">
-            Showing {data.users.length} of {data.total} accounts · click a row to manage
+            Showing {data.users.length} of {data.total} accounts · click a row
+            to manage
           </p>
           <DataTable
             testId="admin-users-table"
             rows={data.users}
             onRowClick={(row) => setSelected(row.id)}
             columns={[
-              { key: "handle", label: "User", render: (r) => <span className="font-medium text-ink">{r.handle}</span> },
+              {
+                key: "handle",
+                label: "User",
+                render: (r) => (
+                  <span className="font-medium text-ink">{r.handle}</span>
+                ),
+              },
               { key: "email", label: "Email", render: (r) => r.email ?? "—" },
-              { key: "role", label: "Admin role", render: (r) => (r.role ? <StatusBadge value={r.role} /> : "—") },
+              {
+                key: "role",
+                label: "Admin role",
+                render: (r) => (r.role ? <StatusBadge value={r.role} /> : "—"),
+              },
               { key: "available", label: "Available", align: "right" },
               { key: "reserved", label: "Reserved", align: "right" },
-              { key: "joined", label: "Joined", render: (r) => new Date(r.joined).toLocaleDateString("en-IN") },
+              {
+                key: "joined",
+                label: "Joined",
+                render: (r) => new Date(r.joined).toLocaleDateString("en-IN"),
+              },
             ]}
           />
         </>
       )}
-      <UserDrawer userId={selected} onClose={() => setSelected(null)} onChanged={reload} />
+      <UserDrawer
+        userId={selected}
+        onClose={() => setSelected(null)}
+        onChanged={reload}
+      />
     </LivePage>
   );
 }
 
-export function LedgerTable({ rows, testId, showUser = true }: { rows: LedgerEntry[]; testId: string; showUser?: boolean }) {
+export function LedgerTable({
+  rows,
+  testId,
+  showUser = true,
+}: {
+  rows: LedgerEntry[];
+  testId: string;
+  showUser?: boolean;
+}) {
   return (
     <DataTable
       testId={testId}
       rows={rows}
       search={(row) => `${row.handle ?? ""} ${row.type} ${row.reason}`}
       columns={[
-        { key: "created_at", label: "When", render: (r) => dateTime(r.created_at) },
+        {
+          key: "created_at",
+          label: "When",
+          render: (r) => dateTime(r.created_at),
+        },
         ...(showUser ? [{ key: "handle", label: "User" }] : []),
-        { key: "type", label: "Type", render: (r: LedgerEntry) => <StatusBadge value={r.type} /> },
-        { key: "available_delta", label: "Available", align: "right" as const, render: (r: LedgerEntry) => signed(r.available_delta) },
-        { key: "reserved_delta", label: "Held", align: "right" as const, render: (r: LedgerEntry) => signed(r.reserved_delta) },
+        {
+          key: "type",
+          label: "Type",
+          render: (r: LedgerEntry) => <StatusBadge value={r.type} />,
+        },
+        {
+          key: "available_delta",
+          label: "Available",
+          align: "right" as const,
+          render: (r: LedgerEntry) => signed(r.available_delta),
+        },
+        {
+          key: "reserved_delta",
+          label: "Held",
+          align: "right" as const,
+          render: (r: LedgerEntry) => signed(r.reserved_delta),
+        },
         { key: "reason", label: "Reason" },
         { key: "actor", label: "By" },
       ]}
@@ -204,38 +341,88 @@ export function LedgerTable({ rows, testId, showUser = true }: { rows: LedgerEnt
 
 export function AdminCredits() {
   const summary = useAdminData<CreditSummary>("credits/summary");
-  const ledger = useAdminData<{ entries: LedgerEntry[] }>("credits/ledger?limit=300");
+  const ledger = useAdminData<{ entries: LedgerEntry[] }>(
+    "credits/ledger?limit=300",
+  );
   const s = summary.data;
   return (
-    <LivePage title="Credit Management" description="Append-only credit history. Balances change only through grants, holds, charges and returns, never by direct edits.">
+    <LivePage
+      title="Credit Management"
+      description="Append-only credit history. Balances change only through grants, holds, charges and returns, never by direct edits."
+    >
       {s && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Stat testId="stat-available" label="Available" value={s.available.toLocaleString()} hint={`${s.accounts} accounts`} />
-          <Stat testId="stat-reserved" label="Held" value={String(s.reserved)} />
-          <Stat testId="stat-consumed" label="Charged" value={String(s.consumed)} />
-          <Stat testId="stat-granted" label="Granted" value={s.granted.toLocaleString()} hint={`${s.removed} removed by admins`} />
+          <Stat
+            testId="stat-available"
+            label="Available"
+            value={s.available.toLocaleString()}
+            hint={`${s.accounts} accounts`}
+          />
+          <Stat
+            testId="stat-reserved"
+            label="Held"
+            value={String(s.reserved)}
+          />
+          <Stat
+            testId="stat-consumed"
+            label="Charged"
+            value={String(s.consumed)}
+          />
+          <Stat
+            testId="stat-granted"
+            label="Granted"
+            value={s.granted.toLocaleString()}
+            hint={`${s.removed} removed by admins`}
+          />
         </div>
       )}
-      {!ledger.data ? <LoadState error={ledger.error} testId="admin-ledger-state" /> : <LedgerTable rows={ledger.data.entries} testId="admin-ledger-table" />}
+      {!ledger.data ? (
+        <LoadState error={ledger.error} testId="admin-ledger-state" />
+      ) : (
+        <LedgerTable rows={ledger.data.entries} testId="admin-ledger-table" />
+      )}
     </LivePage>
   );
 }
 
 export function AdminUsage() {
   const [days, setDays] = React.useState(7);
-  const { data, error } = useAdminData<{ totals: UsageTotals; trend: TrendPoint[]; requests: UsageRow[] }>(`usage?days=${days}&limit=200`);
+  const { data, error } = useAdminData<{
+    totals: UsageTotals;
+    trend: TrendPoint[];
+    requests: UsageRow[];
+  }>(`usage?days=${days}&limit=200`);
   return (
-    <LivePage title="AI Usage & Costs" description="Every AI request with credits held and charged. Provider money cost tracking arrives with billing.">
+    <LivePage
+      title="AI Usage & Costs"
+      description="Every AI request with credits held and charged. Provider money cost tracking arrives with billing."
+    >
       <RangePicker days={days} setDays={setDays} />
       {!data ? (
         <LoadState error={error} testId="admin-usage-state" />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat testId="stat-usage-requests" label="Requests" value={String(data.totals.requests)} />
-            <Stat testId="stat-usage-succeeded" label="Succeeded" value={String(data.totals.succeeded)} />
-            <Stat testId="stat-usage-failed" label="Failed / cancelled" value={`${data.totals.failed} / ${data.totals.cancelled}`} />
-            <Stat testId="stat-usage-credits" label="Credits charged" value={String(data.totals.creditsCharged)} />
+            <Stat
+              testId="stat-usage-requests"
+              label="Requests"
+              value={String(data.totals.requests)}
+            />
+            <Stat
+              testId="stat-usage-succeeded"
+              label="Succeeded"
+              value={String(data.totals.succeeded)}
+            />
+            <Stat
+              testId="stat-usage-failed"
+              label="Failed / cancelled"
+              value={`${data.totals.failed} / ${data.totals.cancelled}`}
+            />
+            <Stat
+              testId="stat-usage-credits"
+              label="Credits charged"
+              value={String(data.totals.creditsCharged)}
+            />
           </div>
           <TrendChart data={data.trend} testId="chart-cost" />
           <DataTable
@@ -243,15 +430,31 @@ export function AdminUsage() {
             rows={data.requests}
             search={(row) => `${row.handle ?? ""} ${row.action} ${row.status}`}
             columns={[
-              { key: "created_at", label: "When", render: (r) => dateTime(r.created_at) },
+              {
+                key: "created_at",
+                label: "When",
+                render: (r) => dateTime(r.created_at),
+              },
               { key: "handle", label: "User" },
-              { key: "action", label: "Action", render: (r) => <code className="text-xs">{r.action}</code> },
+              {
+                key: "action",
+                label: "Action",
+                render: (r) => <code className="text-xs">{r.action}</code>,
+              },
               { key: "model", label: "Model" },
-              { key: "est_output_tokens", label: "Out tok (est.)", align: "right" },
+              {
+                key: "est_output_tokens",
+                label: "Out tok (est.)",
+                align: "right",
+              },
               { key: "reserved", label: "Held", align: "right" },
               { key: "charged", label: "Charged", align: "right" },
               { key: "ms", label: "ms", align: "right" },
-              { key: "status", label: "Status", render: (r) => <StatusBadge value={r.status} /> },
+              {
+                key: "status",
+                label: "Status",
+                render: (r) => <StatusBadge value={r.status} />,
+              },
             ]}
           />
         </>
@@ -261,25 +464,76 @@ export function AdminUsage() {
 }
 
 export function AdminAudit() {
-  const { data, error } = useAdminData<{ entries: AuditRow[] }>("audit?limit=300");
+  const { data, error } = useAdminData<{ entries: AuditRow[] }>(
+    "audit?limit=300",
+  );
   return (
-    <LivePage title="Audit Logs" description="Read-only, append-only record of administrative and system actions.">
+    <LivePage
+      title="Audit Logs"
+      description="Read-only, append-only record of administrative and system actions."
+    >
       {!data ? (
         <LoadState error={error} testId="admin-audit-state" />
       ) : (
         <DataTable
           testId="admin-audit-table"
           rows={data.entries}
-          search={(row) => `${row.actor} ${row.action} ${row.target_id} ${row.reason}`}
+          search={(row) =>
+            `${row.actor} ${row.action} ${row.target_id} ${row.target_label} ${row.reason}`
+          }
           columns={[
-            { key: "created_at", label: "When", render: (r) => <span className="whitespace-nowrap">{dateTime(r.created_at)}</span> },
+            {
+              key: "created_at",
+              label: "When",
+              render: (r) => (
+                <span className="whitespace-nowrap">
+                  {dateTime(r.created_at)}
+                </span>
+              ),
+            },
             { key: "actor", label: "Admin" },
-            { key: "role", label: "Role", render: (r) => r.role?.replace(/_/g, " ") ?? "system" },
-            { key: "action", label: "Action", render: (r) => <code className="text-xs">{r.action}</code> },
-            { key: "target_id", label: "Target", render: (r) => <span className="break-all">{r.target_type === "route" ? r.target_label : `${r.target_type} ${r.target_label}`}</span> },
+            {
+              key: "role",
+              label: "Role",
+              render: (r) => r.role?.replace(/_/g, " ") ?? "system",
+            },
+            {
+              key: "action",
+              label: "Action",
+              render: (r) => <code className="text-xs">{r.action}</code>,
+            },
+            {
+              key: "target_id",
+              label: "Target",
+              render: (r) => (
+                <span
+                  title={r.target_id}
+                  className="block min-w-[180px] max-w-[260px] truncate"
+                >
+                  {r.target_type === "route"
+                    ? r.target_label
+                    : `${r.target_type} ${r.target_label}`}
+                </span>
+              ),
+            },
             { key: "reason", label: "Reason" },
-            { key: "details", label: "Details", render: (r) => <code className="text-[11px]">{JSON.stringify(r.details)}</code> },
-            { key: "outcome", label: "Outcome", render: (r) => <StatusBadge value={r.outcome} /> },
+            {
+              key: "details",
+              label: "Details",
+              render: (r) => (
+                <code
+                  title={JSON.stringify(r.details)}
+                  className="block max-w-[220px] truncate text-[11px]"
+                >
+                  {JSON.stringify(r.details)}
+                </code>
+              ),
+            },
+            {
+              key: "outcome",
+              label: "Outcome",
+              render: (r) => <StatusBadge value={r.outcome} />,
+            },
           ]}
         />
       )}

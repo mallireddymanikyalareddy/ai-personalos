@@ -16,14 +16,39 @@ export type PlanVersion = {
   trial_days: number;
   trial_credits: number;
 };
-export type LivePlan = { plan_id: string; name: string; available: boolean; current_version: number; current: PlanVersion };
-export type PricingAction = { action: string; label: string; min_credits: number; max_credits: number; model: string; max_output_tokens: number };
-export type PricingVersion = { version: number; status: string; effective_at: string; actions: PricingAction[] };
+export type LivePlan = {
+  plan_id: string;
+  name: string;
+  available: boolean;
+  current_version: number;
+  current: PlanVersion;
+};
+export type PricingAction = {
+  action: string;
+  label: string;
+  min_credits: number;
+  max_credits: number;
+  model: string;
+  max_output_tokens: number;
+};
+export type PricingVersion = {
+  version: number;
+  status: string;
+  effective_at: string;
+  actions: PricingAction[];
+};
 
-export const AdminRoleContext = React.createContext<{ role: string; id: string }>({ role: "analyst", id: "" });
+export const AdminRoleContext = React.createContext<{
+  role: string;
+  id: string;
+}>({ role: "analyst", id: "" });
 export const useAdminRole = () => React.useContext(AdminRoleContext);
 
-export async function adminSend<T>(path: string, method: "POST" | "PUT", body: unknown): Promise<T> {
+export async function adminSend<T>(
+  path: string,
+  method: "POST" | "PUT",
+  body: unknown,
+): Promise<T> {
   const res = await fetch(`/api/v1/admin/${path}`, {
     method,
     credentials: "include",
@@ -31,7 +56,8 @@ export async function adminSend<T>(path: string, method: "POST" | "PUT", body: u
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { detail?: string }).detail ?? "Request failed");
+  if (!res.ok)
+    throw new Error((data as { detail?: string }).detail ?? "Request failed");
   return data as T;
 }
 
@@ -41,9 +67,17 @@ export function useAdminData<T>(path: string) {
   const reload = React.useCallback(() => setTick((n) => n + 1), []);
   React.useEffect(() => {
     let alive = true;
-    fetch(`/api/v1/admin/${path}`, { credentials: "include", cache: "no-store" })
+    fetch(`/api/v1/admin/${path}`, {
+      credentials: "include",
+      cache: "no-store",
+    })
       .then(async (res) => {
-        if (!res.ok) throw new Error(res.status === 403 ? "You don't have access to this data." : "Couldn't load live data.");
+        if (!res.ok)
+          throw new Error(
+            res.status === 403
+              ? "You don't have access to this data."
+              : "Couldn't load live data.",
+          );
         return (await res.json()) as T;
       })
       .then((data) => alive && setState({ data }))
@@ -67,17 +101,34 @@ export function LiveNotice({ text }: { text: string }) {
   );
 }
 
-export function LoadState({ error, testId }: { error?: string; testId: string }) {
+export function LoadState({
+  error,
+  testId,
+}: {
+  error?: string;
+  testId: string;
+}) {
   return (
-    <p data-testid={testId} className={error ? "text-sm text-red-600" : "text-sm text-ink-3"}>
+    <p
+      data-testid={testId}
+      className={error ? "text-sm text-red-600" : "text-sm text-ink-3"}
+    >
       {error ?? "Loading saved records…"}
     </p>
   );
 }
 
-export const creditRange = (a: PricingAction) => (a.min_credits === a.max_credits ? String(a.min_credits) : `${a.min_credits}–${a.max_credits}`);
+export const creditRange = (a: PricingAction) =>
+  a.min_credits === a.max_credits
+    ? String(a.min_credits)
+    : `${a.min_credits}–${a.max_credits}`;
 export const dateTime = (iso: string) =>
-  new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  new Date(iso).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 export const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 export const ROLE_OPTIONS = [
   ["super_admin", "Super Admin"],
@@ -86,7 +137,8 @@ export const ROLE_OPTIONS = [
   ["ai_ops_admin", "AI Operations Admin"],
   ["analyst", "Read-only Analyst"],
 ] as const;
-export const roleLabel = (role: string | null) => ROLE_OPTIONS.find(([k]) => k === role)?.[1] ?? "—";
+export const roleLabel = (role: string | null) =>
+  ROLE_OPTIONS.find(([k]) => k === role)?.[1] ?? "—";
 
 export type LedgerEntry = {
   id: string;
@@ -127,7 +179,18 @@ export type AuditRow = {
   details: Record<string, unknown>;
   created_at: string;
 };
-export type UsageTotals = { requests: number; succeeded: number; failed: number; cancelled: number; creditsCharged: number };
+export type UsageTotals = {
+  requests: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  creditsCharged: number;
+};
 export type TrendPoint = { day: string; requests: number; credits: number };
 
-export const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+export const shortDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });

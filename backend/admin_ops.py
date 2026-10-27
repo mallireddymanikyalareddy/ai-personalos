@@ -172,12 +172,18 @@ async def usage(days: int = 7, limit: int = 100, _=Depends(require_role())):
             "requests": await with_handles(rows, "created_at")}
 
 
+def user_label(row: dict, names: dict[str, str]) -> str:
+    if row.get("target_type") != "user":
+        return row["target_id"]
+    return f"@{names[row['target_id']]}" if row["target_id"] in names else "(deleted user)"
+
+
 @router.get("/audit")
 async def audit(limit: int = 100, _=Depends(require_role())):
     rows = await db.admin_audit.find({}, {"_id": 0}).sort("created_at", -1).to_list(max(1, min(limit, 500)))
     names = await handles_for({r["target_id"] for r in rows if r.get("target_type") == "user"})
     return {"entries": [r | {"created_at": iso(r["created_at"]),
-                             "target_label": f"@{names[r['target_id']]}" if r["target_id"] in names else r["target_id"]} for r in rows]}
+                             "target_label": user_label(r, names)} for r in rows]}
 
 
 @router.get("/overview")
