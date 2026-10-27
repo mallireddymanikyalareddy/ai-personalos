@@ -112,9 +112,13 @@ class EmailUnavailable(Exception):
     pass
 
 
+def email_configured() -> bool:
+    return bool(os.environ.get("EMERGENT_EMAIL_KEY"))
+
+
 async def send_email(*, to: str, subject: str, html: str) -> str | None:
     _assert_safe_email(subject, html)
-    payload = {"to": [to], "subject": subject, "html": html, "from_name": os.environ["EMAIL_FROM_NAME"]}
+    payload = {"to": [to], "subject": subject, "html": html, "from_name": os.environ.get("EMAIL_FROM_NAME") or "PersonalOS"}
     if os.environ.get("EMAIL_REPLY_TO"):
         payload["contact_email"] = os.environ["EMAIL_REPLY_TO"]
     async with httpx.AsyncClient(timeout=30) as http:
@@ -241,7 +245,7 @@ def _due(t: dict) -> str:
 
 
 def build_email(name: str, data: dict, plan: str | None, week_label: str) -> tuple[str, str]:
-    brand = os.environ["EMAIL_FROM_NAME"]
+    brand = os.environ.get("EMAIL_FROM_NAME") or "PersonalOS"
     app_url = os.environ.get("APP_URL", "").rstrip("/")
     subject = f"Your {brand} plan for the week of {week_label}"
     plan_html = _ai_html(plan) if plan else "<p style=\"margin:8px 0;color:#666\">Your AI weekly plan wasn't available this time, but here's where things stand.</p>"
@@ -268,7 +272,7 @@ def build_email(name: str, data: dict, plan: str | None, week_label: str) -> tup
 
 
 async def send_account_link(user: dict, kind: str, url: str) -> None:
-    brand = os.environ["EMAIL_FROM_NAME"]
+    brand = os.environ.get("EMAIL_FROM_NAME") or "PersonalOS"
     if kind == "reset":
         subject, intro, cta = f"Reset your {brand} password", "We got a request to reset your password. This link works for 1 hour.", "Choose a new password"
     else:

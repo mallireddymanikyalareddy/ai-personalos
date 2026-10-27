@@ -147,10 +147,21 @@ def origin_of(request: Request) -> str | None:
     """Public origin for emailed links. Uses APP_URL if set, else the Host header (which the ingress
     routes on, so it must be this app's domain); client-supplied X-Forwarded-Host is never trusted."""
     configured = os.environ.get("APP_URL", "").strip().rstrip("/")
-    if configured.startswith("https://"):
+    if configured.startswith(("https://", "http://")):
         return configured
     host = request.headers.get("host", "").strip().lower()
-    if not host or host.startswith(("localhost", "127.", "0.0.0.0")) or ":" in host:
+    if not host:
+        return None
+    hostname = host.split(":", 1)[0]
+    # Local development runs over plain http and often on a non-default port. The API may be
+    # proxied from a different port than the web app, so prefer the browser's own origin.
+    if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or hostname.startswith("127."):
+        for header in ("origin", "referer"):
+            value = request.headers.get(header, "").strip()
+            if value.startswith(("http://localhost", "http://127.")):
+                return "/".join(value.split("/", 3)[:3])
+        return f"http://{host}"
+    if ":" in host:
         return None
     return f"https://{host}"
 
@@ -346,8 +357,12 @@ async def reset_request(body: IdentifierIn, request: Request):
         origin = origin_of(request)
         if origin:
             token = await create_token(user["id"], "reset", timedelta(hours=1))
-            # Sent in the background so response time doesn't reveal whether the account exists.
-            send_later(digest.send_account_link(user, "reset", f"{origin}/reset-password?token={token}"))
+            if digest.email_configured():
+                # Sent in the background so response time doesn't reveal whether the account exists.
+                send_later(digest.send_account_link(user, "reset", f"{origin}/reset-password?token={token}"))
+            elif origin.startswith(("http://localhost", "http://127.")):
+                # Local development has no email service; hand the link back to the browser.
+                return {"status": "accepted", "devToken": token}
     return {"status": "accepted"}
 
 
@@ -386,7 +401,11 @@ async def verify_request(request: Request, auth=Depends(require_auth)):
         origin = origin_of(request)
         if origin:
             token = await create_token(user["id"], "verify", timedelta(hours=24))
-            send_later(digest.send_account_link(user, "verify", f"{origin}/verify-email?token={token}"))
+            if digest.email_configured():
+                send_later(digest.send_account_link(user, "verify", f"{origin}/verify-email?token={token}"))
+            elif origin.startswith(("http://localhost", "http://127.")):
+                # Local development has no email service; hand the link back to the browser.
+                return {"status": "accepted", "devToken": token}
     return {"status": "accepted"}
 
 
