@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 13 (backend + frontend). All 5 requested follow-ups pass. Backend: new file test_iter13_followups.py has 7 tests, all pass. Full suite: 150/150 pass (the rate-limit test did not flake this run). PATCH /users/me lifeAreaNames ['Work','Work','Health'] -> ['Work','Health'], and a GET returns the same. Onboarding POST also removes duplicates and keeps the order. Empty, unknown or non-list values return 400. UI: a skipped user sees finish-setup-banner on Settings > Profile, but not on the Appearance tab. finish-setup-link href=/onboarding?resume=1 and opens step 1. A completed user sees no banner. In onboarding step 5 the placeholder is 'e.g. Run a 5k by summer' and the suggestion is 'Exercise 3 times a week'. The counter goes from (0/5) to (5/5 — remove one to add another). At 5 habits the unselected chips are disabled, and the custom input (placeholder 'Limit reached') and the Add button are disabled. Removing a habit enables them again. The finish flow creates the goal and the 5 habits (including a custom one) in /api/v1/state. Demo login through the form reaches /today. On the Tasks Board, a Health-tagged task card shows life-area-chip-health, and it is still there after reload.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Onboarding step 5", "issues": ["Disabled habit chips (at 5/5) look the same as enabled unselected chips. Add disabled:opacity-50 disabled:cursor-not-allowed"]},
+      {"screen": "Tasks page (demo user)", "issues": ["The Priority Breakdown card shows '4 Tasks' next to 'No tasks yet.' This is inconsistent and was probably there before"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter13_followups.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Optional: add disabled styling to the onboarding habit chips",
+    "Optional: fix the Priority Breakdown empty-state text when tasks exist (they have no priority set)"
+  ],
+  "critical_code_review_comments": [
+    "tasks-module.tsx: the BoardLifeArea function is declared between the import statements (line 7). Move it below the imports",
+    "PATCH lifeAreaNames uses _onboarding_life_areas, so the validation error message says 'Onboarding failed schema validation.' even on the profile PATCH. This is a small wording issue"
+  ],
+  "updated_files": ["/app/backend/tests/test_iter13_followups.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Registered several testXXXXXXXX users (delivered+<handle>@resend.dev / TestPass123!). Added the task 'TEST board chip task' (tagged Health) to the demo account",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "page.request in browser_automation needs absolute URLs (the preview URL). Step 5 testids: onboarding-first-goal-input, onboarding-goal-suggestion, onboarding-habit-count, onboarding-habit-<slug>, onboarding-custom-habit-input, onboarding-custom-habit-add, onboarding-finish-button. Settings defaults to the Profile tab at /settings. Task detail life area: select[data-testid=task-life-area-select]. Board: [data-testid=tasks-view-board] -> [data-testid=tasks-board] li with [data-testid^=life-area-chip-]."
+}

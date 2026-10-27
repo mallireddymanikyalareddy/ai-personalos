@@ -33,9 +33,14 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - Reset/verify links use APP_URL or Host (never X-Forwarded-Host); stricter onboarding + preference validation; atomic state PUT; 26MB body limit
 - Onboarding draft kept in sessionStorage; testids added
 - Paper orphan pages, journal placeholder, Enter-to-submit (Goals/Today), integrations 'Preparing', local AI task questions & polite prefixes
+## Done (2026-10-26, iterations 12-13)
+- Onboarding step 5 'First steps': first goal (suggested by life area), up to 5 starter habits, GPT 6 Luna toggle, Monday email toggle
+- Skip for now -> /users/me/onboarding/skip (onboardingSkipped); Finish setup banner on Today + Settings > Profile -> /onboarding?resume=1
+- Life areas: profile.lifeAreas synced to local lifeAreas (os.syncLifeAreas); Settings Life areas card; Life area select on tasks/goals; chips on rows/table/board/goal cards; Tasks life-area filter pills
+- Tasks 'All Status' shows completed by default
 ## Backlog
 - P0: user to add OpenAI credits (currently 'no credits' error)
 - P1: offline edits queue indicator / sync status badge
-- P1: onboarding enhancements (first goal/habits, Monday email opt-in, AI model choice, skip-for-later)
+- P1: Tasks stats/charts respect life-area filter; Priority Breakdown empty-state mismatch
 - P2: Tasks 'All status' hides done tasks; Templates empty text; AI hero icon overlap; Paper dialog Escape timing
 - P2: regenerate landing hero mockup image with PersonalOS name; persistent rate limiter for preview emails

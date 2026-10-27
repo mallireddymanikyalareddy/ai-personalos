@@ -110,7 +110,7 @@ export function OnboardingFirstSteps({
                 className={
                   active
                     ? "inline-flex items-center gap-1 rounded-full border border-accent bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent-ink"
-                    : "inline-flex items-center gap-1 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-surface-2"
+                    : "inline-flex items-center gap-1 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                 }
               >
                 {habit}
