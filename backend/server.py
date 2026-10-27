@@ -18,6 +18,7 @@ from pymongo.errors import DuplicateKeyError
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 import digest  # noqa: E402
+from admin import promote_configured_admins, router as admin_router  # noqa: E402
 from auth import ApiError, error_response, iso, public_user, require_auth, router as auth_router  # noqa: E402
 from db import db, ensure_indexes  # noqa: E402
 
@@ -79,6 +80,7 @@ async def digest_loop():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await ensure_indexes()
+    await promote_configured_admins()
     task = asyncio.create_task(digest_loop())
     yield
     task.cancel()
@@ -86,6 +88,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 
 @app.middleware("http")
