@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 12 (backend + frontend). Tested 4 features: the Starter Goal Step, Life Area Tags, Skip For Later and Show Completed Tasks. Onboarding has 5 steps. Step 5 creates the suggested goal tagged with the first chosen life area (Health) and 5 habits. Max 5 habits is enforced. The GPT toggle sets aiProvider=openai and the Monday toggle turns on the digest (Settings > Notifications toggle is on). Goal and habits survive clearing localStorage/IndexedDB and reloading (server /api/v1/state has them). Skip goes to /today with the banner. Plain /onboarding redirects while skipped. Finish setup opens ?resume=1 and the user can complete the steps. Afterwards the banner is gone, skipped=false and /onboarding redirects. In Settings, the life-area chips save through PATCH, and removing the last one is refused with a toast. On Tasks, the life area select in the detail sheet shows a chip in the table, the filter pills filter rows and the chips persist after reload. A completed task shows under the default All Status. The goal dialog life area select creates a goal with a chip that survives reload. Demo login reaches /today. Backend: new file has 11 tests, 10 pass. Full suite: 141/143 pass (1 real minor bug: duplicate life areas are stored; 1 rate-limit test flake caused by the test runner's changing egress IP).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PATCH /api/v1/users/me {lifeAreaNames} and POST /api/v1/users/me/onboarding", "issue": "Duplicate names are not removed: ['Work','Work'] is stored and returned as lifeAreas ['Work','Work']. _onboarding_life_areas should dedupe while keeping order (e.g. list(dict.fromkeys(names))) or reject duplicates."},
+      {"endpoint": "POST /api/v1/auth/login (test_python_backend.py::TestLogin::test_rate_limit_after_5)", "issue": "FLAKY in this run, not an app bug. The test container's egress IP changed between requests (login_attempts keys 34.170.12.145:* vs 35.184.53.215:*). The per-ip+identifier counter was split, so the 6th login got 200. A probe re-run gave 401x5 then 429 on both preview hosts."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Settings (skipped user)", "issue": "The request says onboarding can be finished later 'from Settings or Today', but only Today has the entry (finish-setup-banner). Settings has no 'Finish setup' link or card for onboardingSkipped users (grep: resume=1 is only used in finish-setup-banner.tsx).", "selector": "settings page, no a[href*='onboarding']", "priority": "MEDIUM"},
+      {"component": "Onboarding step 5 custom habit", "issue": "When 5 habits are already chosen, typing a custom habit and pressing Add/Enter clears the input and silently drops the habit. Clicking a 6th chip is also silently ignored. There is no 'max 5' feedback and no disabled state.", "selector": "[data-testid=onboarding-custom-habit-add]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Onboarding step 5", "issues": ["The first-goal input's placeholder is the same text as the suggestion ('Pick up a new hobby'). The empty field looks filled, so users may think a goal will be created when none will be."]},
+      {"screen": "Tasks", "issues": ["Board view cards do not show the life-area chip; only the list/table does.", "The stats tiles (Total/Completed), status/priority charts and insights ignore the active life-area filter, so the counts don't match the filtered rows."]},
+      {"screen": "Goal dialog", "issues": ["Target date uses the browser's native date picker (mm/dd/yyyy) instead of the shadcn calendar. This was already there before this change."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter12_onboarding_life_areas.py", "/app/test_reports/pytest/pytest_results_iter12.xml"],
+  "action_items": [
+    "Add a 'Finish setup' entry in Settings (e.g. on the Profile tab) when profile.onboardingSkipped is true, linking to /onboarding?resume=1",
+    "Dedupe lifeAreaNames in backend/auth.py _onboarding_life_areas",
+    "Show feedback or a disabled state when 5 starter habits are already chosen (custom add currently drops the input silently)",
+    "Optional: show the life-area chip on Board cards, and apply the life-area filter to the Tasks stats/charts"
+  ],
+  "critical_code_review_comments": [
+    "tasks-module.tsx is 1230 lines and onboarding/page.tsx is 852 lines. Both are over the 700-line guideline and should be split.",
+    "The life-area filter runs after os.taskDashboard (only in the rows memo), so dashboard.total, the charts and the stats are unfiltered. Consider moving lifeAreaId into the taskDashboard filter.",
+    "applyFirstSteps swallows the /api/v1/digest PUT error (.catch(() => undefined)). If it fails, the user never learns that the Monday email was not turned on.",
+    "A skipped user has lifeAreas [], so syncLifeAreas does nothing, the Tasks filter and the selects show no areas, and the life areas card has nothing selected. This is acceptable, but the banner is the only cue to set them."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter12_onboarding_life_areas.py"],
+  "success_rate": {"backend": "98.6% (141/143; 1 minor bug, 1 env flake)", "frontend": "95% (all requested flows pass; Settings finish-setup entry missing)"},
+  "seed_data_creation": "Created test users testob627b1c, testskaca0fc, testtg* plus several test* API users (password TestPass123!, emails delivered+<handle>@resend.dev). testskaca0fc has TEST tasks/goals with Health/Work areas.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use REACT_APP_BACKEND_URL or the preview URL https://5909486e-...preview.emergentagent.com (both hit the same backend/DB). To set up a user in Playwright: page.request.post('/api/v1/auth/register', ...) shares cookies with the page, then go to /onboarding. Step buttons: onboarding-continue-button and onboarding-life-area-<name>. Switches: '[data-testid=onboarding-use-gpt-toggle] button' (aria-checked). The Tasks list view is a table: rows are [data-testid=task-row], open a task with button[aria-label='Open <title>'], the row menu is button[aria-label='<title> options'] with menuitem 'Mark complete', and quick add is '[data-testid=tasks-quick-add] input' + Enter. The Goals page button is 'Add Goal'. test_rate_limit_after_5 can flake when the runner's egress IP changes.",
+  "rca of the issue": "Duplicate life areas: _onboarding_life_areas only checks the type, that the list is not empty and that names are in the catalog, then returns names[:12] without deduping. Rate-limit flake: login_attempts is keyed on client_ip (the X-Forwarded-For hop). The test runner's NAT egress switched IPs mid-test, so 4 failures were counted under one key and 1 under another."
+}

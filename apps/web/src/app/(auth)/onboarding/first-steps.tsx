@@ -45,16 +45,19 @@ export function OnboardingFirstSteps({
   hasEmail: boolean;
 }) {
   const [custom, setCustom] = React.useState("");
-  const toggleHabit = (habit: string) =>
+  const full = value.starterHabits.length >= 5;
+  const toggleHabit = (habit: string) => {
+    if (!value.starterHabits.includes(habit) && full) return;
     onChange({
       starterHabits: value.starterHabits.includes(habit)
         ? value.starterHabits.filter((entry) => entry !== habit)
-        : [...value.starterHabits, habit].slice(0, 5),
+        : [...value.starterHabits, habit],
     });
+  };
   const addCustom = () => {
     const habit = custom.trim();
-    if (!habit || value.starterHabits.includes(habit)) return;
-    onChange({ starterHabits: [...value.starterHabits, habit].slice(0, 5) });
+    if (!habit || full || value.starterHabits.includes(habit)) return;
+    onChange({ starterHabits: [...value.starterHabits, habit] });
     setCustom("");
   };
   const ideas = Array.from(new Set([...HABIT_IDEAS, ...value.starterHabits]));
@@ -70,7 +73,7 @@ export function OnboardingFirstSteps({
           data-testid="onboarding-first-goal-input"
           className="mt-2"
           maxLength={120}
-          placeholder={goalIdeaFor(lifeAreaNames)}
+          placeholder="e.g. Run a 5k by summer"
           value={value.firstGoal}
           onChange={(event) => onChange({ firstGoal: event.target.value })}
         />
@@ -88,7 +91,10 @@ export function OnboardingFirstSteps({
 
       <section className="rounded-2xl border border-line bg-surface p-5">
         <p className="text-sm font-semibold text-ink">
-          Starter habits <span className="font-normal text-ink-3">(pick up to 5)</span>
+          Starter habits{" "}
+          <span className="font-normal text-ink-3" data-testid="onboarding-habit-count">
+            ({value.starterHabits.length}/5{full ? " — remove one to add another" : ""})
+          </span>
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {ideas.map((habit) => {
@@ -98,6 +104,7 @@ export function OnboardingFirstSteps({
                 key={habit}
                 type="button"
                 aria-pressed={active}
+                disabled={!active && full}
                 data-testid={`onboarding-habit-${habit.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                 onClick={() => toggleHabit(habit)}
                 className={
@@ -115,7 +122,8 @@ export function OnboardingFirstSteps({
         <div className="mt-3 flex gap-2">
           <Input
             data-testid="onboarding-custom-habit-input"
-            placeholder="Add your own habit"
+            placeholder={full ? "Limit reached" : "Add your own habit"}
+            disabled={full}
             maxLength={80}
             value={custom}
             onChange={(event) => setCustom(event.target.value)}
@@ -126,7 +134,7 @@ export function OnboardingFirstSteps({
               }
             }}
           />
-          <Button variant="secondary" data-testid="onboarding-custom-habit-add" onClick={addCustom} disabled={!custom.trim()}>
+          <Button variant="secondary" data-testid="onboarding-custom-habit-add" onClick={addCustom} disabled={full || !custom.trim()}>
             <Plus className="size-4" aria-hidden="true" />
             Add
           </Button>

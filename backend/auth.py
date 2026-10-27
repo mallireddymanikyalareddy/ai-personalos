@@ -558,6 +558,7 @@ def _onboarding_life_areas(names) -> list:
         raise invalid("lifeAreaNames", "must be a list of life area names", "Onboarding failed schema validation.")
     if not names:
         raise invalid("lifeAreaNames", "pick at least one life area", "Onboarding failed schema validation.")
+    names = list(dict.fromkeys(names))
     catalog = {a["name"] for a in LIFE_AREA_CATALOG}
     unknown = [n for n in names if n not in catalog]
     if unknown:

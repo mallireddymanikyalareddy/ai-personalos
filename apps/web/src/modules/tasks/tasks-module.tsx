@@ -2,7 +2,12 @@
 
 import * as React from "react";
 
-import { LifeAreaFilter } from "@/components/life-area/life-area";
+import { LifeAreaChip, LifeAreaFilter } from "@/components/life-area/life-area";
+
+function BoardLifeArea({ taskId }: { taskId: string }) {
+  const state = useAppState();
+  return <LifeAreaChip lifeAreaId={state.tasks[taskId]?.lifeAreaId} />;
+}
 
 import { CheckCircle2, Filter, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 
@@ -1084,7 +1089,10 @@ function TaskBoard({
                         {row.title}
                       </button>
                     </div>
-                    <p className="mt-1 text-[11px] text-ink-3">{row.dueLabel}</p>
+                    <p className="mt-1 flex items-center gap-1.5 text-[11px] text-ink-3">
+                      {row.dueLabel}
+                      <BoardLifeArea taskId={row.id} />
+                    </p>
                     <div className="mt-2 flex justify-end">
                       <button
                         type="button"
