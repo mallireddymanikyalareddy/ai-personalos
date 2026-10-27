@@ -56,3 +56,11 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - Read-only admin APIs: GET /api/v1/admin/plans, /pricing, /credits/summary (401 anon / 403 non-admin).
 - /admin/plans and /admin/pricing now show LIVE records; other admin pages still DEMO data.
 - Next: Stage 4 credit engine (reserve/settle/release, ledger idempotency, resets, annual bonus), then Stage 5 admin APIs/audit UI, Stage 6 AI gateway, Stage 7 subscriber UI, Stage 8 Razorpay.
+
+## 2026-06 — Admin Stage 4: AI credit engine (agent-tested, iterations 17–18 100%)
+- backend/credits.py: hold max price → settle by response size (range actions scale with output) / release on failure, cancel or disconnect (BackgroundTask) / stale sweep (10 min). Append-only ledger with available_delta/reserved_delta, idempotent requestId (409), 402 INSUFFICIENT_CREDITS, ai_usage rows (succeeded/failed/cancelled).
+- 10 one-time trial credits for every account (migration stage4_trial_credits_10) and every new sign-up.
+- AI chat = quick_question (1), morning briefing = daily_plan (2), evening reflection = journal_summary (2). APIs: GET /api/v1/credits, /api/v1/credits/history.
+- Briefing double auto-run fixed (in-flight guard in ai-recap-card).
+- The success/charge path is verified with unit tests only; the real OpenAI account has no balance, so live AI calls currently fail and return credits.
+- Next: Stage 5 admin APIs (live users/credits/audit, admin grants), Stage 7 credit badge/history UI, monthly refills, Stage 8 Razorpay.

@@ -128,6 +128,11 @@ async def release(res: dict, reason: str) -> bool:
     return await _finish(res, "released", 0, reason)
 
 
+async def release_cancelled(res: dict) -> None:
+    if await release(res, "Request was cancelled — credits returned"):
+        await record_usage(res, "cancelled", 0, 0, 0)
+
+
 async def release_stale() -> int:
     count = 0
     async for res in db.credit_reservations.find({"status": "held", "created_at": {"$lt": now() - STALE_AFTER}}, {"_id": 0}):

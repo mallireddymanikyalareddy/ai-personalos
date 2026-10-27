@@ -1,0 +1,28 @@
+{
+  "summary": "Retested the three follow-ups from iteration 17, and all pass. (1) Double briefing: as mailtest, I switched the provider from local to openai in Settings with the briefing cache cleared, then opened Today through the sidebar link. This sent exactly 1 POST /api/ai/chat with action daily_plan, on 3 separate in-app runs. A reload with the cache cleared sent exactly 1. A reload with the cached error, and leaving Tasks and coming back to Today, each sent 0. Every time the briefing showed 'Couldn't create this: your OpenAI account has no credits left.' with no page errors, and the balance stayed at 10 available / 0 reserved. (2) Client disconnect: a requests call with timeout=0.5, curl --max-time 0.5 (exit 28) and a raw TLS socket closed without reading the response all left the reservation released within 0.25-1s. After each one, account reserved was 0, the ledger had exactly 1 reserve and 1 release row ('Request was cancelled — credits returned'), and the ledger sums matched the account. No held reservations or nonzero reserved accounts exist anywhere in the DB. (3) Failure path regression: the stream still sends {error, creditsReturned:true} and no credits event. The reservation ends as released with exactly 1 release ledger row, so the BackgroundTask does not release a second time, and exactly 1 ai_usage row is written with status failed and charged 0. test_iter17 + test_iter16 pass 30/30 and the new test_iter18 file passes 4/4 (run twice).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ai/chat", "issue": "Observability only: when the client disconnects, the hold is released, but no ai_usage row is written (0 rows for that requestId), so cancelled requests can't be seen in usage analytics. Optional: write a 'cancelled' usage row in the BackgroundTask when release() returns True."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter18_disconnect_release.py",
+    "/app/backend/tests/test_iter17_credits_stage4.py",
+    "/app/backend/tests/test_iter16_billing_stage3.py",
+    "/app/test_reports/pytest/pytest_iter18.xml",
+    "/app/test_reports/pytest/pytest_iter18_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Starlette 0.37.2 StreamingResponse.__call__ runs the background task after the task group even when the client disconnects, so BackgroundTask(credits.release) is a correct safety net. _finish only acts on holds still in 'held' status, so the extra release after settle or after a failure release does nothing (confirmed: 1 release ledger row).",
+    "Optional: record a 'cancelled' ai_usage row when the client disconnects (see the minor issue)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter18_disconnect_release.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "test_iter18 registers a test_s18_* user and deletes it afterwards. mailtest's provider was set back to local at the end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To reproduce the briefing check: log in through page.request POST /api/v1/auth/login, open /settings?tab=ai, select local in #ai-provider, then delete the localStorage and sessionStorage keys that contain 'briefing'. Select openai, click a[href='/today'], and count POST /api/ai/chat requests with action daily_plan. The error is kept in sessionStorage, so reloading in the same tab sends 0 requests. If the raw socket is closed less than ~0.4s after sending, the ingress may drop the request before it reaches the backend, so the test skips in that case. Writing files under backend/tests triggers a backend hot reload."
+}

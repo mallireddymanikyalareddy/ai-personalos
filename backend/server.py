@@ -287,7 +287,7 @@ async def ai_chat(body: ChatRequest, request: Request):
     # BackgroundTask runs after the response, so a hold is released even if the client left before streaming began.
     return StreamingResponse(chat_events(chat, text, res), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-                             background=BackgroundTask(credits.release, res, "Request was cancelled — credits returned"))
+                             background=BackgroundTask(credits.release_cancelled, res))
 
 
 async def chat_events(chat, text: str, res: dict):
@@ -317,7 +317,7 @@ async def chat_events(chat, text: str, res: dict):
         yield sse({"credits": {"charged": charged, **await credits.balance(res["user_id"])}})
     finally:
         if not settled:
-            await asyncio.shield(credits.release(res, "Request was cancelled — credits returned"))
+            await asyncio.shield(credits.release_cancelled(res))
 
 
 __all__ = ["app", "public_user"]
