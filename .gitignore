@@ -17,3 +17,9 @@ coverage/
 .next-export/
 /frontend/build/
 .next-dev/
+.env
+.env.*
+*.env
+credentials.json
+*.key
+.credentials
