@@ -23,7 +23,11 @@ import digest  # noqa: E402
 from admin import promote_configured_admins, router as admin_router  # noqa: E402
 from auth import ApiError, error_response, iso, public_user, require_auth, router as auth_router  # noqa: E402
 import credits  # noqa: E402
+import entitlements  # noqa: E402
+import platform_settings  # noqa: E402
+import promotions  # noqa: E402
 from admin_ops import router as admin_ops_router  # noqa: E402
+from billing_admin import public_router as billing_public_router, router as billing_admin_router  # noqa: E402
 from plan_admin import admin_router as plan_admin_router, public_router as plans_router  # noqa: E402
 from billing import run_once, setup_billing  # noqa: E402
 from db import db, ensure_indexes  # noqa: E402
@@ -89,8 +93,15 @@ async def lifespan(_: FastAPI):
     await promote_configured_admins()
     await setup_billing()
     await credits.ensure_indexes()
+    await entitlements.ensure_indexes()
+    await promotions.ensure_indexes()
+    await platform_settings.ensure_indexes()
+    await platform_settings.seed_settings()
     await run_once("stage4_trial_credits_10", credits.backfill_trial_credits)
-    tasks = [asyncio.create_task(digest_loop()), asyncio.create_task(credits.sweep_loop())]
+    await entitlements.run_due()
+    await promotions.expire_due()
+    tasks = [asyncio.create_task(digest_loop()), asyncio.create_task(credits.sweep_loop()),
+             asyncio.create_task(entitlements.sweep_loop()), asyncio.create_task(promotions.sweep_loop())]
     yield
     for task in tasks:
         task.cancel()
@@ -102,6 +113,8 @@ app.include_router(admin_router)
 app.include_router(admin_ops_router)
 app.include_router(plan_admin_router)
 app.include_router(plans_router)
+app.include_router(billing_admin_router)
+app.include_router(billing_public_router)
 
 
 @app.middleware("http")
@@ -283,10 +296,16 @@ async def ai_chat(body: ChatRequest, request: Request):
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
         return JSONResponse({"detail": "OpenAI API key is not configured"}, status_code=503)
+    settings = await platform_settings.get_settings()
+    if not digest.allow_send_now(f"ai:{found[0]['id']}", limit=settings["maxRequestsPerMinute"], window=60):
+        return JSONResponse({"detail": "Too many AI requests. Try again in a minute.", "code": "RATE_LIMITED"}, status_code=429)
     res, error = await reserve_or_response(found[0]["id"], body)
     if error:
         return error
-    chat = LlmChat(api_key=key, session_id=str(uuid.uuid4()), system_message=SYSTEM_PROMPT + body.context).with_model("openai", "gpt-6-luna")
+    model = settings["defaultModel"] or "gpt-6-luna"
+    context = body.context[: max(1000, settings["maxInputTokens"]) * 4]
+    res["model"] = model
+    chat = LlmChat(api_key=key, session_id=str(uuid.uuid4()), system_message=SYSTEM_PROMPT + context).with_model("openai", model)
     transcript = "\n".join(f"{t.role.upper()}: {t.text}" for t in body.history[-10:])
     text = f"Conversation so far:\n{transcript}\n\nUSER: {body.prompt}" if transcript else body.prompt
     # BackgroundTask runs after the response, so a hold is released even if the client left before streaming began.

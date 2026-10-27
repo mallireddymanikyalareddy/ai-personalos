@@ -6,7 +6,7 @@ import Link from "next/link";
 
 import { ArrowRight, Sparkles, X } from "lucide-react";
 
-import { LOW_CREDITS, useCredits } from "@/lib/use-credits";
+import { useCredits } from "@/lib/use-credits";
 import { useAuth } from "@/modules/auth/auth-context";
 
 const dismissKey = () =>
@@ -14,13 +14,13 @@ const dismissKey = () =>
 
 export function UpgradeCard() {
   const { status } = useAuth();
-  const { balance } = useCredits(status === "authenticated");
+  const { balance, lowThreshold } = useCredits(status === "authenticated");
   const [dismissed, setDismissed] = React.useState(true);
   React.useEffect(
     () => setDismissed(window.localStorage.getItem(dismissKey()) === "1"),
     [],
   );
-  if (!balance || balance.available > LOW_CREDITS || dismissed) return null;
+  if (!balance || balance.available > lowThreshold || dismissed) return null;
   const empty = balance.available === 0;
   return (
     <section

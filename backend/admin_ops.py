@@ -60,7 +60,11 @@ async def user_detail(user_id: str, _=Depends(require_role())):
     acc = await db.credit_accounts.find_one({"user_id": user_id}, {"_id": 0})
     ledger = await credits.history(user_id, 25)
     usage = await db.ai_usage.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(10)
+    sub = await db.subscriptions.find_one({"user_id": user_id}, {"_id": 0}, sort=[("created_at", -1)])
     return {"user": public_admin_user(user, acc), "ledger": ledger,
+            "subscription": sub | {k: iso(sub[k]) for k in ("started_at", "current_period_start", "current_period_end",
+                                                            "trial_ends_at", "canceled_at", "created_at")
+                                   if sub.get(k)} if sub else None,
             "usage": [u | {"created_at": iso(u["created_at"])} for u in usage]}
 
 
@@ -134,7 +138,9 @@ async def credit_summary(_=Depends(require_role())):
     return {"accounts": totals["accounts"], "available": totals["available"], "reserved": totals["reserved"],
             "ledgerEntries": await db.credit_ledger.count_documents({}),
             "consumed": await sum_credits({"type": "charge"}),
-            "granted": await sum_credits({"type": {"$in": ["trial_grant", "admin_grant"]}}),
+            "granted": await sum_credits({"type": {"$in": ["trial_grant", "admin_grant", "plan_grant",
+                                                           "plan_trial", "promotion_grant"]}}),
+            "expired": await sum_credits({"type": {"$in": ["included_expire", "promotion_expire"]}}),
             "removed": await sum_credits({"type": "admin_debit"})}
 
 
@@ -198,6 +204,12 @@ async def overview(days: int = 7, _=Depends(require_role())):
         "trend": await usage_trend(days),
         "pendingHolds": await db.credit_reservations.count_documents({"status": "held"}),
         "staleHolds": await db.credit_reservations.count_documents({"status": "held", "created_at": {"$lt": stale}}),
+        "subscriptions": {"active": await db.subscriptions.count_documents({"status": "active"}),
+                          "trialing": await db.subscriptions.count_documents({"status": "trialing"}),
+                          "pastDue": await db.subscriptions.count_documents({"status": "past_due"}),
+                          "total": await db.subscriptions.count_documents({})},
+        "promotions": {"active": await db.promotions.count_documents({"status": "active"}),
+                       "grants": await db.promotion_grants.count_documents({})},
         "credits": await credit_summary(),
         "recentAudit": (await audit(5))["entries"],
     }

@@ -5,14 +5,14 @@ import Link from "next/link";
 import { Sparkles } from "lucide-react";
 
 import { cn } from "@/lib/cn";
-import { LOW_CREDITS, useCredits } from "@/lib/use-credits";
+import { useCredits } from "@/lib/use-credits";
 import { useAuth } from "@/modules/auth/auth-context";
 
 export function CreditBadge() {
   const { status } = useAuth();
-  const { balance } = useCredits(status === "authenticated");
+  const { balance, lowThreshold } = useCredits(status === "authenticated");
   if (!balance) return null;
-  const low = balance.available <= LOW_CREDITS;
+  const low = balance.available <= lowThreshold;
   return (
     <Link
       href="/settings?tab=ai"

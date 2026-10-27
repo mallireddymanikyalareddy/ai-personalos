@@ -7,7 +7,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Drawer } from "@/components/ui/drawer";
 import { useToast } from "@/components/ui/toast";
 
-import { inr } from "./demo-data";
+import { inr } from "./format";
 import {
   adminSend,
   creditRange,

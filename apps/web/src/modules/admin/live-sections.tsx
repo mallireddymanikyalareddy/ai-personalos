@@ -123,6 +123,8 @@ type Overview = {
   trend: TrendPoint[];
   pendingHolds: number;
   staleHolds: number;
+  subscriptions: { active: number; trialing: number; pastDue: number; total: number };
+  promotions: { active: number; grants: number };
   credits: CreditSummary;
   recentAudit: AuditRow[];
 };
@@ -178,14 +180,14 @@ export function AdminDashboard() {
             <Stat
               testId="stat-subscribers"
               label="Active subscribers"
-              value="—"
-              hint="Available once payments are connected"
+              value={(data.subscriptions.active + data.subscriptions.trialing).toLocaleString()}
+              hint={`${data.subscriptions.trialing} trialing · ${data.subscriptions.total} total`}
             />
             <Stat
-              testId="stat-mrr"
-              label="MRR"
-              value="—"
-              hint="Available once payments are connected"
+              testId="stat-promotion-grants"
+              label="Promotion grants"
+              value={data.promotions.grants.toLocaleString()}
+              hint={`${data.promotions.active} active campaign${data.promotions.active === 1 ? "" : "s"}`}
             />
           </div>
           <TrendChart data={data.trend} testId="chart-usage" />

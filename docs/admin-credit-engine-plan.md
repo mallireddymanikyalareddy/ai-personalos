@@ -28,12 +28,22 @@ The initial Super Admin comes from the `ADMIN_EMAILS` environment setting and is
 ## Stages
 1. Inspection & plan (this document) ✅
 2. Admin Console UI with clearly labelled demonstration data ✅
-3. Schema, indexes and seed plans/pricing
-4. Credit engine: entitlements, reserve → settle/release, ledger, idempotency, resets, annual bonus
-5. Admin APIs and permissions (replacing the demo data) plus audit logging
-6. AI gateway: route `/api/ai/chat`, briefing, recap and future actions through reserve/settle; mock provider for tests
-7. Subscriber UI: credit badge, details panel, confirmation modal, low-credit states
-8. Razorpay test-mode adapter, webhooks (signature verification, dedupe), concurrency and reconciliation tests
+3. Schema, indexes and seed plans/pricing ✅
+4. Credit engine: entitlements, reserve → settle/release, ledger, idempotency, resets, annual bonus ✅
+5. Admin APIs and permissions (replacing the demo data) plus audit logging ✅
+6. AI gateway: route `/api/ai/chat`, briefing, recap and future actions through reserve/settle; mock provider for tests ✅
+7. Subscriber UI: credit badge, details panel, confirmation modal, low-credit states ✅
+8. Razorpay test-mode adapter, webhooks (signature verification, dedupe), concurrency and reconciliation tests — pending (excluded for now; subscriptions are admin-managed)
+
+## Stage 4/5/7 completion — plans, subscriptions, promotions and settings
+- `backend/entitlements.py`: subscriptions pinned to a plan version, monthly/annual periods, trial → expired, renewal sweep every 5 minutes, idempotent `entitlement_runs`, monthly included-credit reset (unused included credits expire), annual plans grant `annual_monthly_credits` (base + annual bonus). All grants use the immutable ledger.
+- `backend/promotions.py`: draft → active → ended campaigns, eligibility (`all` or `plan:<id>`), per-user limits, credit expiry, bulk grants with per-user idempotency, expiry sweep.
+- `backend/platform_settings.py`: persisted platform settings (model, token/request limits, spend alert, low-credit threshold, reset policy, trial length, feature flags) plus provider status derived from env presence.
+- `backend/billing_admin.py`: admin APIs for subscriptions (list/detail/create/update/renew/grant/cancel/resume), promotions (CRUD/activate/end/grant), and settings (read/update). Reads allow any admin role; subscription writes allow billing/support, promotions allow billing, settings require super admin. Every write is audited.
+- Public `GET /api/v1/settings/public` exposes the low-credit threshold and feature flags to the app.
+- Settings are enforced: `defaultModel`, `maxInputTokens` and `maxRequestsPerMinute` drive `/api/ai/chat`; `annual_bonus_credits` controls annual plan bonuses; `promotions` gates promotional grants; `ai_confirmation_modal` adds a spend confirmation before OpenAI requests.
+- Admin UI: Subscriptions, Promotions & Grants and Platform Settings are now live (no demo data); the subscriber low-credit threshold and optional AI-spend confirmation modal read platform settings.
+- Razorpay remains the only outstanding stage: no card/UPI checkout, payment webhooks or payment reconciliation yet.
 
 ## Stage 3 database setup (done) — `backend/billing.py`
 Runs on server start via `setup_billing()`:

@@ -4,19 +4,6 @@ import * as React from "react";
 
 import { cn } from "@/lib/cn";
 
-export function DemoNotice() {
-  return (
-    <div
-      role="note"
-      data-testid="admin-demo-notice"
-      className="rounded-xl border border-amber-300/60 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
-    >
-      DEMONSTRATION DATA — this screen is not connected to live data yet (Stage
-      2 preview). Numbers below are samples.
-    </div>
-  );
-}
-
 export function PageHeader({
   title,
   description,

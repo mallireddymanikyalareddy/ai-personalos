@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Sparkles } from "lucide-react";
 
 import { CREDITS_EVENT } from "@/lib/ai-stream";
-import { LOW_CREDITS, useCredits } from "@/lib/use-credits";
+import { useCredits } from "@/lib/use-credits";
 
 type Entry = {
   id: string;
@@ -37,7 +37,7 @@ function amountText(e: Entry): string {
 }
 
 export function CreditsCard() {
-  const { balance } = useCredits(true);
+  const { balance, lowThreshold } = useCredits(true);
   const [entries, setEntries] = React.useState<Entry[] | null>(null);
   React.useEffect(() => {
     const load = () =>
@@ -91,7 +91,7 @@ export function CreditsCard() {
           </Link>
         </div>
       </header>
-      {balance && balance.available <= LOW_CREDITS && (
+      {balance && balance.available <= lowThreshold && (
         <p
           data-testid="credits-card-low"
           className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"

@@ -85,3 +85,11 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - Reset link works while signed in (same layout fix as verify-email), and reloads into a signed-out /login afterwards.
 - A successful reset cancels the user's other unused reset links. An empty identifier gives 400. Reset and verify emails are sent in the background (no timing leak). Per-IP limit of 10 reset requests per hour (in memory).
 - UI: send button disabled when empty; an invalid or expired link offers 'Get a new reset link'; testids added.
+
+## 2026-06 - Non-Razorpay billing completion (stages 3-7)
+- backend/entitlements.py: admin-managed subscriptions with plan-version pinning, monthly/annual periods, trials that expire without payment, 5-minute renewal sweep, idempotent entitlement_runs, included-credit reset (no carry-over), annual bonus via annual_monthly_credits.
+- backend/promotions.py: draft/active/ended campaigns, eligibility all or plan:<id>, per-user limits, credit expiry, bulk grants and expiry sweep.
+- backend/platform_settings.py + /api/v1/settings/public: persisted limits, low-credit threshold, reset policy, trial length and feature flags; provider status derived without exposing secrets.
+- backend/billing_admin.py: live admin APIs for subscriptions, promotions and settings with role gates and audit logging. Admin Subscriptions, Promotions & Grants and Platform Settings pages are now live.
+- Subscriber UI reads the low-credit threshold from settings; an optional AI-spend confirmation modal is controlled by the ai_confirmation_modal flag.
+- Razorpay checkout/webhooks/reconciliation remain pending and are the only uncompleted stage.

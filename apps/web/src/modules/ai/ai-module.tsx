@@ -6,11 +6,13 @@ import { CalendarClock, ListChecks, NotebookPen, Target } from "lucide-react";
 
 import type { AIObject, AIResult, ID } from "@personalos/core";
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { useToast } from "@/components/ui/toast";
 import { aiProvider, AI_PROVIDERS } from "@personalos/core";
 import { useAppState, useOS } from "@/store/use-os";
 import { buildAIContext, streamAIChat, type ChatTurn } from "@/lib/ai-stream";
+import { useCredits } from "@/lib/use-credits";
 
 import { AIChat, type ChatEntry, type ChatSuggestion } from "./ai-chat";
 import { useSpeechInput } from "./use-speech";
@@ -38,7 +40,10 @@ export function AIModule() {
   const [activeId, setActiveId] = React.useState<ID | null>(null);
   const [activeTool, setActiveTool] = React.useState<string | null>(null);
   const [toolsExpanded, setToolsExpanded] = React.useState(false);
+  const [confirmPrompt, setConfirmPrompt] = React.useState<string | null>(null);
+  const skipConfirm = React.useRef(false);
   const composerRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const { balance, flags } = useCredits(true);
 
   const now = Date.now();
   const context = os.aiContext(now);
@@ -65,6 +70,11 @@ export function AIModule() {
     (prompt: string) => {
       const trimmed = prompt.trim();
       if (trimmed.length === 0) return;
+      if (flags.ai_confirmation_modal && providerId === "openai" && !skipConfirm.current) {
+        setConfirmPrompt(trimmed);
+        return;
+      }
+      skipConfirm.current = false;
 
       const conversation = ensureConversation(trimmed.slice(0, 64));
       const userMessage = os.addMessage({ conversationId: conversation.id, role: "user", content: trimmed });
@@ -122,7 +132,7 @@ export function AIModule() {
           });
       }
     },
-    [ensureConversation, now, os, toast, provider.label, providerId, entries],
+    [ensureConversation, now, os, toast, provider.label, providerId, entries, flags.ai_confirmation_modal],
   );
 
   const suggestions: ChatSuggestion[] = React.useMemo(() => {
@@ -466,6 +476,22 @@ export function AIModule() {
         Everything I use comes from your own data on this device. I only read what you can see, I
         never delete anything, and anything that changes your data needs your confirmation first.
       </p>
+
+      <ConfirmDialog
+        open={confirmPrompt != null}
+        onClose={() => setConfirmPrompt(null)}
+        onConfirm={() => {
+          const prompt = confirmPrompt;
+          setConfirmPrompt(null);
+          if (!prompt) return;
+          skipConfirm.current = true;
+          run(prompt);
+        }}
+        title="Use AI credits?"
+        description={`This answer uses credits from your balance. You have ${balance?.available ?? 0} available.`}
+        confirmLabel="Use credits"
+        tone="accent"
+      />
     </div>
   );
 }

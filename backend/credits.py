@@ -43,7 +43,11 @@ async def grant(user_id: str, credits: int, kind: str, reason: str, idempotency_
         await write_ledger(user_id, kind, credits, credits, 0, reason, idempotency_key, actor)
     except DuplicateKeyError:
         return False
-    await db.credit_accounts.update_one({"user_id": user_id}, {"$inc": {"available": credits}, "$set": {"updated_at": now()}})
+    await db.credit_accounts.update_one(
+        {"user_id": user_id},
+        {"$inc": {"available": credits}, "$set": {"updated_at": now()},
+         "$setOnInsert": {"reserved": 0, "included": 0, "promotional": 0, "created_at": now()}},
+        upsert=True)
     return True
 
 
@@ -152,7 +156,8 @@ async def sweep_loop():
 async def record_usage(res: dict, status: str, charged: int, output_chars: int, ms: int, error: str | None = None) -> None:
     await db.ai_usage.insert_one({
         "id": f"req_{uuid.uuid4().hex[:16]}", "user_id": res["user_id"], "request_id": res["request_id"], "action": res["action"],
-        "pricing_version": res["pricing_version"], "provider": "openai", "model": "gpt-6-luna", "reserved": res["amount"],
+        "pricing_version": res["pricing_version"], "provider": "openai",
+        "model": res.get("model", "gpt-6-luna"), "reserved": res["amount"],
         "charged": charged, "output_chars": output_chars, "est_output_tokens": math.ceil(output_chars / 4), "ms": ms,
         "status": status, "error": error, "created_at": now(),
     })
