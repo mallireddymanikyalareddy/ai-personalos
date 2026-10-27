@@ -52,7 +52,7 @@ export function Popover({
     let raf = 0;
     const compute = () => {
       const a = anchor.getBoundingClientRect();
-      const p = panel.getBoundingClientRect();
+      const p = { width: panel.offsetWidth, height: panel.offsetHeight };
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       const margin = 8;

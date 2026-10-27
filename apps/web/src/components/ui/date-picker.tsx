@@ -100,7 +100,7 @@ export function DatePicker({
         panelRef={popoverRef}
         side="bottom"
         align="start"
-        className="w-72"
+        className="w-72 overflow-hidden rounded-xl border border-line bg-surface shadow-pop"
       >
         <MonthCalendar
           value={value}

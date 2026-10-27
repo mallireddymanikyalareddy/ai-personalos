@@ -70,3 +70,10 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - Admin UI: Dashboard, Users (drawer with credit form + role form), Credits, Usage, Audit are LIVE. Subscriptions, Promotions and Settings are still DEMO. Plans and Pricing are LIVE read-only.
 - User UI: credit badge in the top bar (amber at 3 or fewer) → Settings › AI credits card with history. Settings tab now syncs from the URL.
 - Remaining: monthly refills and annual bonus (needs subscriptions), Razorpay (Stage 8), live Subscriptions/Promotions/Settings pages, plan/pricing editing with versioning, provider money-cost tracking, MFA.
+
+## 2026-06 — Plan editing + upgrade prompt (agent-tested, iterations 21–23)
+- backend/plan_admin.py: draft → publish (now or scheduled effective_at) versioning for plans and AI action pricing. Super admin only, audited, one draft max (unique partial indexes). The live version is the latest published version with effective_at <= now. Reservations store the pricing version that was live when they started. Public GET /api/v1/plans returns live plans and action costs.
+- Admin UI (plan-editor.tsx): plan drawer form (₹), pricing form, publish bar with DatePicker + time, scheduled/draft/history display, changed-row highlights.
+- User UI: /plans page (monthly/yearly toggle, "Payments coming soon" disabled CTA, action costs). Upgrade card on Today at 3 credits or fewer (dismissible per day). Links from the Settings credits card.
+- Subscriptions don't exist yet. When they do, each will store the plan version it started on and switch to the live version at renewal.
+- Popover: scroll-dismiss only from the anchor's ancestors, width only when matchWidth, offset sizes; the DatePicker panel has a surface.

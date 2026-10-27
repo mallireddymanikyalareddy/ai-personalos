@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 23 retest of the publish-bar follow-ups. BACKEND: test_iter22_plan_robustness.py + test_iter21_plan_versioning.py 26/26 passed. New test_iter23_draft_status_filter.py (2/2) races PUT draft (update path) against POST publish for both plans and pricing; both 200 and 409 CONFLICT outcomes observed, and no published version was ever modified after publish (updated_at <= published_at), at most one draft. UI: DatePicker popover panel is now 288px (w-72), day cells 32px, all 7 columns readable. Picked Oct 31 (4 days ahead) in the Basic plan bar and Nov 15 (via Next month) in the pricing bar; trigger shows the date, time input enabled, button reads 'Schedule' and is enabled, no -past warning. With a 120-200 char Reason typed first, clicking the date trigger keeps aria-expanded=true (fixed). Page wheel scroll still closes it; Escape and outside click close it. Layout: plan card when=175px + time=144px on row 1, reason full width (327px) on row 2; pricing when=1038, time=144, reason=1190; '09:00 AM' fully visible in both. Regression: /styleguide DatePicker opens below trigger, picks date, closes; Today options dropdown opens below, lists 5 items, Escape closes, 'Planner' navigates. Tasks due date uses a native <input type=date> (no Popover). New visual bug: the DatePicker Popover panel has no background/border/shadow (see ui_bugs). Drafts were created via API with identical values and discarded via UI. Final: Basic v7, AI v27, AI Pro v1 all original values; pricing v20 equals v1; no drafts or scheduled versions.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DatePicker popover (components/ui/date-picker.tsx)", "issue": "The Popover panel ('z-40 animate-scale-in w-72') has a transparent background, no border, no shadow and no radius. MonthCalendar inside is given 'border-none shadow-none', and the footer div (Today/Clear) sits on the transparent panel, so page content shows through under the footer and at the edges. Seen on /styleguide: the inline calendar's digits bleed through behind 'Today'/'Clear'. In the publish bar the calendar sits on the card with no elevation. Fix: wrap the popover content in a container such as 'rounded-xl border border-line bg-surface shadow-pop overflow-hidden' (as dropdown.tsx and calendar-panels.tsx do), or pass those classes as Popover className.", "selector": "div.w-72[style*=fixed]", "priority": "MEDIUM"},
+      {"component": "Popover align=end positioning (components/ui/popover.tsx)", "issue": "Today options menu: the right edge is at 1893px but the trigger's right edge is at 1888px, about 5px of overhang. Likely cause: compute() measures p.width with getBoundingClientRect while animate-scale-in has the panel scaled down. Before this change the width was frozen to the same scaled value, so it lined up. Now the real width is wider than the measured one. Use panel.offsetWidth/offsetHeight (not affected by transforms) for p.width/p.height.", "selector": "[aria-label='Today options'] + [role=menu]", "priority": "LOW"},
+      {"component": "Popover flip when neither side fits", "issue": "At a 700px-tall viewport with the trigger mid-screen, the 345px calendar can't fit above or below. It gets clamped to top=8 and its bottom edge overlaps the trigger. Edge case only.", "selector": "[data-testid=admin-pricing-publishbar-when] button", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Tasks detail sheet", "issues": ["Due/start dates use the browser's native <input type='date'> rather than the app DatePicker (task-detail-sheet.tsx lines 274/285). This is inconsistent with the design system."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter23_draft_status_filter.py", "/app/backend/tests/test_iter22_plan_robustness.py", "/app/backend/tests/test_iter21_plan_versioning.py", "/app/test_reports/pytest/pytest_iter23.xml", "/app/test_reports/pytest/pytest_iter23_new.xml"],
+  "action_items": [
+    "Give the DatePicker popover a surface (bg-surface, border border-line, rounded-xl, shadow-pop, overflow-hidden) so content behind it doesn't show through the footer.",
+    "Optional: in Popover.compute use offsetWidth/offsetHeight instead of getBoundingClientRect so the scale-in animation doesn't skew align=end placement."
+  ],
+  "critical_code_review_comments": [
+    "plan_admin.py update paths now filter status='draft' and return 409 CONFLICT when matched_count==0. Verified under a real race. Correct.",
+    "popover.tsx onScroll: `target.contains(anchor)` handles document and ancestor scroll containers. Scroll events from window (target===window) aren't Nodes and never reach here in practice; fine.",
+    "calendar-panels.tsx Popovers pass no onClose, so scroll never dismisses them (pre-existing, consistent with before)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter23_draft_status_filter.py"],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "~90% (all requested flows pass; popover panel lacks a surface/background)"},
+  "test_credentials": "demo / DemoPass123! (super_admin) from /app/memory/test_credentials.md",
+  "seed_data_creation": "The race tests published several identical-value versions: Basic up to v7, pricing up to v20. Basic and pricing UI drafts were created via the API with identical values and discarded via the UI. Audit rows were written.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The browser clock is Oct 27 2026 (UTC). To test the publish bar, create a draft via PUT /admin/plans/basic/draft with ORIGINAL_PLANS['basic'] (or pricing with V1_PRICING), then use the UI. Popover panel selector: div.w-72[style*=fixed]. Calendar has aria-label 'Next month'/'Previous month' buttons and role=gridcell days with aria-disabled. Final live: Basic v7, AI v27, AI Pro v1 (original values), pricing v20 (=v1), no drafts or scheduled versions."
+}
