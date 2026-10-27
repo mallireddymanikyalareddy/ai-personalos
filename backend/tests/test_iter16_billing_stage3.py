@@ -85,10 +85,13 @@ class TestCreditsSummary:
         assert r.status_code == 200, r.text
         d = r.json()
         assert d["accounts"] == DB.users.count_documents({}), (d, DB.users.count_documents({}))
-        assert d["available"] == 0 and d["reserved"] == 0 and d["ledgerEntries"] == 0
+        # Stage 4: every account holds a 10-credit trial grant
+        assert d["reserved"] == 0 and d["ledgerEntries"] == DB.credit_ledger.count_documents({})
+        assert d["available"] == sum(a["available"] for a in DB.credit_accounts.find({}, {"available": 1}))
 
     def test_register_creates_account(self, demo):
-        before = demo.get(f"{API}/admin/credits/summary").json()["accounts"]
+        b = demo.get(f"{API}/admin/credits/summary").json()
+        before, before_av = b["accounts"], b["available"]
         tag = uuid.uuid4().hex[:8]
         handle = f"test_s3_{tag}"
         r = requests.post(f"{API}/auth/register", json={"handle": handle, "displayName": "TEST S3", "password": "TestPass12345!"})
@@ -96,14 +99,15 @@ class TestCreditsSummary:
         try:
             after = demo.get(f"{API}/admin/credits/summary").json()
             assert after["accounts"] == before + 1
-            assert after["available"] == 0
+            assert after["available"] == before_av + 10
             u = DB.users.find_one({"handle": handle})
             acct = DB.credit_accounts.find_one({"user_id": u["id"]})
-            assert acct and acct["available"] == 0 and acct["reserved"] == 0
+            assert acct and acct["available"] == 10 and acct["reserved"] == 0
         finally:
             u = DB.users.find_one({"handle": handle})
             if u:
                 DB.credit_accounts.delete_many({"user_id": u["id"]})
+                DB.credit_ledger.delete_many({"user_id": u["id"]})
                 DB.sessions.delete_many({"user_id": u["id"]})
                 DB.app_state.delete_many({"user_id": u["id"]})
                 DB.users.delete_one({"id": u["id"]})
@@ -133,8 +137,9 @@ def _counts():
 def test_restart_idempotent():
     before = _counts()
     assert before["plans"] == 3 and before["plan_versions"] == 3 and before["pricing"] == 1
-    assert before["audit_mig"] == 3
-    assert before["migrations"] == ["stage3_backfill_credit_accounts", "stage3_seed_ai_pricing_v1", "stage3_seed_plans_v1"]
+    assert before["audit_mig"] == 4
+    assert before["migrations"] == ["stage3_backfill_credit_accounts", "stage3_seed_ai_pricing_v1", "stage3_seed_plans_v1",
+                                    "stage4_trial_credits_10"]
     subprocess.run(["sudo", "supervisorctl", "restart", "backend"], check=True, capture_output=True)
     for _ in range(30):
         time.sleep(2)

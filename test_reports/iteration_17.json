@@ -1,0 +1,33 @@
+{
+  "summary": "Stage 4 AI credit engine tested. Backend: 19/19 tests pass in test_iter17_credits_stage4.py. They cover the balance endpoint (401 when signed out), the trial grant (given once per account, and a restart does not grant again), registration (10 credits and 1 trial_grant row), and the chat failure path. On failure the stream sends an SSE error with creditsReturned:true. The hold is reserved (-2/+2), then released (+2/-2), and an ai_usage row is saved with status failed. Also covered: 400 UNKNOWN_ACTION, 409 DUPLICATE_REQUEST, 402 INSUFFICIENT_CREDITS with required and available, and history (newest first, only the user's own rows, no _id or idempotency_key, limit works). credits.py was tested directly: document_analysis holds 8, settle(500) charges 5 and returns 3, a second settle does not charge again, release after settle does nothing, charge_for stays between 3 and 8, and grant_trial is idempotent. Concurrency tests: 12 parallel reserves on 10 credits gave 5 holds and 7 x 402, and available never went negative. 6 parallel reserves with the same requestId gave 1 hold and 5 x 409. A settle/release race left reserved at 0. release_stale releases only holds older than 10 minutes. The ledger sums always equal the account balance. The Stage 3 test file was updated for the new expectations (trial credits, 4 migrations) and passes 11/11. Frontend (mailtest, provider set to openai): the Today morning briefing and Journal evening reflection both show 'Couldn't create this: your OpenAI account has no credits left.' AI chat falls back to the local answer. There were no page errors, and the balance stayed at 10 available / 0 reserved. Requests sent the correct actions (daily_plan, journal_summary, quick_question). One bug found: the morning briefing auto-run fires twice.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "/api/ai/chat chat_events", "issue": "If settle() succeeds and record_usage() or balance() then throws, the except branch runs. It writes a second ai_usage row with status failed and sends {error, creditsReturned:true}, but the credits were already charged. The client is told the credits came back when they did not."},
+    {"endpoint": "/api/ai/chat", "issue": "The hold is reserved before the StreamingResponse starts. If the client disconnects before the generator first runs, the finally block never runs. The hold stays until the sweep, which can take up to about 15 minutes (10-minute stale limit plus a 5-minute loop)."}
+  ]},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Today morning briefing auto-run (AIRecapCard)", "issue": "Reproduced twice. After switching the provider to openai in Settings and moving to Today inside the app, 2 POST /api/ai/chat daily_plan requests are sent with different requestIds. A full reload sends only 1. The app runs a production build, so this is not StrictMode. The useEffect([provider, id, autoRun]) runs again (the provider value probably flips during state sync), and generate() has no in-flight guard or abort. Once the provider has balance, each briefing would hold and charge 2 x 2 credits.", "affected_selectors": ["[data-testid='today-briefing']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter17_credits_stage4.py", "/app/backend/tests/test_iter16_billing_stage3.py", "/app/test_reports/pytest/pytest_iter17.xml"],
+  "action_items": [
+    "AIRecapCard: add an in-flight ref guard (skip generate when status is loading or a request is pending) and/or an AbortController in the effect cleanup, so the auto-run cannot send two paid requests",
+    "chat_events: only release and report creditsReturned when settle has not run. Use a separate flag for 'settled' and 'record_usage done' so a failure after settle does not send creditsReturned:true or write a second usage row",
+    "Optional: also have reserve() create a missing credit account lazily (it currently returns 402 with available 0 when no account row exists)"
+  ],
+  "critical_code_review_comments": [
+    "_finish() runs 3 to 4 separate writes (reservation status, account $inc, charge ledger row, release ledger row) with no transaction. A crash between them leaves the ledger and balance out of sync. The status guard stops double application, but there is no repair step.",
+    "release_stale can release a hold whose stream is still running after more than 10 minutes. settle() is then a no-op, so the user gets that AI call for free. This is unlikely with the current output limits.",
+    "grant() writes the ledger row before the account $inc and does not upsert. If an account row is missing, the ledger shows a grant that the balance never received. register calls ensure_credit_account first, so this is safe today.",
+    "The output token estimate is len(output)//4 and LlmChat is not told max_output_tokens, so the model is not capped at the priced limit. The charge is capped at max_credits, so users are never overcharged.",
+    "The pricing check in action_price() means actions priced but not in AI_ACTIONS are rejected by server.py first (400). This is intended."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter17_credits_stage4.py", "/app/backend/tests/test_iter16_billing_stage3.py (updated assertions for Stage 4: trial credits, 4 migrations/audit, ledger cleanup)"],
+  "success_rate": {"backend": "100%", "frontend": "90% (double auto-run bug)"},
+  "seed_data_creation": "None kept. The test_s4_* registered user and the TEST_s4_* engine accounts are deleted with all their credit, ledger, reservation, usage, session and state rows. The reserve/release ledger pairs, reservations and ai_usage rows made for mailtest during UI testing were removed (mailtest is back to its single trial_grant, 10/0). One orphan trial_grant row left by a failed iter16 register test was removed. mailtest's AI provider was set back to local.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_iter17 imports credits.py directly, using one persistent event loop because motor is bound to its loop. It also restarts the backend (supervisorctl). Expected DB state: users == credit_accounts == trial_grant ledger rows (557 at the time of testing), no held reservations, demo has trial plus one reserve/release pair from E1's smoke test. The OpenAI provider has no balance (litellm RateLimitError), so only the failure path can be tested end to end. To set the AI provider in the UI: Settings > AI section button > #ai-provider select."
+}

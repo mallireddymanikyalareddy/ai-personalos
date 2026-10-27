@@ -27,6 +27,9 @@ function cacheKey(id: string): string {
   return `personalos:${id}:${owner}:${new Date().toDateString()}`;
 }
 
+// One GPT run per card per day at a time, even if the card re-renders or remounts mid-request.
+const inFlight = new Map<string, Promise<string>>();
+
 export function AIRecapCard({ id, title, icon: Icon, prompt, localFallback, autoRun, idleHint, action }: AIRecapCardProps) {
   const [text, setText] = React.useState("");
   const [status, setStatus] = React.useState<"idle" | "loading" | "done" | "error">("idle");
@@ -45,7 +48,15 @@ export function AIRecapCard({ id, title, icon: Icon, prompt, localFallback, auto
       return;
     }
     try {
-      const full = await streamAIChat({ prompt, context: buildAIContext(os.getState(), local), history: [], action }, setText);
+      const key = cacheKey(id);
+      let run = inFlight.get(key);
+      if (!run) {
+        run = streamAIChat({ prompt, context: buildAIContext(os.getState(), local), history: [], action }, setText);
+        inFlight.set(key, run);
+        void run.catch(() => undefined).finally(() => inFlight.delete(key));
+      }
+      const full = await run;
+      setText(full);
       window.localStorage.setItem(cacheKey(id), full);
       window.sessionStorage.removeItem(`${cacheKey(id)}:error`);
       setStatus("done");

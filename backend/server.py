@@ -12,6 +12,7 @@ from emergentintegrations.llm.chat import LlmChat, StreamDone, TextDelta, UserMe
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field, StrictBool
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -283,32 +284,39 @@ async def ai_chat(body: ChatRequest, request: Request):
     chat = LlmChat(api_key=key, session_id=str(uuid.uuid4()), system_message=SYSTEM_PROMPT + body.context).with_model("openai", "gpt-6-luna")
     transcript = "\n".join(f"{t.role.upper()}: {t.text}" for t in body.history[-10:])
     text = f"Conversation so far:\n{transcript}\n\nUSER: {body.prompt}" if transcript else body.prompt
+    # BackgroundTask runs after the response, so a hold is released even if the client left before streaming began.
     return StreamingResponse(chat_events(chat, text, res), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                             background=BackgroundTask(credits.release, res, "Request was cancelled — credits returned"))
 
 
 async def chat_events(chat, text: str, res: dict):
-    started, output, finished = time.monotonic(), "", False
+    started, output, settled = time.monotonic(), "", False
+    elapsed = lambda: int((time.monotonic() - started) * 1000)  # noqa: E731
     try:
-        async for ev in chat.stream_message(UserMessage(text=text)):
-            if isinstance(ev, TextDelta):
-                output += ev.content
-                yield sse({"delta": ev.content})
-            elif isinstance(ev, StreamDone):
-                break
-        if not output:
-            raise RuntimeError("empty response")
+        try:
+            async for ev in chat.stream_message(UserMessage(text=text)):
+                if isinstance(ev, TextDelta):
+                    output += ev.content
+                    yield sse({"delta": ev.content})
+                elif isinstance(ev, StreamDone):
+                    break
+            if not output:
+                raise RuntimeError("empty response")
+        except Exception as exc:
+            await credits.release(res, "AI request failed — credits returned")
+            await credits.record_usage(res, "failed", 0, len(output), elapsed(), str(exc)[:300])
+            yield sse({"error": friendly_ai_error(str(exc)), "creditsReturned": True})
+            return
         charged = await credits.settle(res, len(output) // 4)
-        finished = True
-        await credits.record_usage(res, "succeeded", charged, len(output), int((time.monotonic() - started) * 1000))
+        settled = True
+        try:
+            await credits.record_usage(res, "succeeded", charged, len(output), elapsed())
+        except Exception:
+            logging.exception("Usage record failed for %s", res["id"])
         yield sse({"credits": {"charged": charged, **await credits.balance(res["user_id"])}})
-    except Exception as exc:
-        finished = True
-        await credits.release(res, "AI request failed — credits returned")
-        await credits.record_usage(res, "failed", 0, len(output), int((time.monotonic() - started) * 1000), str(exc)[:300])
-        yield sse({"error": friendly_ai_error(str(exc)), "creditsReturned": True})
     finally:
-        if not finished:
+        if not settled:
             await asyncio.shield(credits.release(res, "Request was cancelled — credits returned"))
 
 
