@@ -50,3 +50,9 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - P1: Tasks stats/charts respect life-area filter; Priority Breakdown empty-state mismatch
 - P2: Tasks 'All status' hides done tasks; Templates empty text; AI hero icon overlap; Paper dialog Escape timing
 - P2: regenerate landing hero mockup image with PersonalOS name; persistent rate limiter for preview emails
+
+## 2026-06 — Admin Stage 3: billing database records (agent-tested, iteration_16 100%)
+- backend/billing.py: indexes + one-time, audited, idempotent seeds (schema_migrations): plans + plan_versions (Basic/AI/AI Pro v1 published), ai_pricing_versions v1 (13 actions), empty credit_accounts for every user (new signups get one), credit_ledger + admin_audit collections.
+- Read-only admin APIs: GET /api/v1/admin/plans, /pricing, /credits/summary (401 anon / 403 non-admin).
+- /admin/plans and /admin/pricing now show LIVE records; other admin pages still DEMO data.
+- Next: Stage 4 credit engine (reserve/settle/release, ledger idempotency, resets, annual bonus), then Stage 5 admin APIs/audit UI, Stage 6 AI gateway, Stage 7 subscriber UI, Stage 8 Razorpay.

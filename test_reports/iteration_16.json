@@ -1,0 +1,20 @@
+{
+  "summary": "Stage 3 billing records tested. Backend: 11/11 new tests passed in test_iter16_billing_stage3.py (plans, pricing, credits summary, register creates a credit account, 401 for anonymous / 403 for mailtest on all 3 endpoints, restart is idempotent) and 6/6 iter15 regression tests passed. Frontend: /admin/plans and /admin/pricing show the LIVE notice and the real saved records with the expected values. The other 8 admin pages still show the demo notice and render. Today works. No page errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iter16_billing_stage3.py", "/app/test_reports/pytest/pytest_iter16.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "No user-deletion path exists today. When account deletion is added, it must also remove or close the credit_accounts row, otherwise the summary 'accounts' count will drift from the users count.",
+    "auth.register inserts the user and then calls ensure_credit_account separately, with no transaction. If the second write fails, the user has no credit account. Low risk because the upsert is idempotent; later charging code should call ensure_credit_account lazily.",
+    "run_once: if two workers start at the same time, both can upsert schema_migrations and one could get a DuplicateKeyError that crashes its startup. Fine with a single worker; wrap it in try/except DuplicateKeyError if more workers are added.",
+    "admin_plans makes one find_one per plan (N+1 queries). Acceptable for 3 plans.",
+    "Tests that insert users directly into the DB (e.g. iter15) bypass ensure_credit_account. This is harmless because they delete those users, but the summary count is only equal to the users count while no such test is running."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter16_billing_stage3.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None kept. The test registers a test_s3_<hex> user and then deletes it along with its credit_accounts, sessions and app_state rows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_iter16 reads MONGO_URL/DB_NAME via dotenv_values and checks the DB directly. test_restart_idempotent runs 'sudo supervisorctl restart backend'. Expected DB state: 3 plans, 3 plan_versions, 1 ai_pricing_versions, 3 admin_audit system migration entries, 3 schema_migrations keys, credit_accounts count == users count, 0 ledger entries."
+}
