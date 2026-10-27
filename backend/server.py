@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -20,7 +21,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 import digest  # noqa: E402
 from admin import promote_configured_admins, router as admin_router  # noqa: E402
 from auth import ApiError, error_response, iso, public_user, require_auth, router as auth_router  # noqa: E402
-from billing import setup_billing  # noqa: E402
+import credits  # noqa: E402
+from billing import run_once, setup_billing  # noqa: E402
 from db import db, ensure_indexes  # noqa: E402
 
 BILLING_CODES = ("insufficient_credits", "integration_disabled", "daily_limit_reached")
@@ -83,9 +85,12 @@ async def lifespan(_: FastAPI):
     await ensure_indexes()
     await promote_configured_admins()
     await setup_billing()
-    task = asyncio.create_task(digest_loop())
+    await credits.ensure_indexes()
+    await run_once("stage4_trial_credits_10", credits.backfill_trial_credits)
+    tasks = [asyncio.create_task(digest_loop()), asyncio.create_task(credits.sweep_loop())]
     yield
-    task.cancel()
+    for task in tasks:
+        task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -218,10 +223,15 @@ class ChatTurn(BaseModel):
     text: str
 
 
+AI_ACTIONS = ("quick_question", "daily_plan", "journal_summary")
+
+
 class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
     context: str = Field(default="", max_length=20000)
     history: list[ChatTurn] = []
+    action: str = "quick_question"
+    requestId: str | None = Field(default=None, min_length=8, max_length=64)
 
 
 def friendly_ai_error(msg: str) -> str:
@@ -234,30 +244,72 @@ def friendly_ai_error(msg: str) -> str:
     return "the AI service failed to respond"
 
 
+def sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+@app.get("/api/v1/credits")
+async def my_credits(auth=Depends(require_auth)):
+    return await credits.balance(auth[0]["id"])
+
+
+@app.get("/api/v1/credits/history")
+async def my_credit_history(limit: int = 50, auth=Depends(require_auth)):
+    return {"entries": await credits.history(auth[0]["id"], max(1, min(limit, 200)))}
+
+
+async def reserve_or_response(user_id: str, body: ChatRequest):
+    try:
+        return await credits.reserve(user_id, body.action, body.requestId or str(uuid.uuid4())), None
+    except credits.CreditError as exc:
+        return None, JSONResponse({"detail": exc.message, "code": exc.code, **exc.extra}, status_code=exc.status)
+
+
 @app.post("/api/ai/chat")
 async def ai_chat(body: ChatRequest, request: Request):
     from auth import current_session
 
-    if not await current_session(request):
+    found = await current_session(request)
+    if not found:
         return JSONResponse({"detail": "Please sign in to use GPT 6 Luna"}, status_code=401)
+    if body.action not in AI_ACTIONS:
+        return JSONResponse({"detail": "That AI action isn't available.", "code": "UNKNOWN_ACTION"}, status_code=400)
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
         return JSONResponse({"detail": "OpenAI API key is not configured"}, status_code=503)
+    res, error = await reserve_or_response(found[0]["id"], body)
+    if error:
+        return error
     chat = LlmChat(api_key=key, session_id=str(uuid.uuid4()), system_message=SYSTEM_PROMPT + body.context).with_model("openai", "gpt-6-luna")
     transcript = "\n".join(f"{t.role.upper()}: {t.text}" for t in body.history[-10:])
     text = f"Conversation so far:\n{transcript}\n\nUSER: {body.prompt}" if transcript else body.prompt
+    return StreamingResponse(chat_events(chat, text, res), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-    async def events():
-        try:
-            async for ev in chat.stream_message(UserMessage(text=text)):
-                if isinstance(ev, TextDelta):
-                    yield f"data: {json.dumps({'delta': ev.content})}\n\n"
-                elif isinstance(ev, StreamDone):
-                    break
-        except Exception as exc:
-            yield f"data: {json.dumps({'error': friendly_ai_error(str(exc))})}\n\n"
 
-    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+async def chat_events(chat, text: str, res: dict):
+    started, output, finished = time.monotonic(), "", False
+    try:
+        async for ev in chat.stream_message(UserMessage(text=text)):
+            if isinstance(ev, TextDelta):
+                output += ev.content
+                yield sse({"delta": ev.content})
+            elif isinstance(ev, StreamDone):
+                break
+        if not output:
+            raise RuntimeError("empty response")
+        charged = await credits.settle(res, len(output) // 4)
+        finished = True
+        await credits.record_usage(res, "succeeded", charged, len(output), int((time.monotonic() - started) * 1000))
+        yield sse({"credits": {"charged": charged, **await credits.balance(res["user_id"])}})
+    except Exception as exc:
+        finished = True
+        await credits.release(res, "AI request failed — credits returned")
+        await credits.record_usage(res, "failed", 0, len(output), int((time.monotonic() - started) * 1000), str(exc)[:300])
+        yield sse({"error": friendly_ai_error(str(exc)), "creditsReturned": True})
+    finally:
+        if not finished:
+            await asyncio.shield(credits.release(res, "Request was cancelled — credits returned"))
 
 
 __all__ = ["app", "public_user"]

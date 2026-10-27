@@ -241,8 +241,10 @@ async def register(body: RegisterIn, request: Request, response: Response):
     }
     await db.users.insert_one(dict(user))
     from billing import ensure_credit_account
+    from credits import grant_trial
 
     await ensure_credit_account(user["id"])
+    await grant_trial(user["id"])
     return await issue_session(user, request, response)
 
 

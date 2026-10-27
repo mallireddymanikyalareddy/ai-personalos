@@ -7,7 +7,7 @@ import { RefreshCw } from "lucide-react";
 
 import { ModelLabel } from "@/components/ai/model-label";
 import { Button } from "@/components/ui/button";
-import { buildAIContext, streamAIChat } from "@/lib/ai-stream";
+import { buildAIContext, streamAIChat, type AIAction } from "@/lib/ai-stream";
 import { getOS } from "@/store/os";
 import { useAppState } from "@/store/use-os";
 
@@ -19,6 +19,7 @@ export interface AIRecapCardProps {
   localFallback: () => string;
   autoRun: boolean;
   idleHint: string;
+  action: AIAction;
 }
 
 function cacheKey(id: string): string {
@@ -26,7 +27,7 @@ function cacheKey(id: string): string {
   return `personalos:${id}:${owner}:${new Date().toDateString()}`;
 }
 
-export function AIRecapCard({ id, title, icon: Icon, prompt, localFallback, autoRun, idleHint }: AIRecapCardProps) {
+export function AIRecapCard({ id, title, icon: Icon, prompt, localFallback, autoRun, idleHint, action }: AIRecapCardProps) {
   const [text, setText] = React.useState("");
   const [status, setStatus] = React.useState<"idle" | "loading" | "done" | "error">("idle");
   const [error, setError] = React.useState("");
@@ -44,7 +45,7 @@ export function AIRecapCard({ id, title, icon: Icon, prompt, localFallback, auto
       return;
     }
     try {
-      const full = await streamAIChat({ prompt, context: buildAIContext(os.getState(), local), history: [] }, setText);
+      const full = await streamAIChat({ prompt, context: buildAIContext(os.getState(), local), history: [], action }, setText);
       window.localStorage.setItem(cacheKey(id), full);
       window.sessionStorage.removeItem(`${cacheKey(id)}:error`);
       setStatus("done");
@@ -55,7 +56,7 @@ export function AIRecapCard({ id, title, icon: Icon, prompt, localFallback, auto
       setError(message);
       setStatus("error");
     }
-  }, [id, prompt, localFallback]);
+  }, [id, prompt, localFallback, action]);
 
   React.useEffect(() => {
     const usingGpt = provider === "openai";

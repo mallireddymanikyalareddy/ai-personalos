@@ -19,6 +19,7 @@ export function TodayBriefing() {
       icon={Sunrise}
       prompt={PROMPT}
       localFallback={localPlan}
+      action="daily_plan"
       autoRun
       idleHint=""
     />

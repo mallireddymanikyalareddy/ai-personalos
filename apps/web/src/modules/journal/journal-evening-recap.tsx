@@ -42,6 +42,7 @@ export function JournalEveningRecap() {
       icon={MoonStar}
       prompt={PROMPT}
       localFallback={localRecap}
+      action="journal_summary"
       autoRun={new Date().getHours() >= 17}
       idleHint="Sum up your day and get tomorrow's focus. Runs automatically after 5pm."
     />

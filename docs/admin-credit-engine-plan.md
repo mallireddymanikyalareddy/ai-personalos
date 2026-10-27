@@ -43,5 +43,11 @@ Runs on server start via `setup_billing()`:
 - Every account has a `credit_accounts` row starting at 0; new registrations get one automatically. The ledger starts empty.
 - Read-only admin APIs: `GET /api/v1/admin/plans`, `/pricing`, `/credits/summary`.
 
+## Stage 4 credit engine (done) — `backend/credits.py`
+- Every account got 10 one-time trial credits (`stage4_trial_credits_10`, ledger key `trial:<user>`); new sign-ups get them on registration.
+- `/api/ai/chat` takes `action` (`quick_question` 1, `daily_plan` 2 for the morning briefing, `journal_summary` 2 for the evening reflection) and a `requestId`. It holds the action's maximum price before calling the AI. On success it charges by response size (range actions scale with output length) and returns the rest. On failure or cancellation it returns everything. Not enough credits gives a 402 `INSUFFICIENT_CREDITS`; a reused requestId gives a 409.
+- Ledger entries carry `available_delta` / `reserved_delta`; their sums always equal the account balance. Holds left open more than 10 minutes are released by a background sweep. Each request is logged in `ai_usage`.
+- User APIs: `GET /api/v1/credits`, `GET /api/v1/credits/history`.
+
 ## Backup & recovery
 Take an Atlas snapshot before publishing. All Stage 3 changes are additive: existing collections (`users`, `app_state`, …) are untouched. To roll back, deploy the previous build and drop the new collections listed above; to re-run a seed, delete its `schema_migrations` key and restart.

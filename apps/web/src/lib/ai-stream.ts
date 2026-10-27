@@ -33,15 +33,18 @@ export function buildAIContext(state: AppState, localAnswer: string): string {
   ].join("\n\n");
 }
 
+export type AIAction = "quick_question" | "daily_plan" | "journal_summary";
+
 export async function streamAIChat(
-  body: { prompt: string; context: string; history: ChatTurn[] },
+  body: { prompt: string; context: string; history: ChatTurn[]; action?: AIAction },
   onDelta: (text: string) => void,
 ): Promise<string> {
+  const requestId = `ai-${crypto.randomUUID()}`;
   const res = await fetch("/api/ai/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
     credentials: "include",
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, action: body.action ?? "quick_question", requestId }),
   });
   if (!res.ok || !res.body) {
     const data = await res.json().catch(() => ({}));
