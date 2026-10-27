@@ -77,3 +77,6 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - User UI: /plans page (monthly/yearly toggle, "Payments coming soon" disabled CTA, action costs). Upgrade card on Today at 3 credits or fewer (dismissible per day). Links from the Settings credits card.
 - Subscriptions don't exist yet. When they do, each will store the plan version it started on and switch to the live version at renewal.
 - Popover: scroll-dismiss only from the anchor's ancestors, width only when matchWidth, offset sizes; the DatePicker panel has a surface.
+
+## 2026-06 — Email verification link fix (self-tested)
+- Opening the verification link while signed in showed a blank page/redirect and never confirmed (the (auth) layout hid public pages for signed-in users). /verify-email now stays put. Reopening a used link succeeds if it already verified.

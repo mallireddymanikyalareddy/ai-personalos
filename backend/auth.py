@@ -380,7 +380,15 @@ class TokenIn(BaseModel):
 
 @router.post("/auth/verify-email/confirm")
 async def verify_confirm(body: TokenIn):
-    doc = await consume_token(body.token, "verify")
+    try:
+        doc = await consume_token(body.token, "verify")
+    except ApiError:
+        # A second open of the same link (email scanners, double clicks) still succeeds if it already verified.
+        used = await db.tokens.find_one({"token_hash": sha(body.token or ""), "kind": "verify", "used_at": {"$ne": None}})
+        user = used and await db.users.find_one({"id": used["user_id"], "email_verified_at": {"$ne": None}}, {"_id": 0})
+        if not user:
+            raise
+        return profile(user)
     await db.users.update_one({"id": doc["user_id"]}, {"$set": {"email_verified_at": now()}})
     return profile(await db.users.find_one({"id": doc["user_id"]}, {"_id": 0}))
 

@@ -8,6 +8,8 @@ import { unregisterServiceWorker } from "@/lib/pwa";
 import { useAuth } from "@/modules/auth/auth-context";
 
 const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email"];
+// Pages that must stay put for signed-in users too (an emailed link opened while logged in).
+const STAY_WHEN_SIGNED_IN = ["/verify-email"];
 
 export default function AuthGroupLayout({ children }: { children: React.ReactNode }) {
   const { status, profile, refresh } = useAuth();
@@ -23,7 +25,7 @@ export default function AuthGroupLayout({ children }: { children: React.ReactNod
       router.replace("/login");
       return;
     }
-    if (status === "authenticated" && isPublic && profile) {
+    if (status === "authenticated" && isPublic && profile && !STAY_WHEN_SIGNED_IN.includes(pathname)) {
       const next = new URLSearchParams(window.location.search).get("next");
       const safeNext = next && /^\/[a-z0-9/_-]*$/i.test(next) && !next.startsWith("//") ? next : null;
       const target = profile.onboardingCompleted ? (safeNext ?? "/today") : "/onboarding";
@@ -74,7 +76,7 @@ export default function AuthGroupLayout({ children }: { children: React.ReactNod
   }
 
   if (status === "anonymous" && isOnboarding) return null;
-  if (status === "authenticated" && isPublic) return null;
+  if (status === "authenticated" && isPublic && !STAY_WHEN_SIGNED_IN.includes(pathname)) return null;
 
   return <>{children}</>;
 }
