@@ -104,8 +104,8 @@ export function PublishBar({
       <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
         Unpublished draft — subscribers aren&apos;t affected until you publish.
       </p>
-      <div className="grid gap-2 sm:grid-cols-[1fr_7rem_1fr]">
-        <div data-testid={`${testId}-when`}>
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem]">
+        <div data-testid={`${testId}-when`} className="min-w-0">
           <DatePicker
             value={day}
             onValueChange={setDay}
@@ -128,7 +128,7 @@ export function PublishBar({
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="Reason (required)"
-          className={field}
+          className={`${field} sm:col-span-2`}
         />
       </div>
       {when != null && when <= Date.now() && (

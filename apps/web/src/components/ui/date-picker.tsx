@@ -27,7 +27,11 @@ export interface DatePickerProps {
 }
 
 const formatDate = (ts: Timestamp) =>
-  new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(ts));
+  new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(ts));
 
 export function DatePicker({
   value,
@@ -67,7 +71,10 @@ export function DatePicker({
           className,
         )}
       >
-        <CalendarDays className="size-4 shrink-0 text-ink-3" aria-hidden="true" />
+        <CalendarDays
+          className="size-4 shrink-0 text-ink-3"
+          aria-hidden="true"
+        />
         <span className={cn("min-w-0 flex-1 truncate", !value && "text-ink-3")}>
           {value ? formatDate(value) : placeholder}
         </span>
@@ -86,7 +93,15 @@ export function DatePicker({
           </span>
         )}
       </button>
-      <Popover open={open} anchor={triggerRef.current} onClose={close} panelRef={popoverRef} side="bottom" align="start">
+      <Popover
+        open={open}
+        anchor={triggerRef.current}
+        onClose={close}
+        panelRef={popoverRef}
+        side="bottom"
+        align="start"
+        className="w-72"
+      >
         <MonthCalendar
           value={value}
           onValueChange={(ts) => {

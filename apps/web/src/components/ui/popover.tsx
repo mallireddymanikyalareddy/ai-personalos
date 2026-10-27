@@ -39,7 +39,11 @@ export function Popover({
 }: PopoverProps) {
   const internalRef = React.useRef<HTMLDivElement>(null);
   const ref = panelRef ?? internalRef;
-  const [rect, setRect] = React.useState<{ top: number; left: number; width: number } | null>(null);
+  const [rect, setRect] = React.useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
 
   React.useLayoutEffect(() => {
     if (!open || !anchor) return;
@@ -62,7 +66,8 @@ export function Popover({
         left = align === "end" ? a.right - p.width : a.left;
         if (matchWidth) left = a.left;
         top = side === "bottom" ? a.bottom + gap : a.top - p.height - gap;
-        if (side === "bottom" && top + p.height > vh - margin) top = a.top - p.height - gap;
+        if (side === "bottom" && top + p.height > vh - margin)
+          top = a.top - p.height - gap;
         if (side === "top" && top < margin) top = a.bottom + gap;
       }
       left = Math.max(margin, Math.min(left, vw - p.width - margin));
@@ -72,8 +77,14 @@ export function Popover({
     compute();
     raf = requestAnimationFrame(compute);
     const onScroll = (event: Event) => {
-      const target = event.target as Node | null;
+      const target = event.target;
       if (target instanceof Node && ref.current?.contains(target)) return;
+      // Only scrolling that moves the anchor (the page or one of its ancestors) should dismiss.
+      if (!(
+        target === document ||
+        (target instanceof Node && target.contains(anchor))
+      ))
+        return;
       onClose?.();
     };
     const onResize = () => compute();
@@ -97,7 +108,7 @@ export function Popover({
         position: "fixed",
         top: rect?.top ?? -10000,
         left: rect?.left ?? -10000,
-        width: rect?.width,
+        width: matchWidth ? rect?.width : undefined,
       }}
       className={cn("z-40 animate-scale-in", className)}
     >

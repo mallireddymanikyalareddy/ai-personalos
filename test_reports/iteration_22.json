@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 22 retest of the plan editor and upgrade-prompt fixes. Backend: the new test_iter22_plan_robustness.py passed 6/6. A scheduled rename leaves GET /admin/plans name, the public /plans name and db.plans.name on the live name until effective_at, then they switch. No plans document has current_version. The one_draft_per_plan and one_pricing_draft unique partial indexes exist. Five concurrent first-save races each for plans and pricing gave 200+409 or 200+200 (the second save updated the same draft), and there was always exactly one draft. Regression (iter21, iter16, iter19 admin_ops, iter19 concurrency): 52 passed, 1 skipped. UI: the publish bar has no datetime-local input. An empty date shows 'Publish now' with the time input disabled. 'Today' enables the time. 00:00 shows -past and disables 'Schedule'. A time ~2 min ahead enables 'Schedule'. Scheduling AI v22 (identical values) showed admin-plan-ai-scheduled while the header stayed 'PersonalOS AI v21 · live', then v22 went live. The history line reads 'Past live versions:' with 5 entries plus '+16 older' and no scheduled versions (pricing: 5 plus '+8 older'). The pricing draft table shows an amber dot and amber values with '(was 1)' / '(was 600)' only on changed rows, and discard works. Settings credits card: 'View plans' is one line (14px high) and the copy has no hardcoded costs. Two DatePicker popover bugs were found (below). Final state: Basic v1, AI v22, AI Pro v1, all with the original values; pricing v13 equals v1; there are no drafts or scheduled versions.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/v1/admin/plans/{id}/draft (update path)", "issue": "update_one filters only by {plan_id, version}, not status='draft'. If the draft is published between the find_one and the update_one, the save overwrites a published version. The pricing path already filters status='draft'. Add status:'draft' to the filter and return 409 if matched_count == 0."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DatePicker popover (components/ui/date-picker.tsx + popover.tsx), used by PublishBar", "issue": "The calendar popover is squashed to about 86px wide in the publish bar (151px on /styleguide). The 7 day columns overlap and can't be read, so a specific date can't be picked reliably. Only the 'Today' button is usable. RCA: the Popover panel has no width. It shrinks to the max-content of MonthCalendar ('w-full' with fr columns), then Popover freezes that measured width via style.width = rect.width. Fix: give the panel or calendar a fixed width (e.g. className='w-72' on Popover or MonthCalendar), or don't set width when matchWidth is false.", "selector": "[data-testid=admin-plan-{id}-publishbar-when] button", "priority": "HIGH"},
+      {"component": "Popover scroll-dismiss", "issue": "If the Reason field holds text longer than the field (common, since the field is narrow), clicking the date trigger opens the popover and closes it at once. RCA: on blur the input resets its horizontal scroll and fires a 'scroll' event. Popover's capture-phase window scroll listener calls onClose for any scroll outside the panel. Reproduced: with a long reason aria-expanded=false, with a short reason it is true. Fix: in Popover onScroll, only close when the scrolled target contains the anchor (or is the document), e.g. `if (!(target === document || (target instanceof Node && target.contains(anchor)))) return;`.", "selector": "[data-testid=admin-plan-ai-publishbar-reason] then -when button", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin > Plans & Pricing publish bar (3-column card layout)", "issues": ["The grid sm:grid-cols-[1fr_7rem_1fr] is too tight in a plan card. After a date is picked, the Reason input shrinks to about 30px (it shows 'al'). Put Reason on its own full-width row.", "The 7rem time column cuts off the value: '09:00 AM' shows as '09:00 AI' (also in the wide pricing bar), and '12:00 AM' shows as '2:00 AM'. Widen it to about 8.5–9rem."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter22_plan_robustness.py", "/app/test_reports/pytest/pytest_iter22.xml", "/app/test_reports/pytest/pytest_iter22_regression.xml"],
+  "action_items": [
+    "Fix the DatePicker popover width (fixed width on the panel or calendar; don't freeze the measured shrink-to-fit width).",
+    "Fix Popover scroll-dismiss so scroll events from unrelated inputs (such as a text input resetting scrollLeft on blur) don't close it.",
+    "PublishBar layout: put Reason on its own row and widen the time column so 'hh:mm AM' isn't cut off.",
+    "Add status:'draft' to the update_one filter in save_plan_draft."
+  ],
+  "critical_code_review_comments": [
+    "PublishBar works out 'when > Date.now()' at render time only. If the admin leaves the bar open past the chosen time, Schedule stays enabled until the next render, and the server returns 400 (handled by a toast). This is acceptable but could be re-checked on click.",
+    "HistoryLine sorts by version, not effective_at. With an out-of-order schedule (an older scheduled version going live after a newer publish-now), the order and the 'live' meaning can mislead. Edge case.",
+    "DatePicker nests a role=button span (Clear) inside a <button>, which is invalid interactive nesting (a11y).",
+    "plan_state and pricing_state still duplicate the current/scheduled/draft logic (carried over from iter21)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter22_plan_robustness.py"],
+  "success_rate": {"backend": "100% (6/6 new, 52/52 regression + 1 skip)", "frontend": "~80% (all requested flows verified; DatePicker popover unusable for non-today dates and closes after a long reason)"},
+  "test_credentials": "demo / DemoPass123! (super_admin), mailtest / TestPass123! from /app/memory/test_credentials.md",
+  "seed_data_creation": "Created plan_versions: AI renamed v(n) scheduled 4s ahead then restored, and AI v22 scheduled via the UI with identical original values (now live). Basic and pricing race drafts were discarded. A pricing v14 draft was created and discarded via the UI. Audit rows were written.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_iter22 imports restore_all from test_iter21. To use the publish bar in Playwright, open the date picker before typing a long reason (or keep the reason short) and click 'Today'. The calendar days are squashed until the width fix lands. Use a viewport at least 1500px tall so the 'Today' button doesn't make Playwright scroll, since any scroll closes the popover. The browser TZ is UTC. Final live: Basic v1, AI v22, AI Pro v1 (original values), pricing v13 (=v1), no drafts or scheduled versions."
+}

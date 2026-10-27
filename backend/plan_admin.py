@@ -101,7 +101,10 @@ async def save_plan_draft(plan_id: str, body: PlanDraftIn, auth=Depends(OWNER)):
     fields = body.model_dump(exclude={"reason"})
     draft = await db.plan_versions.find_one({"plan_id": plan_id, "status": "draft"}, {"_id": 0, "version": 1})
     if draft:
-        await db.plan_versions.update_one({"plan_id": plan_id, "version": draft["version"]}, {"$set": fields | {"updated_at": now()}})
+        updated = await db.plan_versions.update_one({"plan_id": plan_id, "version": draft["version"], "status": "draft"},
+                                                    {"$set": fields | {"updated_at": now()}})
+        if not updated.matched_count:
+            raise ApiError(409, "CONFLICT", "That draft was just published or discarded. Reload and try again.")
         version = draft["version"]
     else:
         version = await next_version(db.plan_versions, {"plan_id": plan_id})
@@ -186,7 +189,10 @@ async def save_pricing_draft(body: PricingDraftIn, auth=Depends(OWNER)):
     actions = merged_actions(state["current"]["actions"], body.actions)
     if state["draft"]:
         version = state["draft"]["version"]
-        await db.ai_pricing_versions.update_one({"version": version, "status": "draft"}, {"$set": {"actions": actions, "updated_at": now()}})
+        updated = await db.ai_pricing_versions.update_one({"version": version, "status": "draft"},
+                                                          {"$set": {"actions": actions, "updated_at": now()}})
+        if not updated.matched_count:
+            raise ApiError(409, "CONFLICT", "That draft was just published or discarded. Reload and try again.")
     else:
         version = await next_version(db.ai_pricing_versions, {})
         try:
