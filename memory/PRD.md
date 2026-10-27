@@ -38,6 +38,12 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - Skip for now -> /users/me/onboarding/skip (onboardingSkipped); Finish setup banner on Today + Settings > Profile -> /onboarding?resume=1
 - Life areas: profile.lifeAreas synced to local lifeAreas (os.syncLifeAreas); Settings Life areas card; Life area select on tasks/goals; chips on rows/table/board/goal cards; Tasks life-area filter pills
 - Tasks 'All Status' shows completed by default
+## Admin Console + AI Credit Engine (8-stage brief, 2026-10-27)
+- Plan doc: /app/docs/admin-credit-engine-plan.md
+- Stage 1 done (assessment). Stage 2 done: /admin UI (10 sections) with DEMO DATA (modules/admin/demo-data.ts), role gate GET /api/v1/admin/me (backend/admin.py)
+- Roles: super_admin, billing_admin, support_admin, ai_ops_admin, analyst. ADMIN_EMAILS env (mallireddymanikyalareddy@gmail.com) -> super_admin only after email verified; env roles auto-demote when removed. demo given super_admin manually in PREVIEW DB only
+- Payments: Razorpay chosen (keys not yet collected)
+- Next: Stage 3 schema/seeds -> Stage 4 credit engine -> Stage 5 admin APIs -> Stage 6 AI gateway -> Stage 7 subscriber UI -> Stage 8 Razorpay + tests
 ## Backlog
 - P0: user to add OpenAI credits (currently 'no credits' error)
 - P1: offline edits queue indicator / sync status badge

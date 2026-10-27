@@ -24,7 +24,9 @@ export default function AuthGroupLayout({ children }: { children: React.ReactNod
       return;
     }
     if (status === "authenticated" && isPublic && profile) {
-      const target = profile.onboardingCompleted ? "/today" : "/onboarding";
+      const next = new URLSearchParams(window.location.search).get("next");
+      const safeNext = next && /^\/[a-z0-9/_-]*$/i.test(next) && !next.startsWith("//") ? next : null;
+      const target = profile.onboardingCompleted ? (safeNext ?? "/today") : "/onboarding";
       if (pathname !== target) {
         router.replace(target);
       }
