@@ -108,3 +108,7 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 ## 2026-06 - Bulk admin actions and CSV exports
 - Added multi-select on Admin > Users with bulk credit add/remove and bulk role changes (super admin only); every user action remains audited with a batch id.
 - Added CSV exports for users (all or selected), credit ledger and admin audit, with formula-injection sanitising.
+
+## 2026-06 - Admin alert center and ledger reconciliation
+- Dashboard now has a Needs attention panel for past-due/overdue subscriptions, stale credit holds, ledger/account mismatches and recent AI provider failures.
+- Added backend/reconciliation.py: hourly comparison of every account balance with ledger sums, with open reconciliation_items for mismatches.

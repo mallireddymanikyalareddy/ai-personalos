@@ -351,23 +351,58 @@ async def overview(days: int = 7, _=Depends(require_role())):
     settings = await platform_settings.get_settings()
     month_start = now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     month_credits = await ai_charged_since(month_start)
+    pending_holds = await db.credit_reservations.count_documents({"status": "held"})
+    stale_holds = await db.credit_reservations.count_documents({"status": "held", "created_at": {"$lt": stale}})
+    subscriptions = {"active": await db.subscriptions.count_documents({"status": "active"}),
+                     "trialing": await db.subscriptions.count_documents({"status": "trialing"}),
+                     "pastDue": await db.subscriptions.count_documents({"status": "past_due"}),
+                     "total": await db.subscriptions.count_documents({})}
+    overdue_renewals = await db.subscriptions.count_documents(
+        {"status": {"$in": ["active", "trialing"]}, "current_period_end": {"$lte": now()}})
+    drift = await db.reconciliation_items.count_documents({"status": "open"})
+    failed_24h = await db.ai_usage.count_documents(
+        {"status": "failed", "created_at": {"$gte": now() - timedelta(hours=24)}})
+    alerts = []
+    if subscriptions["pastDue"]:
+        alerts.append({"type": "past_due", "level": "warning", "count": subscriptions["pastDue"],
+                       "title": "Past-due subscriptions",
+                       "detail": f"{subscriptions['pastDue']} subscription(s) need a payment or status update.",
+                       "href": "/admin/subscriptions"})
+    if overdue_renewals:
+        alerts.append({"type": "overdue_renewals", "level": "warning", "count": overdue_renewals,
+                       "title": "Renewals due",
+                       "detail": f"{overdue_renewals} subscription(s) are past their period end.",
+                       "href": "/admin/subscriptions"})
+    if stale_holds:
+        alerts.append({"type": "stale_holds", "level": "warning", "count": stale_holds,
+                       "title": "Stale credit holds",
+                       "detail": f"{stale_holds} AI request(s) have held credits for over 10 minutes.",
+                       "href": "/admin/credits"})
+    if drift:
+        alerts.append({"type": "ledger_drift", "level": "danger", "count": drift,
+                       "title": "Ledger mismatch",
+                       "detail": f"{drift} account(s) do not match the credit ledger.",
+                       "href": "/admin/credits"})
+    if failed_24h >= 3:
+        alerts.append({"type": "provider_failures", "level": "warning", "count": failed_24h,
+                       "title": "AI failures in the last 24h",
+                       "detail": f"{failed_24h} AI request(s) failed. Check provider status and usage.",
+                       "href": "/admin/usage"})
     return {
         "users": await db.users.count_documents({}),
         "newUsers": await db.users.count_documents({"created_at": {"$gte": now() - timedelta(days=days)}}),
         "admins": await db.users.count_documents({"admin_role": {"$in": list(ROLES)}}),
         "usage": await usage_totals(now() - timedelta(days=days)),
         "trend": await usage_trend(days),
-        "pendingHolds": await db.credit_reservations.count_documents({"status": "held"}),
-        "staleHolds": await db.credit_reservations.count_documents({"status": "held", "created_at": {"$lt": stale}}),
-        "subscriptions": {"active": await db.subscriptions.count_documents({"status": "active"}),
-                          "trialing": await db.subscriptions.count_documents({"status": "trialing"}),
-                          "pastDue": await db.subscriptions.count_documents({"status": "past_due"}),
-                          "total": await db.subscriptions.count_documents({})},
+        "pendingHolds": pending_holds,
+        "staleHolds": stale_holds,
+        "subscriptions": subscriptions,
         "promotions": {"active": await db.promotions.count_documents({"status": "active"}),
                        "grants": await db.promotion_grants.count_documents({})},
         "spend": {"month": month_start.strftime("%Y-%m"), "chargedCredits": month_credits,
                   "estimatedPaise": month_credits * int(settings.get("creditValuePaise", 0)),
                   "thresholdPaise": int(settings.get("monthlySpendAlertPaise", 0))},
+        "alerts": alerts,
         "credits": await credit_summary(),
         "recentAudit": (await audit(5))["entries"],
     }

@@ -27,6 +27,7 @@ import credits  # noqa: E402
 import entitlements  # noqa: E402
 import platform_settings  # noqa: E402
 import promotions  # noqa: E402
+import reconciliation  # noqa: E402
 from admin_ops import router as admin_ops_router  # noqa: E402
 from billing_admin import public_router as billing_public_router, router as billing_admin_router  # noqa: E402
 from plan_admin import admin_router as plan_admin_router, public_router as plans_router  # noqa: E402
@@ -101,6 +102,7 @@ async def lifespan(_: FastAPI):
     await platform_settings.ensure_indexes()
     await platform_settings.seed_settings()
     await alerts.ensure_indexes()
+    await reconciliation.ensure_indexes()
     await run_once("stage8_credit_buckets", credits.backfill_credit_buckets)
     await run_once("stage8_promotion_remaining", promotions.backfill_remaining)
     await run_once("stage4_trial_credits_10", credits.backfill_trial_credits)
@@ -108,7 +110,7 @@ async def lifespan(_: FastAPI):
     await promotions.expire_due()
     tasks = [asyncio.create_task(digest_loop()), asyncio.create_task(credits.sweep_loop()),
              asyncio.create_task(entitlements.sweep_loop()), asyncio.create_task(promotions.sweep_loop()),
-             asyncio.create_task(alerts.loop())]
+             asyncio.create_task(alerts.loop()), asyncio.create_task(reconciliation.loop())]
     yield
     for task in tasks:
         task.cancel()

@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import Link from "next/link";
+
 import {
   Area,
   AreaChart,
@@ -134,6 +136,7 @@ type Overview = {
   subscriptions: { active: number; trialing: number; pastDue: number; total: number };
   promotions: { active: number; grants: number };
   spend: { month: string; chargedCredits: number; estimatedPaise: number; thresholdPaise: number };
+  alerts: { type: string; level: string; count: number; title: string; detail: string; href: string }[];
   credits: CreditSummary;
   recentAudit: AuditRow[];
 };
@@ -151,6 +154,37 @@ export function AdminDashboard() {
         <LoadState error={error} testId="admin-overview-state" />
       ) : (
         <>
+          <Panel title="Needs attention" testId="admin-alerts">
+            {(data.alerts ?? []).length === 0 ? (
+              <p className="text-sm text-ink-3" data-testid="admin-alerts-clear">
+                All clear — no past-due renewals, stale holds or ledger mismatches.
+              </p>
+            ) : (
+              <ul className="divide-y divide-line/60">
+                {(data.alerts ?? []).map((alert) => (
+                  <li key={alert.type} className="flex flex-wrap items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0" data-testid={`admin-alert-${alert.type}`}>
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-2 text-sm font-medium text-ink">
+                        <span
+                          className={
+                            alert.level === "danger"
+                              ? "size-2 rounded-full bg-red-500"
+                              : "size-2 rounded-full bg-amber-500"
+                          }
+                          aria-hidden="true"
+                        />
+                        {alert.title}
+                      </p>
+                      <p className="mt-0.5 text-xs text-ink-3">{alert.detail}</p>
+                    </div>
+                    <Link href={alert.href} className="text-xs font-medium text-accent-ink hover:underline">
+                      Review
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat
               testId="stat-users"
