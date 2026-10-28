@@ -52,6 +52,7 @@ async def ensure_indexes() -> None:
     await db.credit_reservations.create_index("id", unique=True)
     await db.credit_reservations.create_index([("user_id", 1), ("request_id", 1)], unique=True)
     await db.credit_reservations.create_index([("status", 1), ("created_at", 1)])
+    await db.credit_accounts.create_index("available")
     await db.ai_usage.create_index("id", unique=True)
     await db.ai_usage.create_index([("user_id", 1), ("created_at", -1)])
 
@@ -277,6 +278,23 @@ async def balance_detail(user_id: str) -> dict:
     return {"available": acc.get("available", 0), "reserved": acc.get("reserved", 0),
             "included": acc.get("included", 0), "promotional": acc.get("promotional", 0),
             "purchased": acc.get("purchased", 0)}
+
+
+async def _usage_sum(user_id: str, since) -> int:
+    rows = await db.ai_usage.aggregate([
+        {"$match": {"user_id": user_id, "created_at": {"$gte": since}, "charged": {"$gt": 0}}},
+        {"$group": {"_id": None, "n": {"$sum": "$charged"}}},
+    ]).to_list(1)
+    return rows[0]["n"] if rows else 0
+
+
+async def forecast(user_id: str) -> dict:
+    from alert_rules import projected_days
+
+    acc = await db.credit_accounts.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    used7 = await _usage_sum(user_id, now() - timedelta(days=7))
+    used14 = await _usage_sum(user_id, now() - timedelta(days=14))
+    return {"daysLeft": projected_days(acc.get("available", 0), used14), "used7d": used7, "used14d": used14}
 
 
 async def history(user_id: str, limit: int) -> list[dict]:

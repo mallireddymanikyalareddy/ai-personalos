@@ -38,6 +38,7 @@ DEFAULT_PREFERENCES = {
         "dailyBriefing": True,
         "taskReminders": True,
         "aiInsights": True,
+        "creditAlerts": True,
         "quietHours": {"enabled": True, "start": "22:00", "end": "07:00"},
     },
     "primaryLifeAreaIds": [],
@@ -538,7 +539,7 @@ PREF_ENUMS = [
     (("notifications", "emailDigest"), {"off", "daily", "weekly"}),
 ]
 PREF_BOOLS = [("workingHours", "enabled"), ("notifications", "dailyBriefing"), ("notifications", "taskReminders"),
-              ("notifications", "aiInsights")]
+              ("notifications", "aiInsights"), ("notifications", "creditAlerts")]
 
 
 def _pref_value(prefs: dict, path: tuple):

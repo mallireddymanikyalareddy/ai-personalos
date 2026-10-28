@@ -695,6 +695,7 @@ function SettingsContent() {
         dailyBriefing: true,
         taskReminders: true,
         aiInsights: true,
+        creditAlerts: true,
         quietHours: { enabled: true, start: "22:00", end: "07:00" },
       },
     });
@@ -1423,6 +1424,17 @@ function SettingsContent() {
                     onCheckedChange={(checked) =>
                       savePreferences({
                         notifications: { ...prefs.notifications, aiInsights: checked },
+                      })
+                    }
+                  />
+                </Row>
+                <Row label="Credit alerts" hint="Email me when AI credits run low, plus a weekly summary.">
+                  <Switch
+                    label="Credit alerts"
+                    checked={prefs.notifications.creditAlerts}
+                    onCheckedChange={(checked) =>
+                      savePreferences({
+                        notifications: { ...prefs.notifications, creditAlerts: checked },
                       })
                     }
                   />

@@ -100,3 +100,7 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 
 ## 2026-06 - Emailed links pointed at the internal cluster host (fixed via config)
 - In production the Host header is ai-personalos.cluster8.deploy.aws.emergentcf.cloud, so reset/verify links went to an unreachable domain. APP_URL (backend secret, live + test) = https://ai-personalos.emergent.host, read by origin_of(). Preview emails now also link to the live site.
+
+## 2026-06 - Low-credit and spend alerts
+- Added backend/alerts.py: low-credit emails at the configured threshold (24h cooldown), Monday weekly credit summaries with 7-day usage and projected run-out, and a monthly admin spend alert using charged credits x creditValuePaise.
+- Added notifications.creditAlerts preference (Settings > Notifications) and a creditValuePaise platform setting used only for the spend estimate.

@@ -43,6 +43,8 @@ The initial Super Admin comes from the `ADMIN_EMAILS` environment setting and is
 - `backend/billing_admin.py`: admin APIs for subscriptions (list/detail/create/update/renew/grant/cancel/resume), promotions (CRUD/activate/end/grant), and settings (read/update). Reads allow any admin role; subscription writes allow billing/support, promotions allow billing, settings require super admin. Every write is audited.
 - Public `GET /api/v1/settings/public` exposes the low-credit threshold and feature flags to the app.
 - Settings are enforced: `defaultModel`, `maxInputTokens` and `maxRequestsPerMinute` drive `/api/ai/chat`; `annual_bonus_credits` controls annual plan bonuses; `promotions` gates promotional grants; `ai_confirmation_modal` adds a spend confirmation before OpenAI requests.
+- `backend/alerts.py`: low-credit email when a balance falls to the configured threshold (24-hour cooldown), a Monday weekly summary with credits used and projected run-out, and a monthly admin spend alert based on charged credits × `creditValuePaise`. Users can opt out via the `notifications.creditAlerts` preference.
+- `GET /api/v1/credits/forecast` exposes the run-out estimate to the credits card; the admin dashboard shows the current month's estimated AI spend against the alert threshold.
 - Admin UI: Subscriptions, Promotions & Grants and Platform Settings are now live (no demo data); the subscriber low-credit threshold and optional AI-spend confirmation modal read platform settings.
 - Razorpay remains the only outstanding stage: no card/UPI checkout, payment webhooks or payment reconciliation yet.
 

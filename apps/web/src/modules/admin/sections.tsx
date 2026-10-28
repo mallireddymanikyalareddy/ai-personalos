@@ -783,6 +783,7 @@ type Settings = {
   maxInputTokens: number;
   maxRequestsPerMinute: number;
   monthlySpendAlertPaise: number;
+  creditValuePaise: number;
   lowCreditThreshold: number;
   resetPolicy: string;
   trialDays: number;
@@ -797,7 +798,7 @@ export function AdminSettings() {
   const [form, setForm] = React.useState<Settings | null>(null);
   const [reason, setReason] = React.useState("");
   React.useEffect(() => {
-    if (data) setForm(data.settings);
+    if (data) setForm({ ...data.settings, creditValuePaise: data.settings.creditValuePaise ?? 250 });
   }, [data]);
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -843,6 +844,10 @@ export function AdminSettings() {
                   <input className={field} type="number" disabled={!canWrite} value={form.lowCreditThreshold} onChange={(e) => set("lowCreditThreshold", Number(e.target.value))} />
                 </Field>
               </div>
+              <Field label="Estimated value per AI credit" hint="Used only to estimate monthly AI spend for the alert.">
+                <input className={field} type="number" step="0.01" disabled={!canWrite} value={form.creditValuePaise / 100} onChange={(e) => set("creditValuePaise", Math.round(Number(e.target.value) * 100))} />
+                <span className="mt-1 block text-xs text-ink-3">{inr(form.creditValuePaise)}</span>
+              </Field>
               <Field label="Trial length (days)">
                 <input className={field} type="number" disabled={!canWrite} value={form.trialDays} onChange={(e) => set("trialDays", Number(e.target.value))} />
               </Field>
@@ -877,6 +882,7 @@ export function AdminSettings() {
                         max_input_tokens: form.maxInputTokens,
                         max_requests_per_minute: form.maxRequestsPerMinute,
                         monthly_spend_alert_paise: form.monthlySpendAlertPaise,
+                        credit_value_paise: form.creditValuePaise,
                         low_credit_threshold: form.lowCreditThreshold,
                         reset_policy: form.resetPolicy,
                         trial_days: form.trialDays,

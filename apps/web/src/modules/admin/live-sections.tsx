@@ -24,6 +24,7 @@ import {
   type UsageRow,
   type UsageTotals,
 } from "./live";
+import { inr } from "./format";
 import { DataTable, PageHeader, Panel, Stat, StatusBadge } from "./ui";
 import { UserDrawer } from "./user-drawer";
 
@@ -125,6 +126,7 @@ type Overview = {
   staleHolds: number;
   subscriptions: { active: number; trialing: number; pastDue: number; total: number };
   promotions: { active: number; grants: number };
+  spend: { month: string; chargedCredits: number; estimatedPaise: number; thresholdPaise: number };
   credits: CreditSummary;
   recentAudit: AuditRow[];
 };
@@ -188,6 +190,12 @@ export function AdminDashboard() {
               label="Promotion grants"
               value={data.promotions.grants.toLocaleString()}
               hint={`${data.promotions.active} active campaign${data.promotions.active === 1 ? "" : "s"}`}
+            />
+            <Stat
+              testId="stat-ai-spend"
+              label="Estimated AI spend (month)"
+              value={inr(data.spend.estimatedPaise)}
+              hint={`${data.spend.chargedCredits} credits · alert at ${inr(data.spend.thresholdPaise)}`}
             />
           </div>
           <TrendChart data={data.trend} testId="chart-usage" />

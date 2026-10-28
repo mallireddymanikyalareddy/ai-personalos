@@ -7,6 +7,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field, StringConstraints
 
 import credits
+import platform_settings
 from admin import ROLES, admin_emails, require_role
 from auth import ApiError, iso
 from billing import now, record_audit
@@ -199,10 +200,21 @@ async def audit(limit: int = 100, _=Depends(require_role())):
                              "target_label": user_label(r, names)} for r in rows]}
 
 
+async def ai_charged_since(since) -> int:
+    rows = await db.ai_usage.aggregate([
+        {"$match": {"created_at": {"$gte": since}, "charged": {"$gt": 0}}},
+        {"$group": {"_id": None, "n": {"$sum": "$charged"}}},
+    ]).to_list(1)
+    return rows[0]["n"] if rows else 0
+
+
 @router.get("/overview")
 async def overview(days: int = 7, _=Depends(require_role())):
     days = window(days)
     stale = now() - credits.STALE_AFTER
+    settings = await platform_settings.get_settings()
+    month_start = now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_credits = await ai_charged_since(month_start)
     return {
         "users": await db.users.count_documents({}),
         "newUsers": await db.users.count_documents({"created_at": {"$gte": now() - timedelta(days=days)}}),
@@ -217,6 +229,9 @@ async def overview(days: int = 7, _=Depends(require_role())):
                           "total": await db.subscriptions.count_documents({})},
         "promotions": {"active": await db.promotions.count_documents({"status": "active"}),
                        "grants": await db.promotion_grants.count_documents({})},
+        "spend": {"month": month_start.strftime("%Y-%m"), "chargedCredits": month_credits,
+                  "estimatedPaise": month_credits * int(settings.get("creditValuePaise", 0)),
+                  "thresholdPaise": int(settings.get("monthlySpendAlertPaise", 0))},
         "credits": await credit_summary(),
         "recentAudit": (await audit(5))["entries"],
     }

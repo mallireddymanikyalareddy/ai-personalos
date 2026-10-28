@@ -36,9 +36,12 @@ function amountText(e: Entry): string {
     : String(e.available_delta);
 }
 
+type Forecast = { daysLeft: number | null; used7d: number; used14d: number };
+
 export function CreditsCard() {
   const { balance, lowThreshold } = useCredits(true);
   const [entries, setEntries] = React.useState<Entry[] | null>(null);
+  const [forecast, setForecast] = React.useState<Forecast | null>(null);
   React.useEffect(() => {
     const load = () =>
       fetch("/api/v1/credits/history?limit=50", {
@@ -52,6 +55,19 @@ export function CreditsCard() {
         )
         .then((d) => setEntries(d.entries))
         .catch(() => setEntries([]));
+    load();
+    window.addEventListener(CREDITS_EVENT, load);
+    return () => window.removeEventListener(CREDITS_EVENT, load);
+  }, []);
+  React.useEffect(() => {
+    const load = () =>
+      fetch("/api/v1/credits/forecast", {
+        credentials: "include",
+        cache: "no-store",
+      })
+        .then((res) => (res.ok ? (res.json() as Promise<Forecast>) : null))
+        .then(setForecast)
+        .catch(() => undefined);
     load();
     window.addEventListener(CREDITS_EVENT, load);
     return () => window.removeEventListener(CREDITS_EVENT, load);
@@ -104,6 +120,16 @@ export function CreditsCard() {
           >
             See plans with monthly credits
           </Link>
+        </p>
+      )}
+      {forecast && (
+        <p
+          data-testid="credits-card-forecast"
+          className="mt-3 rounded-lg border border-line bg-surface-2 px-3 py-2 text-xs text-ink-2"
+        >
+          {forecast.daysLeft != null
+            ? `About ${forecast.daysLeft} day${forecast.daysLeft === 1 ? "" : "s"} left at your recent pace. ${forecast.used7d} credit${forecast.used7d === 1 ? "" : "s"} used in the last 7 days.`
+            : "No AI credits used in the last two weeks."}
         </p>
       )}
       <h3 className="mt-5 text-xs font-semibold uppercase tracking-wider text-ink-3">

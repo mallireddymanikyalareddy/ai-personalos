@@ -65,6 +65,7 @@ export const notificationsPreferencesSchema = z.object({
   dailyBriefing: z.boolean().default(true),
   taskReminders: z.boolean().default(true),
   aiInsights: z.boolean().default(true),
+  creditAlerts: z.boolean().default(true),
   quietHours: z
     .object({
       enabled: z.boolean().default(true),

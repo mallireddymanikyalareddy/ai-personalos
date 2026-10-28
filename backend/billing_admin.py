@@ -277,6 +277,7 @@ class SettingsIn(BaseModel):
     max_input_tokens: int = Field(ge=1000, le=200000)
     max_requests_per_minute: int = Field(ge=1, le=600)
     monthly_spend_alert_paise: int = Field(ge=0, le=100_000_000)
+    credit_value_paise: int = Field(default=250, ge=1, le=100_000)
     low_credit_threshold: int = Field(ge=0, le=1000)
     reset_policy: str = Field(min_length=10, max_length=500)
     trial_days: int = Field(ge=0, le=90)
@@ -288,6 +289,7 @@ def settings_payload(body: SettingsIn) -> dict:
     return {"defaultModel": body.default_model, "maxInputTokens": body.max_input_tokens,
             "maxRequestsPerMinute": body.max_requests_per_minute,
             "monthlySpendAlertPaise": body.monthly_spend_alert_paise,
+            "creditValuePaise": body.credit_value_paise,
             "lowCreditThreshold": body.low_credit_threshold, "resetPolicy": body.reset_policy,
             "trialDays": body.trial_days, "flags": body.flags}
 

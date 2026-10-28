@@ -212,6 +212,7 @@ export default function OnboardingPage() {
               dailyBriefing: true,
               taskReminders: true,
               aiInsights: true,
+              creditAlerts: true,
               quietHours: { enabled: true, start: "22:00", end: "07:00" },
             },
           });

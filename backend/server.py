@@ -22,6 +22,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 import digest  # noqa: E402
 from admin import promote_configured_admins, router as admin_router  # noqa: E402
 from auth import ApiError, error_response, iso, public_user, require_auth, router as auth_router  # noqa: E402
+import alerts  # noqa: E402
 import credits  # noqa: E402
 import entitlements  # noqa: E402
 import platform_settings  # noqa: E402
@@ -99,13 +100,15 @@ async def lifespan(_: FastAPI):
     await promotions.ensure_indexes()
     await platform_settings.ensure_indexes()
     await platform_settings.seed_settings()
+    await alerts.ensure_indexes()
     await run_once("stage8_credit_buckets", credits.backfill_credit_buckets)
     await run_once("stage8_promotion_remaining", promotions.backfill_remaining)
     await run_once("stage4_trial_credits_10", credits.backfill_trial_credits)
     await entitlements.run_due()
     await promotions.expire_due()
     tasks = [asyncio.create_task(digest_loop()), asyncio.create_task(credits.sweep_loop()),
-             asyncio.create_task(entitlements.sweep_loop()), asyncio.create_task(promotions.sweep_loop())]
+             asyncio.create_task(entitlements.sweep_loop()), asyncio.create_task(promotions.sweep_loop()),
+             asyncio.create_task(alerts.loop())]
     yield
     for task in tasks:
         task.cancel()
@@ -279,6 +282,11 @@ async def my_credits(auth=Depends(require_auth)):
 @app.get("/api/v1/credits/history")
 async def my_credit_history(limit: int = 50, auth=Depends(require_auth)):
     return {"entries": await credits.history(auth[0]["id"], max(1, min(limit, 200)))}
+
+
+@app.get("/api/v1/credits/forecast")
+async def my_credit_forecast(auth=Depends(require_auth)):
+    return await credits.forecast(auth[0]["id"])
 
 
 async def reserve_or_response(user_id: str, body: ChatRequest):

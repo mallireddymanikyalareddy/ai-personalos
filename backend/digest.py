@@ -290,6 +290,74 @@ async def send_account_link(user: dict, kind: str, url: str) -> None:
         logger.warning("Account email (%s) not sent for %s", kind, user["id"])
 
 
+def public_app_url() -> str | None:
+    value = os.environ.get("APP_URL", "").strip().rstrip("/")
+    return value if value.startswith("https://") else None
+
+
+def _account_email(brand: str, title: str, intro: str, url: str, cta: str,
+                   footer: str = "You can change credit alerts in Settings.") -> str:
+    return (
+        "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\"><tr>"
+        "<td style=\"padding:24px;font-family:Arial,sans-serif;color:#111\">"
+        f"<h2 style=\"margin:0 0 12px;font-size:20px\">{escape(title)}</h2>"
+        f"<p style=\"margin:0 0 16px;line-height:1.5\">{intro}</p>"
+        f"<p style=\"margin:24px 0\"><a href=\"{escape(url)}\" style=\"background:#4f46e5;color:#fff;"
+        f"padding:10px 18px;border-radius:8px;text-decoration:none\">{escape(cta)}</a></p>"
+        f"<p style=\"font-size:12px;color:#888\">Sent by {escape(brand)}. {escape(footer)}</p>"
+        "</td></tr></table>"
+    )
+
+
+async def send_low_credits(user: dict, available: int, threshold: int, days_left: int | None) -> None:
+    base = public_app_url()
+    if not base:
+        logger.warning("APP_URL is not set; low-credit email skipped")
+        return
+    brand = os.environ.get("EMAIL_FROM_NAME") or "PersonalOS"
+    when = f" At your current pace, that is about {days_left} day{'s' if days_left != 1 else ''} left." if days_left is not None else ""
+    subject = f"Your {brand} AI credits are low"
+    html = _account_email(
+        brand, f"You have {available} AI credit{'s' if available != 1 else ''} left",
+        f"Your balance is at or below the {threshold}-credit alert threshold.{escape(when)} "
+        "Top up or move to a plan with monthly credits to keep AI replies, briefings and reflections running.",
+        f"{base}/settings?tab=ai", "View your credits")
+    await send_email(to=user["email"], subject=subject, html=html)
+
+
+async def send_weekly_credits(user: dict, available: int, reserved: int, used: int, days_left: int | None) -> None:
+    base = public_app_url()
+    if not base:
+        logger.warning("APP_URL is not set; weekly credit summary skipped")
+        return
+    brand = os.environ.get("EMAIL_FROM_NAME") or "PersonalOS"
+    pace = f" At the last two weeks' pace, your balance lasts about {days_left} day{'s' if days_left != 1 else ''}." if days_left is not None else ""
+    held = f" and {reserved} on hold" if reserved else ""
+    subject = f"Your {brand} weekly credit summary"
+    html = _account_email(
+        brand, "Your weekly AI credit summary",
+        f"You have <strong>{available}</strong> credit{'s' if available != 1 else ''} available{escape(held)}. "
+        f"You used <strong>{used}</strong> in the last 7 days.{escape(pace)}",
+        f"{base}/settings?tab=ai", "See credit history")
+    await send_email(to=user["email"], subject=subject, html=html)
+
+
+async def send_admin_spend(admin: dict, estimated_paise: int, charged: int, threshold_paise: int,
+                           month_label: str) -> None:
+    base = public_app_url()
+    if not base:
+        logger.warning("APP_URL is not set; admin spend email skipped")
+        return
+    brand = os.environ.get("EMAIL_FROM_NAME") or "PersonalOS"
+    subject = f"{brand} monthly AI spend alert"
+    html = _account_email(
+        brand, f"AI spend alert for {month_label}",
+        f"Estimated AI usage value has reached <strong>₹{estimated_paise / 100:,.2f}</strong> "
+        f"({charged} credits) against your ₹{threshold_paise / 100:,.2f} alert threshold.",
+        f"{base}/admin/usage", "Review AI usage", "Manage this threshold in Admin → Platform Settings.")
+    await send_email(to=admin["email"], subject=subject, html=html)
+
+
 async def send_digest(item: dict) -> None:
     now = local_now(item.get("timezone") or "UTC")
     name = (item.get("displayName") or "there").split(" ")[0]
