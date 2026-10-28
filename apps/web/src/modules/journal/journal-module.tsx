@@ -13,6 +13,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 
@@ -45,6 +46,7 @@ import { JournalInsights } from "./journal-insights";
 import { JournalTimeline } from "./journal-timeline";
 import { JournalWorkspace } from "./journal-workspace";
 import { JournalEveningRecap } from "./journal-evening-recap";
+import { hasSampleJournal, seedSampleJournal } from "./sample-journal";
 
 type Tab = "journal" | "timeline" | "insights" | "gallery" | "trash";
 
@@ -271,6 +273,21 @@ export function JournalModule() {
     toast("Journal exported", { tone: "success" });
   };
 
+  const loadSampleJournal = () => {
+    if (hasSampleJournal(os)) {
+      toast("Sample journal entries are already loaded");
+      return;
+    }
+    const ids = seedSampleJournal(os);
+    if (ids.length === 0) {
+      toast("Those sample dates already have entries");
+      return;
+    }
+    setSelectedDate(startOfDay(Date.now() - 86_400_000));
+    setTab("journal");
+    toast(`Added ${ids.length} sample journal ${ids.length === 1 ? "entry" : "entries"}`, { tone: "success" });
+  };
+
   const saveAsTemplate = () => {
     if (!entry) {
       toast("Open an entry first");
@@ -383,6 +400,15 @@ export function JournalModule() {
               >
                 <Plus className="size-4" aria-hidden />
                 New Entry
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={loadSampleJournal}
+                data-testid="journal-load-sample"
+              >
+                <Sparkles className="size-4" aria-hidden />
+                Sample
               </Button>
               <Button
                 size="sm"

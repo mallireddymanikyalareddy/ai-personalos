@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { Archive, Brain, Camera, Clock, Download, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Archive, Brain, Camera, Clock, Download, Plus, RotateCcw, Search, Sparkles, Trash2 } from "lucide-react";
 
 import {
   formatFullDate,
@@ -24,6 +24,7 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 
 import { MemoryTimelineWorkspace } from "./memory-timeline-workspace";
+import { seedSampleMemory } from "./sample-memory";
 import { useAppState, useOS } from "@/store/use-os";
 import { cn } from "@/lib/cn";
 import { downloadText } from "@/modules/notebook/notebook-export";
@@ -652,6 +653,18 @@ export function MemoryModule() {
     setQuestion("");
   };
 
+  const loadSampleMemory = () => {
+    const result = seedSampleMemory(os);
+    if (result.moments === 0 && result.trackers === 0) {
+      toast("Sample memories are already loaded");
+      return;
+    }
+    toast(
+      `Added ${result.moments} moments and ${result.trackers} trackers`,
+      { tone: "success" },
+    );
+  };
+
   const exportMemories = () => {
     const lines = [
       "# Life Memory",
@@ -713,15 +726,26 @@ export function MemoryModule() {
               <p className="mt-0.5 text-sm text-ink-3">{summary}</p>
             </div>
           </div>
-          <Segmented
-            options={[
-              { value: "timeline", label: "Timeline" },
-              { value: "trackers", label: "Trackers" },
-            ]}
-            value={view}
-            onChange={setView}
-            label="Memory view"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={loadSampleMemory}
+              data-testid="memory-load-sample"
+            >
+              <Sparkles className="size-4" aria-hidden />
+              Sample
+            </Button>
+            <Segmented
+              options={[
+                { value: "timeline", label: "Timeline" },
+                { value: "trackers", label: "Trackers" },
+              ]}
+              value={view}
+              onChange={setView}
+              label="Memory view"
+            />
+          </div>
         </div>
       </header>
 

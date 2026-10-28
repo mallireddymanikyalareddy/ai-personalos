@@ -132,3 +132,6 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 ## 2026-06 - MFA and admin step-up
 - Added TOTP authenticator MFA with one-time recovery codes, setup/disable in Settings > Security, and a login challenge before a session is issued.
 - Admin approval decisions now require a step-up code (15-minute window) when the admin has MFA enabled.
+
+## 2026-10 - Journal and Life Memory sample data
+- Added Load sample actions on Journal and Life Memory. Journal seeds six dated reflections; Life Memory seeds timeline moments and tracker items with completion history. Loading is idempotent and leaves existing entries untouched.
