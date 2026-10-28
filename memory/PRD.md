@@ -104,3 +104,7 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 ## 2026-06 - Low-credit and spend alerts
 - Added backend/alerts.py: low-credit emails at the configured threshold (24h cooldown), Monday weekly credit summaries with 7-day usage and projected run-out, and a monthly admin spend alert using charged credits x creditValuePaise.
 - Added notifications.creditAlerts preference (Settings > Notifications) and a creditValuePaise platform setting used only for the spend estimate.
+
+## 2026-06 - Bulk admin actions and CSV exports
+- Added multi-select on Admin > Users with bulk credit add/remove and bulk role changes (super admin only); every user action remains audited with a batch id.
+- Added CSV exports for users (all or selected), credit ledger and admin audit, with formula-injection sanitising.

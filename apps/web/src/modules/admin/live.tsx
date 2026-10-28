@@ -69,6 +69,20 @@ export async function adminSend<T>(
   return data as T;
 }
 
+export async function downloadAdminCsv(path: string, filename: string): Promise<void> {
+  const res = await fetch(`/api/v1/admin/${path}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw new Error("Couldn't export that file.");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function useAdminData<T>(path: string) {
   const [state, setState] = React.useState<{ data?: T; error?: string }>({});
   const [tick, setTick] = React.useState(0);

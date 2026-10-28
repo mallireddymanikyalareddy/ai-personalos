@@ -99,12 +99,18 @@ export function DataTable<T extends { id: string }>({
   testId,
   search,
   onRowClick,
+  selectable = false,
+  selectedIds = [],
+  onSelectionChange,
 }: {
   rows: T[];
   columns: Column<T>[];
   testId: string;
   search?: (row: T) => string;
   onRowClick?: (row: T) => void;
+  selectable?: boolean;
+  selectedIds?: string[];
+  onSelectionChange?: (ids: string[]) => void;
 }) {
   const [query, setQuery] = React.useState("");
   const visible =
@@ -113,6 +119,20 @@ export function DataTable<T extends { id: string }>({
           search(row).toLowerCase().includes(query.toLowerCase()),
         )
       : rows;
+  const selected = new Set(selectedIds);
+  const allVisible = visible.length > 0 && visible.every((row) => selected.has(row.id));
+  const toggle = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onSelectionChange?.([...next]);
+  };
+  const toggleAll = () => {
+    const next = new Set(selected);
+    if (allVisible) visible.forEach((row) => next.delete(row.id));
+    else visible.forEach((row) => next.add(row.id));
+    onSelectionChange?.([...next]);
+  };
   return (
     <div className="rounded-2xl border border-line bg-surface shadow-card">
       {search && (
@@ -133,6 +153,17 @@ export function DataTable<T extends { id: string }>({
         >
           <thead>
             <tr className="border-b border-line text-[11px] uppercase tracking-wider text-ink-3">
+              {selectable && (
+                <th className="w-10 px-4 py-2.5">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible rows"
+                    checked={allVisible}
+                    onChange={toggleAll}
+                    data-testid={`${testId}-select-all`}
+                  />
+                </th>
+              )}
               {columns.map((col) => (
                 <th
                   key={col.key}
@@ -166,6 +197,17 @@ export function DataTable<T extends { id: string }>({
                     "cursor-pointer focus:outline-none focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
                 )}
               >
+                {selectable && (
+                  <td className="w-10 px-4 py-2.5" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${row.id}`}
+                      checked={selected.has(row.id)}
+                      onChange={() => toggle(row.id)}
+                      data-testid={`${testId}-select-${row.id}`}
+                    />
+                  </td>
+                )}
                 {columns.map((col) => (
                   <td
                     key={col.key}
@@ -186,7 +228,7 @@ export function DataTable<T extends { id: string }>({
             {visible.length === 0 && (
               <tr>
                 <td
-                  colSpan={columns.length}
+                  colSpan={columns.length + (selectable ? 1 : 0)}
                   className="px-4 py-8 text-center text-sm text-ink-3"
                 >
                   No matching records.

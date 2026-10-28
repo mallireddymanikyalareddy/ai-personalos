@@ -45,6 +45,7 @@ The initial Super Admin comes from the `ADMIN_EMAILS` environment setting and is
 - Settings are enforced: `defaultModel`, `maxInputTokens` and `maxRequestsPerMinute` drive `/api/ai/chat`; `annual_bonus_credits` controls annual plan bonuses; `promotions` gates promotional grants; `ai_confirmation_modal` adds a spend confirmation before OpenAI requests.
 - `backend/alerts.py`: low-credit email when a balance falls to the configured threshold (24-hour cooldown), a Monday weekly summary with credits used and projected run-out, and a monthly admin spend alert based on charged credits × `creditValuePaise`. Users can opt out via the `notifications.creditAlerts` preference.
 - `GET /api/v1/credits/forecast` exposes the run-out estimate to the credits card; the admin dashboard shows the current month's estimated AI spend against the alert threshold.
+- Bulk admin tools: multi-select users for credit grants/removals and role changes (`users/bulk-credits`, `users/bulk-role`), plus CSV exports for users (all/selected), the credit ledger and the audit log. CSV cells are formula-injection sanitised.
 - Admin UI: Subscriptions, Promotions & Grants and Platform Settings are now live (no demo data); the subscriber low-credit threshold and optional AI-spend confirmation modal read platform settings.
 - Razorpay remains the only outstanding stage: no card/UPI checkout, payment webhooks or payment reconciliation yet.
 

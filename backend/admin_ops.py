@@ -1,7 +1,10 @@
+import csv
+import io
 import re
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from typing import Annotated
 
 from pydantic import BaseModel, Field, StringConstraints
@@ -19,6 +22,24 @@ Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, m
 CREDIT_ROLES = ("billing_admin", "support_admin")
 USER_FIELDS = {"_id": 0, "id": 1, "handle": 1, "email": 1, "display_name": 1, "created_at": 1, "admin_role": 1,
                "admin_role_source": 1, "email_verified_at": 1}
+
+
+def csv_cell(value):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    text = "" if value is None else str(value)
+    # Prevent spreadsheet formula injection from user-controlled text.
+    return "'" + text if text.startswith(("=", "+", "-", "@")) else text
+
+
+def csv_download(filename: str, headers: list[str], rows: list[list]) -> StreamingResponse:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(headers)
+    writer.writerows([[csv_cell(value) for value in row] for row in rows])
+    return StreamingResponse(
+        iter([buffer.getvalue()]), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 async def handles_for(ids: set[str]) -> dict[str, str]:
@@ -96,6 +117,42 @@ async def adjust_credits(user_id: str, body: CreditAdjustIn, auth=Depends(requir
     return {"applied": applied, "balance": await credits.balance(user_id)}
 
 
+class BulkCreditIn(BaseModel):
+    user_ids: list[str] = Field(min_length=1, max_length=200)
+    amount: int = Field(ge=-10000, le=10000)
+    reason: Reason
+    requestId: str = Field(min_length=8, max_length=64)
+
+
+@router.post("/users/bulk-credits")
+async def bulk_adjust_credits(body: BulkCreditIn, auth=Depends(require_role(*CREDIT_ROLES))):
+    admin = auth[0]
+    if body.amount == 0:
+        raise ApiError(400, "VALIDATION_FAILED", "Amount can't be zero.", [{"field": "amount", "issue": "must not be 0"}])
+    results = []
+    applied = failed = 0
+    for user_id in dict.fromkeys(body.user_ids):
+        action = "credit.grant" if body.amount > 0 else "credit.remove"
+        try:
+            await find_user(user_id)
+            done = await credits.adjust(user_id, body.amount, body.reason.strip(),
+                                        f"bulk:{body.requestId}:{user_id}", admin["handle"])
+            results.append({"userId": user_id, "applied": done, "balance": await credits.balance(user_id)})
+            applied += 1 if done else 0
+            await record_audit(admin["handle"], action, "user", user_id, body.reason.strip(),
+                               "success" if done else "skipped",
+                               admin["admin_role"], {"amount": body.amount, "batchId": body.requestId})
+        except (ApiError, credits.CreditError) as exc:
+            failed += 1
+            code = getattr(exc, "code", "VALIDATION_FAILED")
+            message = getattr(exc, "message", None) or getattr(exc, "detail", "Request failed")
+            results.append({"userId": user_id, "applied": False, "error": message, "code": code})
+            await record_audit(admin["handle"], action, "user", user_id, body.reason.strip(), "failed",
+                               admin["admin_role"], {"amount": body.amount, "batchId": body.requestId, "error": code})
+    return {"results": results, "applied": applied, "failed": failed,
+            "skipped": len(results) - applied - failed}
+
+
 class RoleIn(BaseModel):
     role: str | None
     reason: Reason
@@ -119,6 +176,43 @@ async def set_role(user_id: str, body: RoleIn, auth=Depends(require_role("super_
     await record_audit(admin["handle"], "user.role_change", "user", user_id, body.reason.strip(), "success", admin["admin_role"],
                        {"from": user.get("admin_role"), "to": body.role})
     return {"user": public_admin_user(await find_user(user_id), await db.credit_accounts.find_one({"user_id": user_id}))}
+
+
+class BulkRoleIn(BaseModel):
+    user_ids: list[str] = Field(min_length=1, max_length=200)
+    role: str | None
+    reason: Reason
+
+
+@router.put("/users/bulk-role")
+async def bulk_set_role(body: BulkRoleIn, auth=Depends(require_role("super_admin"))):
+    admin = auth[0]
+    if body.role is not None and body.role not in ROLES:
+        raise ApiError(400, "VALIDATION_FAILED", "Unknown role.", [{"field": "role", "issue": "unknown role"}])
+    results = []
+    changed = skipped = 0
+    for user_id in dict.fromkeys(body.user_ids):
+        if user_id == admin["id"]:
+            results.append({"userId": user_id, "changed": False, "error": "You can't change your own role."})
+            skipped += 1
+            continue
+        try:
+            user = await find_user(user_id)
+            if user.get("admin_role_source") == "env" or user.get("email") in admin_emails():
+                results.append({"userId": user_id, "changed": False, "error": "Owner role is server-configured."})
+                skipped += 1
+                continue
+            update = ({"$unset": {"admin_role": "", "admin_role_source": ""}} if body.role is None
+                      else {"$set": {"admin_role": body.role, "admin_role_source": "manual"}})
+            await db.users.update_one({"id": user_id}, update)
+            await record_audit(admin["handle"], "user.role_change", "user", user_id, body.reason.strip(), "success",
+                               admin["admin_role"], {"from": user.get("admin_role"), "to": body.role})
+            results.append({"userId": user_id, "changed": True, "role": body.role})
+            changed += 1
+        except ApiError as exc:
+            results.append({"userId": user_id, "changed": False, "error": exc.detail})
+            skipped += 1
+    return {"results": results, "changed": changed, "skipped": skipped}
 
 
 @router.get("/credits/ledger")
@@ -198,6 +292,48 @@ async def audit(limit: int = 100, _=Depends(require_role())):
     names = await handles_for({r["target_id"] for r in rows if r.get("target_type") == "user"})
     return {"entries": [r | {"created_at": iso(r["created_at"]),
                              "target_label": user_label(r, names)} for r in rows]}
+
+
+@router.get("/exports/users.csv")
+async def export_users(q: str = "", ids: str = "", limit: int = 5000, _=Depends(require_role())):
+    match = {}
+    if ids.strip():
+        match["id"] = {"$in": [value for value in ids.split(",") if value][:500]}
+    elif q.strip():
+        pattern = re.escape(q.strip().lower())
+        match = {"$or": [{"handle": {"$regex": pattern, "$options": "i"}}, {"email": {"$regex": pattern, "$options": "i"}}]}
+    users = await db.users.find(match, USER_FIELDS).sort("created_at", -1).to_list(max(1, min(limit, 5000)))
+    accounts = {a["user_id"]: a async for a in db.credit_accounts.find(
+        {"user_id": {"$in": [u["id"] for u in users]}}, {"_id": 0})}
+    rows = []
+    for user in users:
+        row = public_admin_user(user, accounts.get(user["id"]))
+        rows.append([row["id"], row["handle"], row["email"], row["displayName"], row["joined"], row["emailVerified"],
+                     row["role"], row["available"], row["reserved"], row["included"], row["promotional"], row["purchased"]])
+    return csv_download("users.csv", ["id", "handle", "email", "displayName", "joined", "emailVerified", "role",
+                                      "available", "reserved", "included", "promotional", "purchased"], rows)
+
+
+@router.get("/exports/ledger.csv")
+async def export_ledger(type: str = "", limit: int = 5000, _=Depends(require_role())):
+    match = {"type": type} if type else {}
+    entries = await db.credit_ledger.find(match, {"_id": 0, "idempotency_key": 0}).sort(
+        "created_at", -1).to_list(max(1, min(limit, 5000)))
+    entries = await with_handles(entries, "created_at")
+    rows = [[e["id"], e["user_id"], e.get("handle", ""), e["type"], e["credits"], e["available_delta"],
+             e["reserved_delta"], e["reason"], e["actor"], e["created_at"]] for e in entries]
+    return csv_download("credit-ledger.csv", ["id", "userId", "handle", "type", "credits", "availableDelta",
+                                              "reservedDelta", "reason", "actor", "createdAt"], rows)
+
+
+@router.get("/exports/audit.csv")
+async def export_audit(limit: int = 5000, _=Depends(require_role())):
+    entries = await db.admin_audit.find({}, {"_id": 0}).sort("created_at", -1).to_list(max(1, min(limit, 5000)))
+    names = await handles_for({r["target_id"] for r in entries if r.get("target_type") == "user"})
+    rows = [[e["id"], e["actor"], e.get("role", ""), e["action"], e["target_type"], e["target_id"],
+             user_label(e, names), e["reason"], e["outcome"], e["created_at"]] for e in entries]
+    return csv_download("admin-audit.csv", ["id", "actor", "role", "action", "targetType", "targetId",
+                                            "targetLabel", "reason", "outcome", "createdAt"], rows)
 
 
 async def ai_charged_since(since) -> int:

@@ -12,12 +12,19 @@ import {
   YAxis,
 } from "recharts";
 
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
+
 import {
+  adminSend,
   dateTime,
+  downloadAdminCsv,
   LiveNotice,
   LoadState,
+  ROLE_OPTIONS,
   signed,
   useAdminData,
+  useAdminRole,
   type AuditRow,
   type LedgerEntry,
   type TrendPoint,
@@ -237,10 +244,15 @@ export type AdminUserRow = {
   purchased: number;
 };
 
+const CREDIT_ADMIN_ROLES = ["super_admin", "billing_admin", "support_admin"];
+
 export function AdminUsers() {
+  const { role } = useAdminRole();
+  const { toast } = useToast();
   const [q, setQ] = React.useState("");
   const [query, setQuery] = React.useState("");
   const [selected, setSelected] = React.useState<string | null>(null);
+  const [checked, setChecked] = React.useState<string[]>([]);
   const { data, error, reload } = useAdminData<{
     users: AdminUserRow[];
     total: number;
@@ -249,37 +261,57 @@ export function AdminUsers() {
     const t = setTimeout(() => setQuery(q), 300);
     return () => clearTimeout(t);
   }, [q]);
+  const exportCsv = async (path: string, filename: string) => {
+    try {
+      await downloadAdminCsv(path, filename);
+      toast("Export downloaded", { tone: "success" });
+    } catch (err) {
+      toast((err as Error).message, { tone: "danger" });
+    }
+  };
+  const canCredit = CREDIT_ADMIN_ROLES.includes(role);
   return (
     <LivePage
       title="Users"
       description="Accounts, roles and credit balances. Private content (journal, notes, documents) is never shown here."
     >
-      <input
-        data-testid="admin-users-search"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Search by handle or email…"
-        className="h-9 w-full max-w-xs rounded-lg border border-line bg-surface px-3 text-sm text-ink focus:border-accent focus:outline-none"
-      />
+      <div className="flex flex-wrap items-end gap-2">
+        <input
+          data-testid="admin-users-search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search by handle or email..."
+          className="h-9 w-full max-w-xs rounded-lg border border-line bg-surface px-3 text-sm text-ink focus:border-accent focus:outline-none"
+        />
+        <Button size="sm" onClick={() => void exportCsv(`exports/users.csv?q=${encodeURIComponent(query)}`, "users.csv")}>
+          Export users
+        </Button>
+        <Button size="sm" onClick={() => void exportCsv("exports/ledger.csv", "credit-ledger.csv")}>
+          Export ledger
+        </Button>
+        <Button size="sm" onClick={() => void exportCsv("exports/audit.csv", "admin-audit.csv")}>
+          Export audit
+        </Button>
+      </div>
       {!data ? (
         <LoadState error={error} testId="admin-users-state" />
       ) : (
         <>
           <p className="text-xs text-ink-3" data-testid="admin-users-count">
-            Showing {data.users.length} of {data.total} accounts · click a row
-            to manage
+            Showing {data.users.length} of {data.total} accounts - click a row to manage
           </p>
           <DataTable
             testId="admin-users-table"
             rows={data.users}
             onRowClick={(row) => setSelected(row.id)}
+            selectable
+            selectedIds={checked}
+            onSelectionChange={setChecked}
             columns={[
               {
                 key: "handle",
                 label: "User",
-                render: (r) => (
-                  <span className="font-medium text-ink">{r.handle}</span>
-                ),
+                render: (r) => <span className="font-medium text-ink">{r.handle}</span>,
               },
               { key: "email", label: "Email", render: (r) => r.email ?? "—" },
               {
@@ -296,14 +328,144 @@ export function AdminUsers() {
               },
             ]}
           />
+          {checked.length > 0 && (
+            <section className="space-y-4 rounded-2xl border border-accent/30 bg-accent-soft/30 p-4" data-testid="admin-users-bulk">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-ink">{checked.length} selected</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      void exportCsv(`exports/users.csv?ids=${encodeURIComponent(checked.join(","))}`, "users-selected.csv")
+                    }
+                  >
+                    Export selected
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setChecked([])}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+              {canCredit && (
+                <BulkCredits
+                  ids={checked}
+                  onDone={() => {
+                    setChecked([]);
+                    reload();
+                  }}
+                />
+              )}
+              {role === "super_admin" && (
+                <BulkRoles
+                  ids={checked}
+                  onDone={() => {
+                    setChecked([]);
+                    reload();
+                  }}
+                />
+              )}
+            </section>
+          )}
         </>
       )}
-      <UserDrawer
-        userId={selected}
-        onClose={() => setSelected(null)}
-        onChanged={reload}
-      />
+      <UserDrawer userId={selected} onClose={() => setSelected(null)} onChanged={reload} />
     </LivePage>
+  );
+}
+
+const bulkField =
+  "h-9 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink focus:border-accent focus:outline-none";
+
+function BulkCredits({ ids, onDone }: { ids: string[]; onDone: () => void }) {
+  const { toast } = useToast();
+  const [mode, setMode] = React.useState<"add" | "remove">("add");
+  const [amount, setAmount] = React.useState("10");
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const n = Number.parseInt(amount, 10);
+  const valid = Number.isInteger(n) && n > 0 && n <= 10000 && reason.trim().length >= 5;
+  const submit = async () => {
+    setBusy(true);
+    try {
+      const result = await adminSend<{ applied: number; failed: number; skipped: number }>(
+        "users/bulk-credits", "POST",
+        {
+          user_ids: ids,
+          amount: mode === "add" ? n : -n,
+          reason: reason.trim(),
+          requestId: `bulk-${crypto.randomUUID()}`,
+        });
+      toast(`${result.applied} updated · ${result.failed} failed · ${result.skipped} skipped`, {
+        tone: result.failed ? "danger" : "success",
+      });
+      setReason("");
+      onDone();
+    } catch (err) {
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-xl border border-line bg-surface p-3" data-testid="admin-users-bulk-credits">
+      <p className="text-xs font-semibold uppercase tracking-wider text-ink-3">Credits for selected users</p>
+      <div className="grid gap-2 sm:grid-cols-[110px_110px_1fr_auto]">
+        <select className={bulkField} value={mode} onChange={(e) => setMode(e.target.value as "add" | "remove")}>
+          <option value="add">Add</option>
+          <option value="remove">Remove</option>
+        </select>
+        <input className={bulkField} type="number" min={1} max={10000} value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Credit amount" />
+        <input className={bulkField} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (min 5 characters)" aria-label="Reason" />
+        <Button size="sm" variant="primary" loading={busy} disabled={!valid} onClick={() => void submit()}>
+          Apply to {ids.length}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function BulkRoles({ ids, onDone }: { ids: string[]; onDone: () => void }) {
+  const { toast } = useToast();
+  const [role, setRole] = React.useState("");
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const valid = role !== "" && reason.trim().length >= 5;
+  const submit = async () => {
+    setBusy(true);
+    try {
+      const result = await adminSend<{ changed: number; skipped: number }>("users/bulk-role", "PUT", {
+        user_ids: ids,
+        role: role === "__none__" ? null : role,
+        reason: reason.trim(),
+      });
+      toast(`${result.changed} roles updated · ${result.skipped} skipped`, {
+        tone: result.skipped ? "danger" : "success",
+      });
+      setReason("");
+      onDone();
+    } catch (err) {
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-xl border border-line bg-surface p-3" data-testid="admin-users-bulk-role">
+      <p className="text-xs font-semibold uppercase tracking-wider text-ink-3">Admin role for selected users</p>
+      <div className="grid gap-2 sm:grid-cols-[200px_1fr_auto]">
+        <select className={bulkField} value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="">Choose role...</option>
+          {ROLE_OPTIONS.map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+          <option value="__none__">Remove admin role</option>
+        </select>
+        <input className={bulkField} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (min 5 characters)" aria-label="Reason" />
+        <Button size="sm" variant="primary" loading={busy} disabled={!valid} onClick={() => void submit()}>
+          Apply to {ids.length}
+        </Button>
+      </div>
+    </div>
   );
 }
 
