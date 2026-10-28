@@ -208,6 +208,32 @@ export type UsageTotals = {
   cancelled: number;
   creditsCharged: number;
 };
+export type ActionInsight = {
+  action: string;
+  calls: number;
+  credits: number;
+  costPaise: number;
+  avgMs: number;
+  priceCredits: number;
+};
+export type PlanInsight = {
+  planId: string;
+  name: string;
+  subscribers: number;
+  monthlyRevenuePaise: number;
+  monthlyCredits: number;
+  costPerSubscriberPaise: number;
+  marginPaise: number;
+};
+export type UsageInsights = {
+  totals: UsageTotals & { inputTokens: number; outputTokens: number; estimatedCostPaise: number };
+  byAction: ActionInsight[];
+  byModel: { model: string; calls: number; credits: number; costPaise: number; avgMs: number }[];
+  trend: { day: string; calls: number; credits: number; costPaise: number }[];
+  month: { spendPaise: number; projectedPaise: number; credits: number };
+  costPerCreditPaise: number;
+  plans: PlanInsight[];
+};
 export type TrendPoint = { day: string; requests: number; credits: number };
 
 export const shortDate = (iso: string) =>

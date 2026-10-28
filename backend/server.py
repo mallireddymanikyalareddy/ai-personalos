@@ -110,7 +110,8 @@ async def lifespan(_: FastAPI):
     await promotions.expire_due()
     tasks = [asyncio.create_task(digest_loop()), asyncio.create_task(credits.sweep_loop()),
              asyncio.create_task(entitlements.sweep_loop()), asyncio.create_task(promotions.sweep_loop()),
-             asyncio.create_task(alerts.loop()), asyncio.create_task(reconciliation.loop())]
+             asyncio.create_task(alerts.loop()), asyncio.create_task(reconciliation.loop()),
+             asyncio.create_task(promotions.auto_loop())]
     yield
     for task in tasks:
         task.cancel()
@@ -343,13 +344,13 @@ async def chat_events(chat, text: str, res: dict):
                 raise RuntimeError("empty response")
         except Exception as exc:
             await credits.release(res, "AI request failed — credits returned")
-            await credits.record_usage(res, "failed", 0, len(output), elapsed(), str(exc)[:300])
+            await credits.record_usage(res, "failed", 0, len(output), elapsed(), str(exc)[:300], len(text))
             yield sse({"error": friendly_ai_error(str(exc)), "creditsReturned": True})
             return
         charged = await credits.settle(res, len(output) // 4)
         settled = True
         try:
-            await credits.record_usage(res, "succeeded", charged, len(output), elapsed())
+            await credits.record_usage(res, "succeeded", charged, len(output), elapsed(), input_chars=len(text))
         except Exception:
             logging.exception("Usage record failed for %s", res["id"])
         yield sse({"credits": {"charged": charged, **await credits.balance(res["user_id"])}})

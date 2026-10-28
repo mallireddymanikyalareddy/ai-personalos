@@ -11,6 +11,8 @@ DEFAULT_SETTINGS = {
     "maxRequestsPerMinute": 20,
     "monthlySpendAlertPaise": 500000,
     "creditValuePaise": 250,
+    "inputCostPaisePerMTok": 0,
+    "outputCostPaisePerMTok": 0,
     "lowCreditThreshold": 3,
     "resetPolicy": "Included credits reset each entitlement period; unused included credits do not carry over.",
     "trialDays": 30,

@@ -507,6 +507,10 @@ type Promo = {
   ends_at: string;
   per_user_limit: number;
   credit_expiry_days: number;
+  segment_days: number;
+  user_ids: string[];
+  auto_grant: boolean;
+  code: string | null;
   status: string;
   granted: number;
   activeGrants: number;
@@ -549,6 +553,8 @@ export function AdminPromotions() {
             { key: "name", label: "Campaign", render: (r) => <span className="font-medium text-ink">{r.name}</span> },
             { key: "credits", label: "Credits", align: "right" },
             { key: "eligibility", label: "Eligibility" },
+            { key: "code", label: "Code", render: (r) => (r.code ? <code className="text-xs">{r.code}</code> : "—") },
+            { key: "auto_grant", label: "Auto", render: (r) => (r.auto_grant ? "Scheduled" : "Manual") },
             { key: "starts_at", label: "Starts", render: (r) => shortDate(r.starts_at) },
             { key: "ends_at", label: "Ends", render: (r) => shortDate(r.ends_at) },
             { key: "expiry", label: "Credit expiry", render: (r) => (r.credit_expiry_days ? `${r.credit_expiry_days} days` : "Never") },
@@ -593,6 +599,10 @@ function CreatePromotion({
   const [endsAt, setEndsAt] = React.useState(liveLocal(later.toISOString()));
   const [limit, setLimit] = React.useState("1");
   const [expiry, setExpiry] = React.useState("30");
+  const [segmentDays, setSegmentDays] = React.useState("30");
+  const [userIds, setUserIds] = React.useState("");
+  const [autoGrant, setAutoGrant] = React.useState(false);
+  const [code, setCode] = React.useState("");
   const [reason, setReason] = React.useState("");
   const valid = name.trim().length >= 3 && Number(credits) > 0 && reason.trim().length >= 5;
   return (
@@ -607,6 +617,11 @@ function CreatePromotion({
         <Field label="Eligibility">
           <select className={field} value={eligibility} onChange={(event) => setEligibility(event.target.value)}>
             <option value="all">All users</option>
+            <option value="new">New users</option>
+            <option value="trial">Trial subscribers</option>
+            <option value="inactive">Inactive AI users</option>
+            <option value="low_credit">Low-credit users</option>
+            <option value="users">Specific users</option>
             {(plans.data?.plans ?? []).map((plan) => (
               <option key={plan.plan_id} value={`plan:${plan.plan_id}`}>
                 {plan.name} subscribers
@@ -614,6 +629,27 @@ function CreatePromotion({
             ))}
           </select>
         </Field>
+        {(eligibility === "new" || eligibility === "inactive") && (
+          <Field label="Segment window (days)" hint="New = joined within; inactive = no AI usage within.">
+            <input className={field} type="number" min={1} max={365} value={segmentDays} onChange={(event) => setSegmentDays(event.target.value)} />
+          </Field>
+        )}
+        {eligibility === "users" && (
+          <Field label="Users" hint="Comma-separated handles, emails or user IDs.">
+            <textarea className={textarea} value={userIds} onChange={(event) => setUserIds(event.target.value)} placeholder="alice, bob@example.com" />
+          </Field>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Coupon code" hint="Optional; users can redeem it.">
+            <input className={field} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="WELCOME10" />
+          </Field>
+          <Field label="Scheduled grant" hint="Grant automatically every 6 hours while active.">
+            <label className="flex h-9 items-center gap-2 text-sm text-ink-2">
+              <input type="checkbox" checked={autoGrant} onChange={(event) => setAutoGrant(event.target.checked)} />
+              Enable auto-grant
+            </label>
+          </Field>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Starts">
             <input className={field} type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
@@ -648,6 +684,10 @@ function CreatePromotion({
                   ends_at: new Date(endsAt).toISOString(),
                   per_user_limit: Number(limit),
                   credit_expiry_days: Number(expiry),
+                  segment_days: Number(segmentDays),
+                  user_ids: userIds.split(",").map((value) => value.trim()).filter(Boolean),
+                  auto_grant: autoGrant,
+                  code: code.trim() || null,
                   reason: reason.trim(),
                 }),
               "Promotion created as a draft",
@@ -693,7 +733,9 @@ function PromotionDrawer({
                 ["Status", promo.status],
                 ["Credits each", String(promo.credits)],
                 ["Eligibility", promo.eligibility],
-                ["Window", `${shortDate(promo.starts_at)} – ${shortDate(promo.ends_at)}`],
+                ["Coupon code", promo.code ?? "—"],
+                ["Grant mode", promo.auto_grant ? "Scheduled (6h)" : "Manual"],
+                ["Window", `${shortDate(promo.starts_at)} - ${shortDate(promo.ends_at)}`],
                 ["Credit expiry", promo.credit_expiry_days ? `${promo.credit_expiry_days} days` : "Never"],
                 ["Granted", `${promo.granted} (${promo.activeGrants} active)`],
               ].map(([label, value]) => (
@@ -784,6 +826,8 @@ type Settings = {
   maxRequestsPerMinute: number;
   monthlySpendAlertPaise: number;
   creditValuePaise: number;
+  inputCostPaisePerMTok: number;
+  outputCostPaisePerMTok: number;
   lowCreditThreshold: number;
   resetPolicy: string;
   trialDays: number;
@@ -798,7 +842,12 @@ export function AdminSettings() {
   const [form, setForm] = React.useState<Settings | null>(null);
   const [reason, setReason] = React.useState("");
   React.useEffect(() => {
-    if (data) setForm({ ...data.settings, creditValuePaise: data.settings.creditValuePaise ?? 250 });
+    if (data) setForm({
+      ...data.settings,
+      creditValuePaise: data.settings.creditValuePaise ?? 250,
+      inputCostPaisePerMTok: data.settings.inputCostPaisePerMTok ?? 0,
+      outputCostPaisePerMTok: data.settings.outputCostPaisePerMTok ?? 0,
+    });
   }, [data]);
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -848,6 +897,16 @@ export function AdminSettings() {
                 <input className={field} type="number" step="0.01" disabled={!canWrite} value={form.creditValuePaise / 100} onChange={(e) => set("creditValuePaise", Math.round(Number(e.target.value) * 100))} />
                 <span className="mt-1 block text-xs text-ink-3">{inr(form.creditValuePaise)}</span>
               </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Input cost / 1M tokens" hint="Provider cost in rupees; 0 disables estimates.">
+                  <input className={field} type="number" step="0.01" disabled={!canWrite} value={form.inputCostPaisePerMTok / 100} onChange={(e) => set("inputCostPaisePerMTok", Math.round(Number(e.target.value) * 100))} />
+                  <span className="mt-1 block text-xs text-ink-3">{inr(form.inputCostPaisePerMTok)}</span>
+                </Field>
+                <Field label="Output cost / 1M tokens">
+                  <input className={field} type="number" step="0.01" disabled={!canWrite} value={form.outputCostPaisePerMTok / 100} onChange={(e) => set("outputCostPaisePerMTok", Math.round(Number(e.target.value) * 100))} />
+                  <span className="mt-1 block text-xs text-ink-3">{inr(form.outputCostPaisePerMTok)}</span>
+                </Field>
+              </div>
               <Field label="Trial length (days)">
                 <input className={field} type="number" disabled={!canWrite} value={form.trialDays} onChange={(e) => set("trialDays", Number(e.target.value))} />
               </Field>
@@ -883,6 +942,8 @@ export function AdminSettings() {
                         max_requests_per_minute: form.maxRequestsPerMinute,
                         monthly_spend_alert_paise: form.monthlySpendAlertPaise,
                         credit_value_paise: form.creditValuePaise,
+                        input_cost_paise_per_mtok: form.inputCostPaisePerMTok,
+                        output_cost_paise_per_mtok: form.outputCostPaisePerMTok,
                         low_credit_threshold: form.lowCreditThreshold,
                         reset_policy: form.resetPolicy,
                         trial_days: form.trialDays,

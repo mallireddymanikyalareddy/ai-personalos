@@ -112,3 +112,11 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 ## 2026-06 - Admin alert center and ledger reconciliation
 - Dashboard now has a Needs attention panel for past-due/overdue subscriptions, stale credit holds, ledger/account mismatches and recent AI provider failures.
 - Added backend/reconciliation.py: hourly comparison of every account balance with ledger sums, with open reconciliation_items for mismatches.
+
+## 2026-06 - Promotion segments, coupon codes and scheduled grants
+- Promotions can target all users, new users, trialists, inactive AI users, low-credit users, specific handles/emails/IDs or plan subscribers.
+- Added optional coupon codes (redeemable from the credits card), and auto-grant mode that runs every six hours while a promotion is active. Redemption and auto-grants stay per-user idempotent.
+
+## 2026-06 - Usage intelligence and pricing simulator
+- Added per-request input-token estimates and configurable input/output token cost rates. Admin AI Usage now shows month-to-date/projected spend, cost per credit, usage by action/model, estimated plan margins and a client-side pricing simulator.
+- Added GET /api/v1/admin/usage/insights and POST /api/v1/admin/usage/simulate.

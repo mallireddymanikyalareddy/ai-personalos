@@ -9,7 +9,7 @@ import entitlements
 import platform_settings
 import promotions
 from admin import require_role
-from auth import ApiError, iso
+from auth import ApiError, iso, require_auth
 from billing import now, record_audit
 from db import db
 
@@ -194,6 +194,10 @@ class PromotionIn(BaseModel):
     ends_at: datetime
     per_user_limit: int = Field(default=1, ge=1, le=10)
     credit_expiry_days: int = Field(default=0, ge=0, le=365)
+    segment_days: int = Field(default=30, ge=1, le=365)
+    user_ids: list[str] = Field(default_factory=list, max_length=200)
+    auto_grant: bool = False
+    code: str | None = Field(default=None, max_length=32)
     reason: Reason
 
 
@@ -212,12 +216,14 @@ async def promotion_detail(promotion_id: str, _=Depends(require_role())):
 async def create_promotion(body: PromotionIn, auth=Depends(WritePromos)):
     admin = auth[0]
     try:
-        promo = await promotions.create_promotion(body.name, body.credits, body.eligibility, body.starts_at,
-                                                  body.ends_at, body.per_user_limit, body.credit_expiry_days, admin["handle"])
+        promo = await promotions.create_promotion(
+            body.name, body.credits, body.eligibility, body.starts_at, body.ends_at, body.per_user_limit,
+            body.credit_expiry_days, admin["handle"], body.segment_days, body.user_ids, body.auto_grant, body.code)
     except promotions.PromotionError as exc:
         raise fail(exc)
     await record_audit(admin["handle"], "promotion.create", "promotion", promo["id"], body.reason,
-                       role=admin["admin_role"], details={"credits": body.credits, "eligibility": body.eligibility})
+                       role=admin["admin_role"], details={"credits": body.credits, "eligibility": body.eligibility,
+                                                          "auto_grant": body.auto_grant, "code": promo.get("code")})
     return promo
 
 
@@ -225,10 +231,11 @@ async def create_promotion(body: PromotionIn, auth=Depends(WritePromos)):
 async def update_promotion(promotion_id: str, body: PromotionIn, auth=Depends(WritePromos)):
     admin = auth[0]
     try:
-        promo = await promotions.update_promotion(promotion_id, name=body.name, credits_amount=body.credits,
-                                                  eligibility=body.eligibility, starts_at=body.starts_at,
-                                                  ends_at=body.ends_at, per_user_limit=body.per_user_limit,
-                                                  credit_expiry_days=body.credit_expiry_days)
+        promo = await promotions.update_promotion(
+            promotion_id, name=body.name, credits_amount=body.credits, eligibility=body.eligibility,
+            starts_at=body.starts_at, ends_at=body.ends_at, per_user_limit=body.per_user_limit,
+            credit_expiry_days=body.credit_expiry_days, segment_days=body.segment_days,
+            user_ids=body.user_ids, auto_grant=body.auto_grant, code=body.code)
     except promotions.PromotionError as exc:
         raise fail(exc)
     await record_audit(admin["handle"], "promotion.update", "promotion", promotion_id, body.reason,
@@ -278,6 +285,8 @@ class SettingsIn(BaseModel):
     max_requests_per_minute: int = Field(ge=1, le=600)
     monthly_spend_alert_paise: int = Field(ge=0, le=100_000_000)
     credit_value_paise: int = Field(default=250, ge=1, le=100_000)
+    input_cost_paise_per_mtok: int = Field(default=0, ge=0, le=100_000_000)
+    output_cost_paise_per_mtok: int = Field(default=0, ge=0, le=100_000_000)
     low_credit_threshold: int = Field(ge=0, le=1000)
     reset_policy: str = Field(min_length=10, max_length=500)
     trial_days: int = Field(ge=0, le=90)
@@ -290,6 +299,8 @@ def settings_payload(body: SettingsIn) -> dict:
             "maxRequestsPerMinute": body.max_requests_per_minute,
             "monthlySpendAlertPaise": body.monthly_spend_alert_paise,
             "creditValuePaise": body.credit_value_paise,
+            "inputCostPaisePerMTok": body.input_cost_paise_per_mtok,
+            "outputCostPaisePerMTok": body.output_cost_paise_per_mtok,
             "lowCreditThreshold": body.low_credit_threshold, "resetPolicy": body.reset_policy,
             "trialDays": body.trial_days, "flags": body.flags}
 
@@ -311,3 +322,15 @@ async def save_settings(body: SettingsIn, auth=Depends(WriteSettings)):
 @public_router.get("/settings/public")
 async def public_settings():
     return await platform_settings.public_settings()
+
+
+class RedeemIn(BaseModel):
+    code: str = Field(min_length=3, max_length=32)
+
+
+@public_router.post("/promotions/redeem")
+async def redeem_promotion(body: RedeemIn, auth=Depends(require_auth)):
+    try:
+        return await promotions.redeem_code(body.code, auth[0]["id"])
+    except promotions.PromotionError as exc:
+        raise fail(exc)

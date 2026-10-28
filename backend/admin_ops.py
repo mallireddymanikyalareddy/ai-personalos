@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 import credits
 import platform_settings
+import usage_insights
 from admin import ROLES, admin_emails, require_role
 from auth import ApiError, iso
 from billing import now, record_audit
@@ -278,6 +279,26 @@ async def usage(days: int = 7, limit: int = 100, _=Depends(require_role())):
     rows = await db.ai_usage.find({}, {"_id": 0}).sort("created_at", -1).to_list(max(1, min(limit, 500)))
     return {"totals": await usage_totals(now() - timedelta(days=days)), "trend": await usage_trend(days),
             "requests": await with_handles(rows, "created_at")}
+
+
+@router.get("/usage/insights")
+async def usage_insights_endpoint(days: int = 30, _=Depends(require_role())):
+    return await usage_insights.insights(window(days))
+
+
+class SimulatedAction(BaseModel):
+    action: str = Field(min_length=1, max_length=80)
+    credits: int = Field(ge=0, le=1000)
+
+
+class SimulateIn(BaseModel):
+    days: int = 30
+    actions: list[SimulatedAction] = Field(min_length=1, max_length=100)
+
+
+@router.post("/usage/simulate")
+async def simulate_usage(body: SimulateIn, _=Depends(require_role())):
+    return await usage_insights.simulate(window(body.days), {a.action: a.credits for a in body.actions})
 
 
 def user_label(row: dict, names: dict[str, str]) -> str:

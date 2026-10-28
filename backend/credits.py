@@ -258,12 +258,14 @@ async def sweep_loop():
         await asyncio.sleep(300)
 
 
-async def record_usage(res: dict, status: str, charged: int, output_chars: int, ms: int, error: str | None = None) -> None:
+async def record_usage(res: dict, status: str, charged: int, output_chars: int, ms: int,
+                       error: str | None = None, input_chars: int = 0) -> None:
     await db.ai_usage.insert_one({
         "id": f"req_{uuid.uuid4().hex[:16]}", "user_id": res["user_id"], "request_id": res["request_id"], "action": res["action"],
         "pricing_version": res["pricing_version"], "provider": "openai",
         "model": res.get("model", "gpt-6-luna"), "reserved": res["amount"],
-        "charged": charged, "output_chars": output_chars, "est_output_tokens": math.ceil(output_chars / 4), "ms": ms,
+        "charged": charged, "output_chars": output_chars, "est_output_tokens": math.ceil(output_chars / 4),
+        "input_chars": input_chars, "est_input_tokens": math.ceil(input_chars / 4), "ms": ms,
         "status": status, "error": error, "created_at": now(),
     })
 

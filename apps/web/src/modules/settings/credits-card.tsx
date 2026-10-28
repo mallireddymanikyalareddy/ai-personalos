@@ -6,6 +6,8 @@ import Link from "next/link";
 
 import { Sparkles } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import { CREDITS_EVENT } from "@/lib/ai-stream";
 import { useCredits } from "@/lib/use-credits";
 
@@ -39,9 +41,35 @@ function amountText(e: Entry): string {
 type Forecast = { daysLeft: number | null; used7d: number; used14d: number };
 
 export function CreditsCard() {
-  const { balance, lowThreshold } = useCredits(true);
+  const { balance, lowThreshold, reload } = useCredits(true);
+  const { toast } = useToast();
   const [entries, setEntries] = React.useState<Entry[] | null>(null);
   const [forecast, setForecast] = React.useState<Forecast | null>(null);
+  const [code, setCode] = React.useState("");
+  const [redeemBusy, setRedeemBusy] = React.useState(false);
+  const redeem = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!code.trim()) return;
+    setRedeemBusy(true);
+    try {
+      const res = await fetch("/api/v1/promotions/redeem", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: code.trim() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { detail?: string; credits?: number };
+      if (!res.ok) throw new Error(data.detail ?? "That code could not be redeemed.");
+      toast(`Added ${data.credits ?? 0} credits`, { tone: "success" });
+      setCode("");
+      reload();
+      window.dispatchEvent(new Event(CREDITS_EVENT));
+    } catch (err) {
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setRedeemBusy(false);
+    }
+  };
   React.useEffect(() => {
     const load = () =>
       fetch("/api/v1/credits/history?limit=50", {
@@ -132,6 +160,18 @@ export function CreditsCard() {
             : "No AI credits used in the last two weeks."}
         </p>
       )}
+      <form className="mt-3 flex flex-wrap gap-2" onSubmit={redeem}>
+        <input
+          data-testid="credits-redeem-code"
+          value={code}
+          onChange={(event) => setCode(event.target.value.toUpperCase())}
+          placeholder="Have a promo code?"
+          className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-xs text-ink focus:border-accent focus:outline-none"
+        />
+        <Button size="sm" type="submit" loading={redeemBusy} disabled={!code.trim()}>
+          Redeem
+        </Button>
+      </form>
       <h3 className="mt-5 text-xs font-semibold uppercase tracking-wider text-ink-3">
         History
       </h3>

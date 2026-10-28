@@ -27,8 +27,10 @@ import {
   signed,
   useAdminData,
   useAdminRole,
+  type ActionInsight,
   type AuditRow,
   type LedgerEntry,
+  type UsageInsights,
   type TrendPoint,
   type UsageRow,
   type UsageTotals,
@@ -601,10 +603,11 @@ export function AdminUsage() {
     trend: TrendPoint[];
     requests: UsageRow[];
   }>(`usage?days=${days}&limit=200`);
+  const insights = useAdminData<UsageInsights>(`usage/insights?days=${days}`);
   return (
     <LivePage
       title="AI Usage & Costs"
-      description="Every AI request with credits held and charged. Provider money cost tracking arrives with billing."
+      description="Requests, credits, provider-cost estimates and plan margins. Set token costs in Platform Settings."
     >
       <RangePicker days={days} setDays={setDays} />
       {!data ? (
@@ -633,6 +636,47 @@ export function AdminUsage() {
               value={String(data.totals.creditsCharged)}
             />
           </div>
+          {insights.data && (
+            <>
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <Stat testId="stat-cost-mtd" label="Estimated AI spend (MTD)"
+                      value={inr(insights.data.month.spendPaise)}
+                      hint={`Projected ${inr(insights.data.month.projectedPaise)} this month`} />
+                <Stat testId="stat-cost-credit" label="Estimated cost / credit"
+                      value={inr(insights.data.costPerCreditPaise)} />
+                <Stat testId="stat-month-credits" label="Credits charged (MTD)"
+                      value={insights.data.month.credits.toLocaleString()} />
+                <Stat testId="stat-cost-tokens" label="Tokens (range)"
+                      value={`${(insights.data.totals.inputTokens / 1000).toFixed(1)}k / ${(insights.data.totals.outputTokens / 1000).toFixed(1)}k`}
+                      hint="Input / output, estimated" />
+              </div>
+              <DataTable
+                testId="admin-usage-actions"
+                rows={insights.data.byAction.map((item) => ({ ...item, id: item.action }))}
+                columns={[
+                  { key: "action", label: "Action", render: (r) => <code className="text-xs">{r.action}</code> },
+                  { key: "calls", label: "Calls", align: "right" },
+                  { key: "credits", label: "Credits", align: "right" },
+                  { key: "costPaise", label: "Est. cost", align: "right", render: (r) => inr(r.costPaise) },
+                  { key: "avgMs", label: "Avg ms", align: "right" },
+                  { key: "priceCredits", label: "Current price", align: "right" },
+                ]}
+              />
+              <DataTable
+                testId="admin-plan-margins"
+                rows={insights.data.plans.map((item) => ({ ...item, id: item.planId }))}
+                columns={[
+                  { key: "name", label: "Plan" },
+                  { key: "subscribers", label: "Subscribers", align: "right" },
+                  { key: "monthlyRevenuePaise", label: "Monthly revenue", align: "right", render: (r) => inr(r.monthlyRevenuePaise) },
+                  { key: "monthlyCredits", label: "Credits / month", align: "right" },
+                  { key: "costPerSubscriberPaise", label: "Est. cost / sub", align: "right", render: (r) => inr(r.costPerSubscriberPaise) },
+                  { key: "marginPaise", label: "Est. margin", align: "right", render: (r) => inr(r.marginPaise) },
+                ]}
+              />
+              <PricingSimulator key={days} actions={insights.data.byAction} />
+            </>
+          )}
           <TrendChart data={data.trend} testId="chart-cost" />
           <DataTable
             testId="admin-usage-table"
@@ -669,6 +713,46 @@ export function AdminUsage() {
         </>
       )}
     </LivePage>
+  );
+}
+
+function PricingSimulator({ actions }: { actions: ActionInsight[] }) {
+  const [prices, setPrices] = React.useState<Record<string, string>>(
+    () => Object.fromEntries(actions.map((item) => [item.action, String(item.priceCredits)])),
+  );
+  const current = actions.reduce((sum, item) => sum + item.credits, 0);
+  const projected = actions.reduce((sum, item) => sum + (Number(prices[item.action] ?? 0) || 0) * item.calls, 0);
+  return (
+    <Panel title="Pricing simulator" testId="admin-pricing-simulator">
+      <p className="mb-3 text-xs text-ink-3">
+        Change an action&apos;s credit price to see the projected credits for the selected usage volume. Provider cost does not change.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {actions.map((item) => (
+          <label key={item.action} className="text-xs">
+            <span className="mb-1 block font-medium text-ink-2">{item.action}</span>
+            <div className="flex items-center gap-2">
+              <input
+                className="h-8 w-20 rounded-lg border border-line bg-bg px-2 text-sm text-ink focus:border-accent focus:outline-none"
+                type="number"
+                min={0}
+                max={1000}
+                value={prices[item.action] ?? "0"}
+                onChange={(event) => setPrices((prev) => ({ ...prev, [item.action]: event.target.value }))}
+                aria-label={`${item.action} credit price`}
+              />
+              <span className="text-ink-3">cr × {item.calls} calls</span>
+            </div>
+          </label>
+        ))}
+      </div>
+      <p className="mt-3 text-sm text-ink-2" data-testid="admin-pricing-simulator-result">
+        Current volume: <strong className="text-ink">{current.toLocaleString()}</strong> credits · Simulated:{" "}
+        <strong className="text-ink">{projected.toLocaleString()}</strong> credits (
+        {projected - current >= 0 ? "+" : ""}
+        {(projected - current).toLocaleString()})
+      </p>
+    </Panel>
   );
 }
 
