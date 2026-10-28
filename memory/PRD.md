@@ -97,3 +97,6 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 ## 2026-06 - Exact credit buckets
 - credit_accounts now track included, promotional and purchased credits. Reservations hold and refund the same buckets in priority order (promotional -> included -> purchased), so monthly resets, promotion expiry and admin removals are exact rather than inferred from charges.
 - Startup migrations stage8_credit_buckets and stage8_promotion_remaining backfill older accounts and promotion grants. The admin user drawer shows the bucket breakdown.
+
+## 2026-06 - Emailed links pointed at the internal cluster host (fixed via config)
+- In production the Host header is ai-personalos.cluster8.deploy.aws.emergentcf.cloud, so reset/verify links went to an unreachable domain. APP_URL (backend secret, live + test) = https://ai-personalos.emergent.host, read by origin_of(). Preview emails now also link to the live site.
