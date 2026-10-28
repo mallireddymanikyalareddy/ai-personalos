@@ -408,7 +408,7 @@ export function JournalModule() {
                 data-testid="journal-load-sample"
               >
                 <Sparkles className="size-4" aria-hidden />
-                Sample
+                Load sample
               </Button>
               <Button
                 size="sm"

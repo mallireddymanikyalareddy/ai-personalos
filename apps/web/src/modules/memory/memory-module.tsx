@@ -734,7 +734,7 @@ export function MemoryModule() {
               data-testid="memory-load-sample"
             >
               <Sparkles className="size-4" aria-hidden />
-              Sample
+              Load sample
             </Button>
             <Segmented
               options={[
