@@ -45,6 +45,11 @@ export interface AuthMeResponse {
   session?: { id: string; expiresAt: string };
 }
 
+export interface MfaChallengeResponse {
+  mfaRequired: true;
+  challenge: string;
+}
+
 export interface OAuthProvidersResponse {
   items: Array<{ id: string; label: string; enabled: boolean }>;
 }
@@ -162,11 +167,15 @@ export const authApi = {
     displayName: string;
     password: string;
     email?: string;
+    referralCode?: string;
   }): Promise<AuthSessionResponse> {
     return apiFetch<AuthSessionResponse>("/api/v1/auth/register", jsonInit("POST", input));
   },
-  login(input: { identifier: string; password: string }): Promise<AuthSessionResponse> {
-    return apiFetch<AuthSessionResponse>("/api/v1/auth/login", jsonInit("POST", input));
+  login(input: { identifier: string; password: string }): Promise<AuthSessionResponse | MfaChallengeResponse> {
+    return apiFetch<AuthSessionResponse | MfaChallengeResponse>("/api/v1/auth/login", jsonInit("POST", input));
+  },
+  verifyMfa(input: { challenge: string; code: string }): Promise<AuthSessionResponse> {
+    return apiFetch<AuthSessionResponse>("/api/v1/auth/mfa/verify", jsonInit("POST", input));
   },
   logout(): Promise<void> {
     return apiFetch<void>("/api/v1/auth/logout", jsonInit("POST"));

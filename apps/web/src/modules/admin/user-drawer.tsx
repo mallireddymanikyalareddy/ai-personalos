@@ -153,15 +153,19 @@ function CreditForm({
         reason: reason.trim(),
         requestId: `adm-${crypto.randomUUID()}`,
       };
-      const res = await adminSend<{ balance: { available: number } }>(
+      const res = await adminSend<{ balance?: { available: number }; approval_required?: boolean }>(
         `users/${userId}/credits`,
         "POST",
         body,
       );
-      toast(
-        `${mode === "add" ? "Added" : "Removed"} ${n} credit${n === 1 ? "" : "s"} · now ${res.balance.available} available`,
-        { tone: "success" },
-      );
+      if (res.approval_required) {
+        toast("Sent for approval by a second admin", { tone: "success" });
+      } else {
+        toast(
+          `${mode === "add" ? "Added" : "Removed"} ${n} credit${n === 1 ? "" : "s"} - now ${res.balance?.available ?? 0} available`,
+          { tone: "success" },
+        );
+      }
       setAmount("");
       setReason("");
       onDone();
@@ -234,16 +238,20 @@ function RoleForm({
     e.preventDefault();
     setBusy(true);
     try {
-      await adminSend(`users/${user.id}/role`, "PUT", {
+      const res = await adminSend<{ approval_required?: boolean }>(`users/${user.id}/role`, "PUT", {
         role: role || null,
         reason: reason.trim(),
       });
-      toast(
-        role
-          ? `${user.handle} is now ${roleLabel(role)}`
-          : `Removed admin role from ${user.handle}`,
-        { tone: "success" },
-      );
+      if (res.approval_required) {
+        toast("Sent for approval by a second admin", { tone: "success" });
+      } else {
+        toast(
+          role
+            ? `${user.handle} is now ${roleLabel(role)}`
+            : `Removed admin role from ${user.handle}`,
+          { tone: "success" },
+        );
+      }
       setReason("");
       onDone();
     } catch (err) {

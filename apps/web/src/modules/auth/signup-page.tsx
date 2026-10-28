@@ -91,12 +91,17 @@ export function SignupPage() {
   const [lastName, setLastName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [referralCode, setReferralCode] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
   const [agreed, setAgreed] = React.useState(false);
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const [formError, setFormError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const passwordChecks = PASSWORD_RULES.map((rule) => ({ ...rule, ok: rule.test(password) }));
+  React.useEffect(() => {
+    const ref = new URLSearchParams(window.location.search).get("ref");
+    if (ref) setReferralCode(ref.trim().toUpperCase());
+  }, []);
 
   const validate = (): boolean => {
     const next: FieldErrors = {};
@@ -121,7 +126,10 @@ export function SignupPage() {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const handle = attempt === 0 ? base : `${base.slice(0, 24)}-${suffix()}`;
       try {
-        await register({ handle, displayName, password, email: email.trim() });
+        await register({
+          handle, displayName, password, email: email.trim(),
+          referralCode: referralCode.trim() || undefined,
+        });
         router.replace("/onboarding");
         return;
       } catch (caught) {

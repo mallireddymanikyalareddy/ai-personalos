@@ -47,6 +47,41 @@ export function CreditsCard() {
   const [forecast, setForecast] = React.useState<Forecast | null>(null);
   const [code, setCode] = React.useState("");
   const [redeemBusy, setRedeemBusy] = React.useState(false);
+  const [giftTo, setGiftTo] = React.useState("");
+  const [giftAmount, setGiftAmount] = React.useState("");
+  const [giftNote, setGiftNote] = React.useState("");
+  const [giftBusy, setGiftBusy] = React.useState(false);
+  const gift = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const amount = Number.parseInt(giftAmount, 10);
+    if (!giftTo.trim() || !Number.isInteger(amount) || amount < 1) return;
+    setGiftBusy(true);
+    try {
+      const res = await fetch("/api/v1/credits/gift", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          identifier: giftTo.trim(),
+          amount,
+          note: giftNote.trim() || null,
+          requestId: `gift-${crypto.randomUUID()}`,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { detail?: string; recipientHandle?: string };
+      if (!res.ok) throw new Error(data.detail ?? "Gift could not be sent.");
+      toast(`Sent ${amount} credits to @${data.recipientHandle ?? giftTo.trim()}`, { tone: "success" });
+      setGiftTo("");
+      setGiftAmount("");
+      setGiftNote("");
+      reload();
+      window.dispatchEvent(new Event(CREDITS_EVENT));
+    } catch (err) {
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setGiftBusy(false);
+    }
+  };
   const redeem = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!code.trim()) return;
@@ -170,6 +205,36 @@ export function CreditsCard() {
         />
         <Button size="sm" type="submit" loading={redeemBusy} disabled={!code.trim()}>
           Redeem
+        </Button>
+      </form>
+      <form className="mt-3 space-y-2 rounded-xl border border-line bg-surface-2 p-3" onSubmit={gift}>
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink-3">Gift credits</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <input
+            value={giftTo}
+            onChange={(event) => setGiftTo(event.target.value)}
+            placeholder="Handle or email"
+            aria-label="Recipient"
+            className="h-8 rounded-lg border border-line bg-bg px-3 text-xs text-ink focus:border-accent focus:outline-none"
+          />
+          <input
+            value={giftAmount}
+            onChange={(event) => setGiftAmount(event.target.value.replace(/\D/g, ""))}
+            placeholder="Credits"
+            inputMode="numeric"
+            aria-label="Gift amount"
+            className="h-8 rounded-lg border border-line bg-bg px-3 text-xs text-ink focus:border-accent focus:outline-none"
+          />
+        </div>
+        <input
+          value={giftNote}
+          onChange={(event) => setGiftNote(event.target.value)}
+          placeholder="Note (optional)"
+          aria-label="Gift note"
+          className="h-8 w-full rounded-lg border border-line bg-bg px-3 text-xs text-ink focus:border-accent focus:outline-none"
+        />
+        <Button size="sm" type="submit" loading={giftBusy} disabled={!giftTo.trim() || !giftAmount}>
+          Send gift
         </Button>
       </form>
       <h3 className="mt-5 text-xs font-semibold uppercase tracking-wider text-ink-3">

@@ -285,6 +285,10 @@ class SettingsIn(BaseModel):
     max_requests_per_minute: int = Field(ge=1, le=600)
     monthly_spend_alert_paise: int = Field(ge=0, le=100_000_000)
     credit_value_paise: int = Field(default=250, ge=1, le=100_000)
+    approval_threshold_credits: int = Field(default=1000, ge=0, le=100_000)
+    referral_referrer_credits: int = Field(default=10, ge=0, le=1000)
+    referral_referee_credits: int = Field(default=5, ge=0, le=1000)
+    gift_max_credits: int = Field(default=1000, ge=1, le=100_000)
     input_cost_paise_per_mtok: int = Field(default=0, ge=0, le=100_000_000)
     output_cost_paise_per_mtok: int = Field(default=0, ge=0, le=100_000_000)
     low_credit_threshold: int = Field(ge=0, le=1000)
@@ -299,6 +303,10 @@ def settings_payload(body: SettingsIn) -> dict:
             "maxRequestsPerMinute": body.max_requests_per_minute,
             "monthlySpendAlertPaise": body.monthly_spend_alert_paise,
             "creditValuePaise": body.credit_value_paise,
+            "approvalThresholdCredits": body.approval_threshold_credits,
+            "referralReferrerCredits": body.referral_referrer_credits,
+            "referralRefereeCredits": body.referral_referee_credits,
+            "giftMaxCredits": body.gift_max_credits,
             "inputCostPaisePerMTok": body.input_cost_paise_per_mtok,
             "outputCostPaisePerMTok": body.output_cost_paise_per_mtok,
             "lowCreditThreshold": body.low_credit_threshold, "resetPolicy": body.reset_policy,

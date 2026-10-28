@@ -4,13 +4,16 @@ import re
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse, StreamingResponse
 from typing import Annotated
 
 from pydantic import BaseModel, Field, StringConstraints
 
+import approvals
 import credits
 import platform_settings
+from mfa import require_step_up
 import usage_insights
 from admin import ROLES, admin_emails, require_role
 from auth import ApiError, iso
@@ -99,23 +102,41 @@ class CreditAdjustIn(BaseModel):
     requestId: str = Field(min_length=8, max_length=64)
 
 
+async def approval_threshold() -> int:
+    settings = await platform_settings.get_settings()
+    return int(settings.get("approvalThresholdCredits", 1000))
+
+
+async def _apply_credit_adjust(admin: dict, user_id: str, amount: int, reason: str, key: str,
+                               request_id: str | None = None) -> dict:
+    action = "credit.grant" if amount > 0 else "credit.remove"
+    try:
+        applied = await credits.adjust(user_id, amount, reason, key, admin["handle"])
+    except credits.CreditError as exc:
+        await record_audit(admin["handle"], action, "user", user_id, reason, "failed", admin["admin_role"],
+                           {"amount": amount, "requestId": request_id, "error": exc.code})
+        raise ApiError(exc.status, exc.code, exc.message)
+    if applied:
+        await record_audit(admin["handle"], action, "user", user_id, reason, "success", admin["admin_role"],
+                           {"amount": amount, "requestId": request_id})
+    return {"applied": applied, "balance": await credits.balance(user_id)}
+
+
 @router.post("/users/{user_id}/credits")
 async def adjust_credits(user_id: str, body: CreditAdjustIn, auth=Depends(require_role(*CREDIT_ROLES))):
     admin = auth[0]
     if body.amount == 0:
         raise ApiError(400, "VALIDATION_FAILED", "Amount can't be zero.", [{"field": "amount", "issue": "must not be 0"}])
-    await find_user(user_id)
-    action = "credit.grant" if body.amount > 0 else "credit.remove"
-    try:
-        applied = await credits.adjust(user_id, body.amount, body.reason.strip(), f"admin:{body.requestId}", admin["handle"])
-    except credits.CreditError as exc:
-        await record_audit(admin["handle"], action, "user", user_id, body.reason.strip(), "failed", admin["admin_role"],
-                           {"amount": body.amount, "requestId": body.requestId, "error": exc.code})
-        raise ApiError(exc.status, exc.code, exc.message)
-    if applied:
-        await record_audit(admin["handle"], action, "user", user_id, body.reason.strip(), "success", admin["admin_role"],
-                           {"amount": body.amount, "requestId": body.requestId})
-    return {"applied": applied, "balance": await credits.balance(user_id)}
+    user = await find_user(user_id)
+    reason = body.reason.strip()
+    threshold = await approval_threshold()
+    if threshold and abs(body.amount) >= threshold:
+        approval = await approvals.create("credit_adjust", user_id, user["handle"],
+                                          {"amount": body.amount, "requestId": body.requestId}, reason, admin)
+        await record_audit(admin["handle"], "approval.requested", "user", user_id, reason, "success",
+                           admin["admin_role"], {"approvalId": approval["id"], "amount": body.amount})
+        return JSONResponse(status_code=202, content={"approval_required": True, "approval": jsonable_encoder(approval)})
+    return await _apply_credit_adjust(admin, user_id, body.amount, reason, f"admin:{body.requestId}", body.requestId)
 
 
 class BulkCreditIn(BaseModel):
@@ -125,33 +146,39 @@ class BulkCreditIn(BaseModel):
     requestId: str = Field(min_length=8, max_length=64)
 
 
+async def _apply_bulk_credit(admin: dict, user_ids: list[str], amount: int, reason: str, key_prefix: str) -> dict:
+    results = []
+    applied = failed = 0
+    for user_id in dict.fromkeys(user_ids):
+        try:
+            await find_user(user_id)
+            result = await _apply_credit_adjust(admin, user_id, amount, reason, f"{key_prefix}:{user_id}")
+            results.append({"userId": user_id, **result})
+            applied += 1 if result["applied"] else 0
+        except ApiError as exc:
+            failed += 1
+            results.append({"userId": user_id, "applied": False, "error": exc.detail, "code": exc.code})
+    return {"results": results, "applied": applied, "failed": failed,
+            "skipped": len(results) - applied - failed}
+
+
 @router.post("/users/bulk-credits")
 async def bulk_adjust_credits(body: BulkCreditIn, auth=Depends(require_role(*CREDIT_ROLES))):
     admin = auth[0]
     if body.amount == 0:
         raise ApiError(400, "VALIDATION_FAILED", "Amount can't be zero.", [{"field": "amount", "issue": "must not be 0"}])
-    results = []
-    applied = failed = 0
-    for user_id in dict.fromkeys(body.user_ids):
-        action = "credit.grant" if body.amount > 0 else "credit.remove"
-        try:
-            await find_user(user_id)
-            done = await credits.adjust(user_id, body.amount, body.reason.strip(),
-                                        f"bulk:{body.requestId}:{user_id}", admin["handle"])
-            results.append({"userId": user_id, "applied": done, "balance": await credits.balance(user_id)})
-            applied += 1 if done else 0
-            await record_audit(admin["handle"], action, "user", user_id, body.reason.strip(),
-                               "success" if done else "skipped",
-                               admin["admin_role"], {"amount": body.amount, "batchId": body.requestId})
-        except (ApiError, credits.CreditError) as exc:
-            failed += 1
-            code = getattr(exc, "code", "VALIDATION_FAILED")
-            message = getattr(exc, "message", None) or getattr(exc, "detail", "Request failed")
-            results.append({"userId": user_id, "applied": False, "error": message, "code": code})
-            await record_audit(admin["handle"], action, "user", user_id, body.reason.strip(), "failed",
-                               admin["admin_role"], {"amount": body.amount, "batchId": body.requestId, "error": code})
-    return {"results": results, "applied": applied, "failed": failed,
-            "skipped": len(results) - applied - failed}
+    ids = list(dict.fromkeys(body.user_ids))
+    reason = body.reason.strip()
+    threshold = await approval_threshold()
+    if threshold and abs(body.amount) * len(ids) >= threshold:
+        approval = await approvals.create("bulk_credit_adjust", ids[0], f"{len(ids)} users",
+                                          {"user_ids": ids, "amount": body.amount, "requestId": body.requestId},
+                                          reason, admin)
+        await record_audit(admin["handle"], "approval.requested", "user", ids[0], reason, "success",
+                           admin["admin_role"], {"approvalId": approval["id"], "amount": body.amount,
+                                                "users": len(ids)})
+        return JSONResponse(status_code=202, content={"approval_required": True, "approval": jsonable_encoder(approval)})
+    return await _apply_bulk_credit(admin, ids, body.amount, reason, f"bulk:{body.requestId}")
 
 
 class RoleIn(BaseModel):
@@ -159,24 +186,64 @@ class RoleIn(BaseModel):
     reason: Reason
 
 
-@router.put("/users/{user_id}/role")
-async def set_role(user_id: str, body: RoleIn, auth=Depends(require_role("super_admin"))):
-    admin = auth[0]
-    if body.role is not None and body.role not in ROLES:
-        raise ApiError(400, "VALIDATION_FAILED", "Unknown role.", [{"field": "role", "issue": "unknown role"}])
+async def _apply_role_change(admin: dict, user_id: str, role: str | None, reason: str) -> dict:
     if user_id == admin["id"]:
         raise ApiError(400, "VALIDATION_FAILED", "You can't change your own role.")
     user = await find_user(user_id)
     if user.get("admin_role_source") == "env" or user.get("email") in admin_emails():
         raise ApiError(400, "VALIDATION_FAILED", "This owner account's role is set by the server configuration.")
-    if body.role is None:
-        update = {"$unset": {"admin_role": "", "admin_role_source": ""}}
-    else:
-        update = {"$set": {"admin_role": body.role, "admin_role_source": "manual"}}
+    update = ({"$unset": {"admin_role": "", "admin_role_source": ""}} if role is None
+              else {"$set": {"admin_role": role, "admin_role_source": "manual"}})
     await db.users.update_one({"id": user_id}, update)
-    await record_audit(admin["handle"], "user.role_change", "user", user_id, body.reason.strip(), "success", admin["admin_role"],
-                       {"from": user.get("admin_role"), "to": body.role})
+    await record_audit(admin["handle"], "user.role_change", "user", user_id, reason, "success", admin["admin_role"],
+                       {"from": user.get("admin_role"), "to": role})
     return {"user": public_admin_user(await find_user(user_id), await db.credit_accounts.find_one({"user_id": user_id}))}
+
+
+async def _apply_bulk_role(admin: dict, user_ids: list[str], role: str | None, reason: str) -> dict:
+    results = []
+    changed = skipped = 0
+    for user_id in dict.fromkeys(user_ids):
+        if user_id == admin["id"]:
+            results.append({"userId": user_id, "changed": False, "error": "You can't change your own role."})
+            skipped += 1
+            continue
+        try:
+            user = await find_user(user_id)
+            if user.get("admin_role_source") == "env" or user.get("email") in admin_emails():
+                results.append({"userId": user_id, "changed": False, "error": "Owner role is server-configured."})
+                skipped += 1
+                continue
+            update = ({"$unset": {"admin_role": "", "admin_role_source": ""}} if role is None
+                      else {"$set": {"admin_role": role, "admin_role_source": "manual"}})
+            await db.users.update_one({"id": user_id}, update)
+            await record_audit(admin["handle"], "user.role_change", "user", user_id, reason, "success",
+                               admin["admin_role"], {"from": user.get("admin_role"), "to": role})
+            results.append({"userId": user_id, "changed": True, "role": role})
+            changed += 1
+        except ApiError as exc:
+            results.append({"userId": user_id, "changed": False, "error": exc.detail})
+            skipped += 1
+    return {"results": results, "changed": changed, "skipped": skipped}
+
+
+@router.put("/users/{user_id}/role")
+async def set_role(user_id: str, body: RoleIn, auth=Depends(require_role("super_admin"))):
+    admin = auth[0]
+    if body.role is not None and body.role not in ROLES:
+        raise ApiError(400, "VALIDATION_FAILED", "Unknown role.", [{"field": "role", "issue": "unknown role"}])
+    user = await find_user(user_id)
+    if user_id == admin["id"]:
+        raise ApiError(400, "VALIDATION_FAILED", "You can't change your own role.")
+    if user.get("admin_role_source") == "env" or user.get("email") in admin_emails():
+        raise ApiError(400, "VALIDATION_FAILED", "This owner account's role is set by the server configuration.")
+    reason = body.reason.strip()
+    if await approval_threshold() > 0:
+        approval = await approvals.create("role_change", user_id, user["handle"], {"role": body.role}, reason, admin)
+        await record_audit(admin["handle"], "approval.requested", "user", user_id, reason, "success",
+                           admin["admin_role"], {"approvalId": approval["id"], "role": body.role})
+        return JSONResponse(status_code=202, content={"approval_required": True, "approval": jsonable_encoder(approval)})
+    return await _apply_role_change(admin, user_id, body.role, reason)
 
 
 class BulkRoleIn(BaseModel):
@@ -190,30 +257,94 @@ async def bulk_set_role(body: BulkRoleIn, auth=Depends(require_role("super_admin
     admin = auth[0]
     if body.role is not None and body.role not in ROLES:
         raise ApiError(400, "VALIDATION_FAILED", "Unknown role.", [{"field": "role", "issue": "unknown role"}])
-    results = []
-    changed = skipped = 0
-    for user_id in dict.fromkeys(body.user_ids):
-        if user_id == admin["id"]:
-            results.append({"userId": user_id, "changed": False, "error": "You can't change your own role."})
-            skipped += 1
-            continue
-        try:
-            user = await find_user(user_id)
-            if user.get("admin_role_source") == "env" or user.get("email") in admin_emails():
-                results.append({"userId": user_id, "changed": False, "error": "Owner role is server-configured."})
-                skipped += 1
-                continue
-            update = ({"$unset": {"admin_role": "", "admin_role_source": ""}} if body.role is None
-                      else {"$set": {"admin_role": body.role, "admin_role_source": "manual"}})
-            await db.users.update_one({"id": user_id}, update)
-            await record_audit(admin["handle"], "user.role_change", "user", user_id, body.reason.strip(), "success",
-                               admin["admin_role"], {"from": user.get("admin_role"), "to": body.role})
-            results.append({"userId": user_id, "changed": True, "role": body.role})
-            changed += 1
-        except ApiError as exc:
-            results.append({"userId": user_id, "changed": False, "error": exc.detail})
-            skipped += 1
-    return {"results": results, "changed": changed, "skipped": skipped}
+    ids = list(dict.fromkeys(body.user_ids))
+    reason = body.reason.strip()
+    if await approval_threshold() > 0:
+        approval = await approvals.create("bulk_role_change", ids[0], f"{len(ids)} users",
+                                          {"user_ids": ids, "role": body.role}, reason, admin)
+        await record_audit(admin["handle"], "approval.requested", "user", ids[0], reason, "success",
+                           admin["admin_role"], {"approvalId": approval["id"], "role": body.role,
+                                                "users": len(ids)})
+        return JSONResponse(status_code=202, content={"approval_required": True, "approval": jsonable_encoder(approval)})
+    return await _apply_bulk_role(admin, ids, body.role, reason)
+
+
+class DecisionIn(BaseModel):
+    reason: Reason
+
+
+def can_decide(admin: dict, action: str) -> bool:
+    role = admin.get("admin_role")
+    if action in ("credit_adjust", "bulk_credit_adjust"):
+        return role == "super_admin" or role in CREDIT_ROLES
+    return role == "super_admin"
+
+
+@router.get("/approvals")
+async def list_approvals(status: str = "pending", limit: int = 200, _=Depends(require_role())):
+    return {"approvals": await approvals.list_for(status, limit)}
+
+
+@router.post("/approvals/{approval_id}/approve")
+async def approve_request(approval_id: str, body: DecisionIn, auth=Depends(require_role())):
+    admin = auth[0]
+    approval = await approvals.get(approval_id)
+    if not approval:
+        raise ApiError(404, "NOT_FOUND", "Approval request not found.")
+    if approval["status"] != "pending":
+        raise ApiError(409, "CONFLICT", "This request has already been decided.")
+    if approval["requested_by"] == admin["id"]:
+        raise ApiError(400, "VALIDATION_FAILED", "You can't approve your own request.")
+    if not can_decide(admin, approval["action"]):
+        raise ApiError(403, "FORBIDDEN", "Your admin role can't approve this request.")
+    require_step_up(admin, auth[1])
+    claimed = await approvals.claim(approval_id)
+    if not claimed:
+        raise ApiError(409, "CONFLICT", "This request was just decided by another admin.")
+    reason = body.reason.strip()
+    try:
+        if approval["action"] == "credit_adjust":
+            result = await _apply_credit_adjust(admin, approval["target_user_id"], approval["payload"]["amount"],
+                                                approval["reason"], f"approval:{approval_id}")
+        elif approval["action"] == "bulk_credit_adjust":
+            result = await _apply_bulk_credit(admin, approval["payload"]["user_ids"], approval["payload"]["amount"],
+                                              approval["reason"], f"approval:{approval_id}")
+        elif approval["action"] == "role_change":
+            result = await _apply_role_change(admin, approval["target_user_id"], approval["payload"]["role"],
+                                              approval["reason"])
+        elif approval["action"] == "bulk_role_change":
+            result = await _apply_bulk_role(admin, approval["payload"]["user_ids"], approval["payload"]["role"],
+                                            approval["reason"])
+        else:
+            raise ApiError(400, "VALIDATION_FAILED", "Unknown approval action.")
+    except ApiError:
+        await approvals.release(approval_id)
+        raise
+    await approvals.finish(approval_id, "approved", admin, reason)
+    await record_audit(admin["handle"], "approval.approve", "approval", approval_id, reason, "success",
+                       admin["admin_role"], {"action": approval["action"]})
+    return {"approval": await approvals.get(approval_id), "result": result}
+
+
+@router.post("/approvals/{approval_id}/reject")
+async def reject_request(approval_id: str, body: DecisionIn, auth=Depends(require_role())):
+    admin = auth[0]
+    approval = await approvals.get(approval_id)
+    if not approval:
+        raise ApiError(404, "NOT_FOUND", "Approval request not found.")
+    if approval["status"] != "pending":
+        raise ApiError(409, "CONFLICT", "This request has already been decided.")
+    if not can_decide(admin, approval["action"]):
+        raise ApiError(403, "FORBIDDEN", "Your admin role can't reject this request.")
+    require_step_up(admin, auth[1])
+    claimed = await approvals.claim(approval_id)
+    if not claimed:
+        raise ApiError(409, "CONFLICT", "This request was just decided by another admin.")
+    reason = body.reason.strip()
+    await approvals.finish(approval_id, "rejected", admin, reason)
+    await record_audit(admin["handle"], "approval.reject", "approval", approval_id, reason, "success",
+                       admin["admin_role"], {"action": approval["action"]})
+    return {"approval": await approvals.get(approval_id)}
 
 
 @router.get("/credits/ledger")
@@ -381,6 +512,7 @@ async def overview(days: int = 7, _=Depends(require_role())):
     overdue_renewals = await db.subscriptions.count_documents(
         {"status": {"$in": ["active", "trialing"]}, "current_period_end": {"$lte": now()}})
     drift = await db.reconciliation_items.count_documents({"status": "open"})
+    pending_approvals = await db.admin_approvals.count_documents({"status": "pending"})
     failed_24h = await db.ai_usage.count_documents(
         {"status": "failed", "created_at": {"$gte": now() - timedelta(hours=24)}})
     alerts = []
@@ -404,6 +536,11 @@ async def overview(days: int = 7, _=Depends(require_role())):
                        "title": "Ledger mismatch",
                        "detail": f"{drift} account(s) do not match the credit ledger.",
                        "href": "/admin/credits"})
+    if pending_approvals:
+        alerts.append({"type": "pending_approvals", "level": "warning", "count": pending_approvals,
+                       "title": "Pending approvals",
+                       "detail": f"{pending_approvals} credit or role change(s) are waiting for a second admin.",
+                       "href": "/admin/approvals"})
     if failed_24h >= 3:
         alerts.append({"type": "provider_failures", "level": "warning", "count": failed_24h,
                        "title": "AI failures in the last 24h",

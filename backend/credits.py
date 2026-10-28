@@ -306,22 +306,20 @@ async def history(user_id: str, limit: int) -> list[dict]:
     return [r | {"created_at": iso(r["created_at"])} for r in rows]
 
 
-async def adjust(user_id: str, delta: int, reason: str, key: str, actor: str) -> bool:
-    """Admin add/remove; removals never take available below zero. Returns False on a replayed key."""
-    if delta > 0:
-        return await grant(user_id, delta, "admin_grant", reason, key, actor, bucket="purchased")
-    if delta == 0:
+async def debit(user_id: str, amount: int, kind: str, reason: str, key: str, actor: str) -> bool:
+    """Remove credits from buckets; returns False when the ledger key was already used."""
+    if amount <= 0:
         return False
     if await db.credit_ledger.find_one({"idempotency_key": key}, {"_id": 1}):
         return False
     take: dict = {}
     for _ in range(5):
         acc = await db.credit_accounts.find_one({"user_id": user_id}, {"_id": 0})
-        if not acc or acc.get("available", 0) < -delta:
-            raise CreditError(400, "INSUFFICIENT_CREDITS", "The user doesn't have that many available credits to remove.")
-        take = allocate(acc, -delta)
-        inc: dict = {"available": delta}
-        match: dict = {"user_id": user_id, "available": {"$gte": -delta}}
+        if not acc or acc.get("available", 0) < amount:
+            raise CreditError(400, "INSUFFICIENT_CREDITS", "The user doesn't have that many available credits.")
+        take = allocate(acc, amount)
+        inc: dict = {"available": -amount}
+        match: dict = {"user_id": user_id, "available": {"$gte": amount}}
         for bucket in BUCKETS:
             if take[bucket]:
                 inc[bucket] = -take[bucket]
@@ -333,11 +331,34 @@ async def adjust(user_id: str, delta: int, reason: str, key: str, actor: str) ->
     else:
         raise CreditError(400, "CONFLICT", "The balance changed while removing credits. Try again.")
     try:
-        await write_ledger(user_id, "admin_debit", -delta, delta, 0, reason, key, actor, buckets=take)
+        await write_ledger(user_id, kind, amount, -amount, 0, reason, key, actor, buckets=take)
     except DuplicateKeyError:
-        undo: dict = {"available": -delta}
+        undo: dict = {"available": amount}
         for bucket in BUCKETS:
             undo[bucket] = take[bucket]
         await db.credit_accounts.update_one({"user_id": user_id}, {"$inc": undo})
         return False
     return True
+
+
+async def adjust(user_id: str, delta: int, reason: str, key: str, actor: str) -> bool:
+    """Admin add/remove; removals never take available below zero. Returns False on a replayed key."""
+    if delta > 0:
+        return await grant(user_id, delta, "admin_grant", reason, key, actor, bucket="purchased")
+    if delta == 0:
+        return False
+    return await debit(user_id, -delta, "admin_debit", reason, key, actor)
+
+
+async def gift(sender_id: str, recipient_id: str, amount: int, reason: str, key: str, actor: str) -> dict:
+    if sender_id == recipient_id:
+        raise CreditError(400, "VALIDATION_FAILED", "You can't gift credits to yourself.")
+    if amount <= 0:
+        raise CreditError(400, "VALIDATION_FAILED", "Choose a positive credit amount.")
+    if not await debit(sender_id, amount, "gift_sent", reason, f"{key}:sent", actor):
+        raise CreditError(409, "DUPLICATE_REQUEST", "This gift was already submitted.")
+    if not await grant(recipient_id, amount, "gift_received", reason, f"{key}:received", actor, bucket="purchased"):
+        await grant(sender_id, amount, "gift_refund", "Gift could not be completed - credits returned",
+                    f"{key}:refund", "system", bucket="purchased")
+        raise CreditError(409, "CONFLICT", "Gift could not be completed. Credits returned.")
+    return {"sender": await balance(sender_id)}

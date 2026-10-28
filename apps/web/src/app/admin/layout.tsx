@@ -8,6 +8,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   BadgeIndianRupee,
   BarChart3,
+  CheckCheck,
   Coins,
   Gift,
   LayoutDashboard,
@@ -27,6 +28,7 @@ import { useAuth } from "@/modules/auth/auth-context";
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/approvals", label: "Approvals", icon: CheckCheck },
   { href: "/admin/subscriptions", label: "Subscriptions", icon: Wallet },
   { href: "/admin/plans", label: "Plans & Pricing", icon: BadgeIndianRupee },
   { href: "/admin/credits", label: "Credit Management", icon: Coins },

@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+import referrals
 from db import db
 
 COOKIE = "pos_session"
@@ -193,7 +194,7 @@ def origin_of(request: Request) -> str | None:
     return f"https://{host}"
 
 
-async def issue_session(user: dict, request: Request, response: Response) -> dict:
+async def issue_session(user: dict, request: Request, response: Response, mfa_verified: bool = False) -> dict:
     token = secrets.token_urlsafe(32)
     ua = request.headers.get("user-agent", "")[:300]
     plat, name = platform_of(ua)
@@ -209,6 +210,7 @@ async def issue_session(user: dict, request: Request, response: Response) -> dic
         "id": str(uuid.uuid4()), "user_id": user["id"], "token_hash": sha(token), "device_id": device["id"],
         "ip": client_ip(request), "user_agent": ua, "device_name": name, "platform": plat,
         "created_at": now(), "last_seen_at": now(), "expires_at": expires, "revoked_at": None,
+        "mfa_verified_at": now() if mfa_verified else None,
     })
     secure = request.headers.get("x-forwarded-proto", "https") == "https"
     response.set_cookie(COOKIE, token, max_age=int(SESSION_TTL.total_seconds()), httponly=True, samesite="lax", secure=secure, path="/")
@@ -255,6 +257,7 @@ class RegisterIn(BaseModel):
     displayName: str
     password: str
     email: str | None = None
+    referralCode: str | None = Field(default=None, max_length=32)
 
 
 @router.post("/auth/register", status_code=201)
@@ -272,6 +275,11 @@ async def register(body: RegisterIn, request: Request, response: Response):
         raise ApiError(409, "CONFLICT_ALREADY_EXISTS", "That handle is already taken.", [{"field": "handle", "issue": "already taken"}])
     if email and await db.users.find_one({"email": email}):
         raise ApiError(409, "CONFLICT_ALREADY_EXISTS", "That email is already registered.", [{"field": "email", "issue": "already registered"}])
+    referrer = None
+    if body.referralCode:
+        referrer = await referrals.find_referrer(body.referralCode)
+        if not referrer:
+            raise invalid("referralCode", "isn't a valid referral code", "Registration failed schema validation.")
     user = {
         "id": str(uuid.uuid4()), "handle": handle, "email": email, "display_name": body.displayName.strip(),
         "password_hash": hash_password(body.password), "timezone": "UTC", "locale": "en", "avatar_url": None,
@@ -284,6 +292,13 @@ async def register(body: RegisterIn, request: Request, response: Response):
 
     await ensure_credit_account(user["id"])
     await grant_trial(user["id"])
+    await referrals.ensure_code(user)
+    if referrer:
+        try:
+            await referrals.reward(referrer, user)
+        except Exception:
+            # A referral problem must never block registration.
+            pass
     return await issue_session(user, request, response)
 
 
@@ -306,6 +321,9 @@ async def login(body: LoginIn, request: Request, response: Response):
         await db.login_attempts.insert_one({"key": key, "ident": ident, "at": now()})
         raise ApiError(401, "INVALID_CREDENTIALS", "Incorrect handle/email or password.")
     await db.login_attempts.delete_many({"key": key})
+    if user.get("mfa_enabled"):
+        challenge = await create_token(user["id"], "mfa", timedelta(minutes=5))
+        return {"mfaRequired": True, "challenge": challenge}
     return await issue_session(user, request, response)
 
 

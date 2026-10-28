@@ -15,6 +15,7 @@ import {
 } from "recharts";
 
 import { Button } from "@/components/ui/button";
+import { Drawer } from "@/components/ui/drawer";
 import { useToast } from "@/components/ui/toast";
 
 import {
@@ -423,7 +424,7 @@ function BulkCredits({ ids, onDone }: { ids: string[]; onDone: () => void }) {
   const submit = async () => {
     setBusy(true);
     try {
-      const result = await adminSend<{ applied: number; failed: number; skipped: number }>(
+      const result = await adminSend<{ applied?: number; failed?: number; skipped?: number; approval_required?: boolean }>(
         "users/bulk-credits", "POST",
         {
           user_ids: ids,
@@ -431,9 +432,13 @@ function BulkCredits({ ids, onDone }: { ids: string[]; onDone: () => void }) {
           reason: reason.trim(),
           requestId: `bulk-${crypto.randomUUID()}`,
         });
-      toast(`${result.applied} updated · ${result.failed} failed · ${result.skipped} skipped`, {
-        tone: result.failed ? "danger" : "success",
-      });
+      if (result.approval_required) {
+        toast("Sent for approval by a second admin", { tone: "success" });
+      } else {
+        toast(`${result.applied ?? 0} updated - ${result.failed ?? 0} failed - ${result.skipped ?? 0} skipped`, {
+          tone: result.failed ? "danger" : "success",
+        });
+      }
       setReason("");
       onDone();
     } catch (err) {
@@ -469,14 +474,18 @@ function BulkRoles({ ids, onDone }: { ids: string[]; onDone: () => void }) {
   const submit = async () => {
     setBusy(true);
     try {
-      const result = await adminSend<{ changed: number; skipped: number }>("users/bulk-role", "PUT", {
+      const result = await adminSend<{ changed?: number; skipped?: number; approval_required?: boolean }>("users/bulk-role", "PUT", {
         user_ids: ids,
         role: role === "__none__" ? null : role,
         reason: reason.trim(),
       });
-      toast(`${result.changed} roles updated · ${result.skipped} skipped`, {
-        tone: result.skipped ? "danger" : "success",
-      });
+      if (result.approval_required) {
+        toast("Sent for approval by a second admin", { tone: "success" });
+      } else {
+        toast(`${result.changed ?? 0} roles updated - ${result.skipped ?? 0} skipped`, {
+          tone: result.skipped ? "danger" : "success",
+        });
+      }
       setReason("");
       onDone();
     } catch (err) {
@@ -753,6 +762,210 @@ function PricingSimulator({ actions }: { actions: ActionInsight[] }) {
         {(projected - current).toLocaleString()})
       </p>
     </Panel>
+  );
+}
+
+type ApprovalRow = {
+  id: string;
+  action: string;
+  target_user_id: string;
+  target_handle: string;
+  payload: { amount?: number; role?: string | null; user_ids?: string[] };
+  reason: string;
+  requested_by_handle: string;
+  requested_role: string;
+  status: string;
+  created_at: string;
+  decided_by_handle: string | null;
+  decided_at: string | null;
+  decision_reason: string | null;
+};
+
+const CREDIT_APPROVAL_ROLES = ["super_admin", "billing_admin", "support_admin"];
+
+export function AdminApprovals() {
+  const { role } = useAdminRole();
+  const { data, error, reload } = useAdminData<{ approvals: ApprovalRow[] }>("approvals?status=pending");
+  const [selected, setSelected] = React.useState<ApprovalRow | null>(null);
+  return (
+    <LivePage
+      title="Approvals"
+      description="Large credit changes and role changes need a second admin. You can't approve your own request."
+    >
+      {!data ? (
+        <LoadState error={error} testId="admin-approvals-state" />
+      ) : (
+        <>
+          <p className="text-xs text-ink-3" data-testid="admin-approvals-count">
+            {data.approvals.length} request{data.approvals.length === 1 ? "" : "s"} waiting.
+          </p>
+          <DataTable
+            testId="admin-approvals-table"
+            rows={data.approvals}
+            search={(row) => `${row.action} ${row.target_handle} ${row.requested_by_handle} ${row.reason}`}
+            onRowClick={setSelected}
+            columns={[
+              { key: "created_at", label: "When", render: (r) => dateTime(r.created_at) },
+              { key: "action", label: "Action", render: (r) => <StatusBadge value={r.action} /> },
+              { key: "target_handle", label: "Target", render: (r) => `@${r.target_handle}` },
+              { key: "requested_by_handle", label: "Requested by", render: (r) => `@${r.requested_by_handle}` },
+              {
+                key: "payload",
+                label: "Request",
+                render: (r) =>
+                  r.action.includes("credit")
+                    ? `${r.payload.amount ?? 0} credits${r.payload.user_ids ? ` × ${r.payload.user_ids.length} users` : ""}`
+                    : `Role: ${r.payload.role ?? "remove"}`,
+              },
+              { key: "reason", label: "Reason" },
+            ]}
+          />
+        </>
+      )}
+      {selected && (
+        <ApprovalDrawer
+          approval={selected}
+          role={role}
+          onClose={() => setSelected(null)}
+          onDone={() => {
+            setSelected(null);
+            reload();
+          }}
+        />
+      )}
+    </LivePage>
+  );
+}
+
+function ApprovalDrawer({
+  approval,
+  role,
+  onClose,
+  onDone,
+}: {
+  approval: ApprovalRow;
+  role: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [needsMfa, setNeedsMfa] = React.useState(false);
+  const [mfaCode, setMfaCode] = React.useState("");
+  const canApprove =
+    role === "super_admin" ||
+    (approval.action.includes("credit") && CREDIT_APPROVAL_ROLES.includes(role));
+  const decide = async (decision: "approve" | "reject") => {
+    setBusy(true);
+    try {
+      await adminSend(`approvals/${approval.id}/${decision}`, "POST", { reason: reason.trim() });
+      toast(decision === "approve" ? "Request approved" : "Request rejected", { tone: "success" });
+      onDone();
+    } catch (err) {
+      const message = (err as Error).message;
+      if (message.toLowerCase().includes("authenticator")) setNeedsMfa(true);
+      toast(message, { tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const stepUp = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/v1/auth/mfa/step-up", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: mfaCode.trim() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { detail?: string };
+      if (!res.ok) throw new Error(data.detail ?? "Verification failed.");
+      setNeedsMfa(false);
+      setMfaCode("");
+      toast("Verified. You can approve or reject now.", { tone: "success" });
+    } catch (err) {
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Drawer open onClose={onClose} title="Approval request" className="sm:max-w-lg">
+      <div className="space-y-4 p-5">
+        <dl className="grid grid-cols-2 gap-3 text-sm">
+          {[
+            ["Action", approval.action.replace(/_/g, " ")],
+            ["Target", `@${approval.target_handle}`],
+            ["Requested by", `@${approval.requested_by_handle}`],
+            ["Request", approval.action.includes("credit")
+              ? `${approval.payload.amount ?? 0} credits${approval.payload.user_ids ? ` for ${approval.payload.user_ids.length} users` : ""}`
+              : `Role: ${approval.payload.role ?? "remove"}`],
+            ["Reason", approval.reason],
+            ["Created", dateTime(approval.created_at)],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-line bg-surface-2 p-3">
+              <dt className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">{label}</dt>
+              <dd className="mt-1 font-medium text-ink">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        {canApprove ? (
+          <>
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-medium text-ink-2">Decision note (recorded in the audit log)</span>
+              <input
+                className="h-9 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink focus:border-accent focus:outline-none"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Why are you approving or rejecting this?"
+              />
+            </label>
+            {needsMfa && (
+              <div className="rounded-xl border border-amber-300/60 bg-amber-50 p-3">
+                <p className="text-xs font-medium text-amber-900">
+                  Enter your authenticator code to unlock this decision.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    className="h-9 w-36 rounded-lg border border-line bg-bg px-3 text-sm text-ink focus:border-accent focus:outline-none"
+                    value={mfaCode}
+                    onChange={(event) => setMfaCode(event.target.value.trim())}
+                    inputMode="numeric"
+                    maxLength={8}
+                    placeholder="6-digit code"
+                    aria-label="Authenticator code"
+                  />
+                  <Button size="sm" loading={busy} disabled={mfaCode.length < 6} onClick={() => void stepUp()}>
+                    Verify
+                  </Button>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                loading={busy}
+                disabled={reason.trim().length < 5}
+                onClick={() => void decide("approve")}
+              >
+                Approve
+              </Button>
+              <Button
+                variant="danger"
+                loading={busy}
+                disabled={reason.trim().length < 5}
+                onClick={() => void decide("reject")}
+              >
+                Reject
+              </Button>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-ink-3">Your role can view this request but not decide it.</p>
+        )}
+      </div>
+    </Drawer>
   );
 }
 

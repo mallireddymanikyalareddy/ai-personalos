@@ -23,11 +23,14 @@ import digest  # noqa: E402
 from admin import promote_configured_admins, router as admin_router  # noqa: E402
 from auth import ApiError, error_response, iso, public_user, require_auth, router as auth_router  # noqa: E402
 import alerts  # noqa: E402
+import approvals  # noqa: E402
 import credits  # noqa: E402
 import entitlements  # noqa: E402
+import mfa  # noqa: E402
 import platform_settings  # noqa: E402
 import promotions  # noqa: E402
 import reconciliation  # noqa: E402
+import referrals  # noqa: E402
 from admin_ops import router as admin_ops_router  # noqa: E402
 from billing_admin import public_router as billing_public_router, router as billing_admin_router  # noqa: E402
 from plan_admin import admin_router as plan_admin_router, public_router as plans_router  # noqa: E402
@@ -102,9 +105,11 @@ async def lifespan(_: FastAPI):
     await platform_settings.ensure_indexes()
     await platform_settings.seed_settings()
     await alerts.ensure_indexes()
+    await approvals.ensure_indexes()
     await reconciliation.ensure_indexes()
     await run_once("stage8_credit_buckets", credits.backfill_credit_buckets)
     await run_once("stage8_promotion_remaining", promotions.backfill_remaining)
+    await run_once("stage9_referral_codes", referrals.backfill_codes)
     await run_once("stage4_trial_credits_10", credits.backfill_trial_credits)
     await entitlements.run_due()
     await promotions.expire_due()
@@ -125,6 +130,7 @@ app.include_router(plan_admin_router)
 app.include_router(plans_router)
 app.include_router(billing_admin_router)
 app.include_router(billing_public_router)
+app.include_router(mfa.router)
 
 
 @app.middleware("http")
@@ -290,6 +296,41 @@ async def my_credit_history(limit: int = 50, auth=Depends(require_auth)):
 @app.get("/api/v1/credits/forecast")
 async def my_credit_forecast(auth=Depends(require_auth)):
     return await credits.forecast(auth[0]["id"])
+
+
+@app.get("/api/v1/referrals")
+async def my_referrals(auth=Depends(require_auth)):
+    return await referrals.summary(auth[0])
+
+
+class GiftIn(BaseModel):
+    identifier: str = Field(min_length=1, max_length=120)
+    amount: int = Field(ge=1, le=10000)
+    note: str | None = Field(default=None, max_length=200)
+    requestId: str = Field(min_length=8, max_length=64)
+
+
+@app.post("/api/v1/credits/gift")
+async def gift_credits(body: GiftIn, auth=Depends(require_auth)):
+    sender = auth[0]
+    ident = body.identifier.strip().lower()
+    recipient = await db.users.find_one(
+        {"$or": [{"id": body.identifier}, {"handle": ident}, {"email": ident}]}, {"_id": 0, "id": 1, "handle": 1})
+    if not recipient:
+        return JSONResponse({"detail": "That person isn't on PersonalOS.", "code": "NOT_FOUND"}, status_code=404)
+    if recipient["id"] == sender["id"]:
+        return JSONResponse({"detail": "You can't gift credits to yourself."}, status_code=400)
+    settings = await platform_settings.get_settings()
+    if body.amount > int(settings.get("giftMaxCredits", 1000)):
+        return JSONResponse({"detail": f"You can gift up to {settings.get('giftMaxCredits', 1000)} credits at a time."},
+                            status_code=400)
+    reason = (body.note or "").strip() or f"Gift to @{recipient['handle']}"
+    try:
+        result = await credits.gift(sender["id"], recipient["id"], body.amount, reason,
+                                    f"gift:{body.requestId}", sender["handle"])
+    except credits.CreditError as exc:
+        return JSONResponse({"detail": exc.message, "code": exc.code}, status_code=exc.status)
+    return {**result, "amount": body.amount, "recipientHandle": recipient["handle"]}
 
 
 async def reserve_or_response(user_id: str, body: ChatRequest):

@@ -15,12 +15,14 @@ export interface AuthContextValue {
   status: AuthStatus;
   profile: ProfileResponse | null;
   refresh: () => Promise<void>;
-  login: (identifier: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<{ mfaRequired: boolean; challenge?: string }>;
+  completeMfa: (challenge: string, code: string) => Promise<void>;
   register: (input: {
     handle: string;
     displayName: string;
     password: string;
     email?: string;
+    referralCode?: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -84,14 +86,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = React.useCallback(
     async (identifier: string, password: string) => {
-      await authApi.login({ identifier, password });
+      const result = await authApi.login({ identifier, password });
+      if ("mfaRequired" in result) {
+        return { mfaRequired: true, challenge: result.challenge };
+      }
+      await refresh();
+      return { mfaRequired: false };
+    },
+    [refresh],
+  );
+
+  const completeMfa = React.useCallback(
+    async (challenge: string, code: string) => {
+      await authApi.verifyMfa({ challenge, code });
       await refresh();
     },
     [refresh],
   );
 
   const register = React.useCallback(
-    async (input: { handle: string; displayName: string; password: string; email?: string }) => {
+    async (input: { handle: string; displayName: string; password: string; email?: string; referralCode?: string }) => {
       await authApi.register(input);
       await refresh();
     },
@@ -109,8 +123,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = React.useMemo<AuthContextValue>(
-    () => ({ status, profile, refresh, login, register, logout }),
-    [status, profile, refresh, login, register, logout],
+    () => ({ status, profile, refresh, login, completeMfa, register, logout }),
+    [status, profile, refresh, login, completeMfa, register, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

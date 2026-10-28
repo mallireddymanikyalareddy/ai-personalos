@@ -57,6 +57,8 @@ import { type LocalSettingsPatch } from "@/lib/settings-sync";
 import { useAuth } from "@/modules/auth/auth-context";
 import { useAppState, useOS } from "@/store/use-os";
 import { CreditsCard } from "@/modules/settings/credits-card";
+import { ReferralCard } from "@/modules/settings/referral-card";
+import { MfaCard } from "@/modules/settings/mfa-card";
 import { WeeklyEmailCard } from "@/modules/settings/weekly-email-card";
 import { LifeAreasCard } from "@/modules/settings/life-areas-card";
 import { FinishSetupBanner } from "@/modules/today/finish-setup-banner";
@@ -1294,6 +1296,7 @@ function SettingsContent() {
           )}
 
           {tab === "ai" && <CreditsCard />}
+          {tab === "ai" && <ReferralCard />}
 
           {tab === "ai" && prefs && (
             <>
@@ -1556,6 +1559,8 @@ function SettingsContent() {
                   </p>
                 )}
               </Card>
+
+              <MfaCard />
 
               <Card
                 title="Change password"

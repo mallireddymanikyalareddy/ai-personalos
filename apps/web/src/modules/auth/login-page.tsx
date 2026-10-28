@@ -22,7 +22,7 @@ const HIGHLIGHTS = [
 const REMEMBER_KEY = "personalos.keep-signed-in";
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, completeMfa } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { start: startOAuth } = useOAuthStart();
@@ -34,6 +34,8 @@ export function LoginPage() {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<unknown>(null);
   const [localError, setLocalError] = React.useState<string | null>(null);
+  const [mfaChallenge, setMfaChallenge] = React.useState<string | null>(null);
+  const [mfaCode, setMfaCode] = React.useState("");
 
   React.useEffect(() => {
     try {
@@ -62,7 +64,12 @@ export function LoginPage() {
 
     setBusy(true);
     try {
-      await login(identifier.trim(), password);
+      const result = await login(identifier.trim(), password);
+      if (result.mfaRequired && result.challenge) {
+        setMfaChallenge(result.challenge);
+        setBusy(false);
+        return;
+      }
       try {
         window.localStorage.setItem(REMEMBER_KEY, String(remember));
       } catch {
@@ -70,6 +77,22 @@ export function LoginPage() {
       }
       const next = searchParams.get("next");
       router.replace(next && /^\/[a-z0-9/_-]*$/i.test(next) && !next.startsWith("//") ? next : "/today");
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  };
+
+  const onVerifyMfa = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!mfaChallenge || mfaCode.trim().length < 6) return;
+    setBusy(true);
+    setError(null);
+    setLocalError(null);
+    try {
+      await completeMfa(mfaChallenge, mfaCode.trim());
+      const next = searchParams.get("next");
+      router.replace(next && /^[a-z0-9/_-]*$/i.test(next) && !next.startsWith("//") ? next : "/today");
     } catch (caught) {
       setError(caught);
       setBusy(false);
@@ -91,6 +114,56 @@ export function LoginPage() {
         ? "border-[#E4A5A0] focus:border-[#D92D20] focus:ring-[#D92D20]/10"
         : "border-[#D3D5F5] focus:border-[#7B3FFC] focus:ring-[#7B3FFC]/10"
     }`;
+
+  if (mfaChallenge) {
+    return (
+      <div className="grid min-h-dvh place-items-center px-4 py-10" style={{ background: AUTH.pageGradient }}>
+        <form onSubmit={onVerifyMfa} className="w-full max-w-md rounded-[28px] bg-[#FBFAFE] p-8 shadow-[0_30px_80px_-32px_rgba(62,38,150,0.28)]">
+          <BrandMark size="md" />
+          <h1 className="mt-6 text-2xl font-extrabold tracking-tight" style={{ color: INK }}>
+            Two-factor authentication
+          </h1>
+          <p className="mt-2 text-sm" style={{ color: BODY }}>
+            Enter the 6-digit code from your authenticator app, or one of your recovery codes.
+          </p>
+          {alertMessage && (
+            <p role="alert" className="mt-4 rounded-xl px-3 py-2 text-sm" style={{ background: "#FDECEA", color: DANGER }}>
+              {alertMessage}
+            </p>
+          )}
+          <input
+            autoFocus
+            data-testid="login-mfa-code"
+            value={mfaCode}
+            onChange={(event) => setMfaCode(event.target.value.trim())}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={8}
+            placeholder="123456"
+            className="mt-5 h-14 w-full rounded-xl border border-[#D3D5F5] bg-white px-4 text-center text-xl tracking-[0.3em] outline-none focus:border-[#7B3FFC] focus:ring-4 focus:ring-[#7B3FFC]/10"
+          />
+          <button
+            type="submit"
+            disabled={busy || mfaCode.length < 6}
+            className="mt-4 h-12 w-full rounded-xl bg-[#6706E2] text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {busy ? "Verifying..." : "Verify and sign in"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMfaChallenge(null);
+              setMfaCode("");
+              setError(null);
+            }}
+            className="mt-3 w-full text-sm font-medium text-[#5B3FB4] hover:underline"
+          >
+            Back to sign in
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-dvh" style={{ background: AUTH.pageGradient }}>

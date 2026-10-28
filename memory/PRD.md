@@ -120,3 +120,15 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 ## 2026-06 - Usage intelligence and pricing simulator
 - Added per-request input-token estimates and configurable input/output token cost rates. Admin AI Usage now shows month-to-date/projected spend, cost per credit, usage by action/model, estimated plan margins and a client-side pricing simulator.
 - Added GET /api/v1/admin/usage/insights and POST /api/v1/admin/usage/simulate.
+
+## 2026-06 - Maker-checker approvals
+- Credit changes at or above the configurable approval threshold and all role changes now create an approval request instead of applying immediately. Bulk credit/role actions are covered too.
+- Added /admin/approvals with pending list and approve/reject decisions; requesters cannot approve their own request, role permissions are enforced, and decisions are audited.
+
+## 2026-06 - Referrals and credit gifting
+- Every account gets a unique referral code and summary endpoint. Invite links prefill /register?ref=CODE, and new sign-ups award configurable credits to both referrer and referee (one referral per account).
+- Added user-to-user credit gifting (bounded by giftMaxCredits) with gift_sent/gift_received ledger entries and idempotent request ids.
+
+## 2026-06 - MFA and admin step-up
+- Added TOTP authenticator MFA with one-time recovery codes, setup/disable in Settings > Security, and a login challenge before a session is issued.
+- Admin approval decisions now require a step-up code (15-minute window) when the admin has MFA enabled.

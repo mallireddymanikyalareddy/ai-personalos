@@ -826,6 +826,10 @@ type Settings = {
   maxRequestsPerMinute: number;
   monthlySpendAlertPaise: number;
   creditValuePaise: number;
+  approvalThresholdCredits: number;
+  referralReferrerCredits: number;
+  referralRefereeCredits: number;
+  giftMaxCredits: number;
   inputCostPaisePerMTok: number;
   outputCostPaisePerMTok: number;
   lowCreditThreshold: number;
@@ -845,6 +849,10 @@ export function AdminSettings() {
     if (data) setForm({
       ...data.settings,
       creditValuePaise: data.settings.creditValuePaise ?? 250,
+      approvalThresholdCredits: data.settings.approvalThresholdCredits ?? 1000,
+      referralReferrerCredits: data.settings.referralReferrerCredits ?? 10,
+      referralRefereeCredits: data.settings.referralRefereeCredits ?? 5,
+      giftMaxCredits: data.settings.giftMaxCredits ?? 1000,
       inputCostPaisePerMTok: data.settings.inputCostPaisePerMTok ?? 0,
       outputCostPaisePerMTok: data.settings.outputCostPaisePerMTok ?? 0,
     });
@@ -893,10 +901,26 @@ export function AdminSettings() {
                   <input className={field} type="number" disabled={!canWrite} value={form.lowCreditThreshold} onChange={(e) => set("lowCreditThreshold", Number(e.target.value))} />
                 </Field>
               </div>
-              <Field label="Estimated value per AI credit" hint="Used only to estimate monthly AI spend for the alert.">
-                <input className={field} type="number" step="0.01" disabled={!canWrite} value={form.creditValuePaise / 100} onChange={(e) => set("creditValuePaise", Math.round(Number(e.target.value) * 100))} />
-                <span className="mt-1 block text-xs text-ink-3">{inr(form.creditValuePaise)}</span>
-              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Estimated value per AI credit" hint="Used only to estimate monthly AI spend.">
+                  <input className={field} type="number" step="0.01" disabled={!canWrite} value={form.creditValuePaise / 100} onChange={(e) => set("creditValuePaise", Math.round(Number(e.target.value) * 100))} />
+                  <span className="mt-1 block text-xs text-ink-3">{inr(form.creditValuePaise)}</span>
+                </Field>
+                <Field label="Approval threshold (credits)" hint="Credit changes at or above this need a second admin. 0 disables approvals.">
+                  <input className={field} type="number" min={0} disabled={!canWrite} value={form.approvalThresholdCredits} onChange={(e) => set("approvalThresholdCredits", Number(e.target.value))} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Referrer credits">
+                  <input className={field} type="number" min={0} disabled={!canWrite} value={form.referralReferrerCredits} onChange={(e) => set("referralReferrerCredits", Number(e.target.value))} />
+                </Field>
+                <Field label="New-user credits">
+                  <input className={field} type="number" min={0} disabled={!canWrite} value={form.referralRefereeCredits} onChange={(e) => set("referralRefereeCredits", Number(e.target.value))} />
+                </Field>
+                <Field label="Gift max">
+                  <input className={field} type="number" min={1} disabled={!canWrite} value={form.giftMaxCredits} onChange={(e) => set("giftMaxCredits", Number(e.target.value))} />
+                </Field>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Input cost / 1M tokens" hint="Provider cost in rupees; 0 disables estimates.">
                   <input className={field} type="number" step="0.01" disabled={!canWrite} value={form.inputCostPaisePerMTok / 100} onChange={(e) => set("inputCostPaisePerMTok", Math.round(Number(e.target.value) * 100))} />
@@ -942,6 +966,10 @@ export function AdminSettings() {
                         max_requests_per_minute: form.maxRequestsPerMinute,
                         monthly_spend_alert_paise: form.monthlySpendAlertPaise,
                         credit_value_paise: form.creditValuePaise,
+                        approval_threshold_credits: form.approvalThresholdCredits,
+                        referral_referrer_credits: form.referralReferrerCredits,
+                        referral_referee_credits: form.referralRefereeCredits,
+                        gift_max_credits: form.giftMaxCredits,
                         input_cost_paise_per_mtok: form.inputCostPaisePerMTok,
                         output_cost_paise_per_mtok: form.outputCostPaisePerMTok,
                         low_credit_threshold: form.lowCreditThreshold,

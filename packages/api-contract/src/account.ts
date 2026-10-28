@@ -160,6 +160,7 @@ export const registerSchema = z.object({
   email: z.email().optional(),
   password: z.string().min(10).max(200),
   displayName: z.string().min(1).max(64),
+  referralCode: z.string().max(32).optional(),
 });
 
 export const loginSchema = z.object({
