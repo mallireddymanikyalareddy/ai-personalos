@@ -224,6 +224,9 @@ export type AdminUserRow = {
   roleSource: string | null;
   available: number;
   reserved: number;
+  included: number;
+  promotional: number;
+  purchased: number;
 };
 
 export function AdminUsers() {

@@ -96,7 +96,7 @@ async def seed_pricing() -> dict:
 
 def empty_account(user_id: str) -> dict:
     return {"user_id": user_id, "available": 0, "reserved": 0, "included": 0, "promotional": 0,
-            "created_at": now(), "updated_at": now()}
+            "purchased": 0, "created_at": now(), "updated_at": now()}
 
 
 async def ensure_credit_account(user_id: str) -> None:

@@ -33,7 +33,9 @@ def public_admin_user(u: dict, acc: dict | None) -> dict:
     return {"id": u["id"], "handle": u["handle"], "email": u.get("email"), "displayName": u.get("display_name"),
             "joined": iso(u.get("created_at")), "emailVerified": bool(u.get("email_verified_at")),
             "role": u.get("admin_role"), "roleSource": u.get("admin_role_source"),
-            "available": (acc or {}).get("available", 0), "reserved": (acc or {}).get("reserved", 0)}
+            "available": (acc or {}).get("available", 0), "reserved": (acc or {}).get("reserved", 0),
+            "included": (acc or {}).get("included", 0), "promotional": (acc or {}).get("promotional", 0),
+            "purchased": (acc or {}).get("purchased", 0)}
 
 
 @router.get("/users")
@@ -133,9 +135,14 @@ async def sum_credits(match: dict) -> int:
 @router.get("/credits/summary")
 async def credit_summary(_=Depends(require_role())):
     rows = await db.credit_accounts.aggregate([{"$group": {
-        "_id": None, "accounts": {"$sum": 1}, "available": {"$sum": "$available"}, "reserved": {"$sum": "$reserved"}}}]).to_list(1)
-    totals = rows[0] if rows else {"accounts": 0, "available": 0, "reserved": 0}
+        "_id": None, "accounts": {"$sum": 1}, "available": {"$sum": "$available"}, "reserved": {"$sum": "$reserved"},
+        "included": {"$sum": "$included"}, "promotional": {"$sum": "$promotional"},
+        "purchased": {"$sum": "$purchased"}}}]).to_list(1)
+    totals = rows[0] if rows else {"accounts": 0, "available": 0, "reserved": 0, "included": 0,
+                                   "promotional": 0, "purchased": 0}
     return {"accounts": totals["accounts"], "available": totals["available"], "reserved": totals["reserved"],
+            "included": totals.get("included", 0), "promotional": totals.get("promotional", 0),
+            "purchased": totals.get("purchased", 0),
             "ledgerEntries": await db.credit_ledger.count_documents({}),
             "consumed": await sum_credits({"type": "charge"}),
             "granted": await sum_credits({"type": {"$in": ["trial_grant", "admin_grant", "plan_grant",

@@ -81,6 +81,11 @@ function UserDetail({
         />
         <Balance label="Held" value={u.reserved} testId="admin-user-reserved" />
       </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Balance label="Included" value={u.included} testId="admin-user-included" />
+        <Balance label="Promotional" value={u.promotional} testId="admin-user-promotional" />
+        <Balance label="Purchased / bonus" value={u.purchased} testId="admin-user-purchased" />
+      </div>
       {CREDIT_ROLES.includes(role) && (
         <CreditForm userId={userId} onDone={changed} />
       )}

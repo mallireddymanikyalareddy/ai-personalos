@@ -99,6 +99,8 @@ async def lifespan(_: FastAPI):
     await promotions.ensure_indexes()
     await platform_settings.ensure_indexes()
     await platform_settings.seed_settings()
+    await run_once("stage8_credit_buckets", credits.backfill_credit_buckets)
+    await run_once("stage8_promotion_remaining", promotions.backfill_remaining)
     await run_once("stage4_trial_credits_10", credits.backfill_trial_credits)
     await entitlements.run_due()
     await promotions.expire_due()

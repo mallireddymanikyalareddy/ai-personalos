@@ -97,7 +97,7 @@ class TestReads:
         r = demo.get(f"{API}/admin/users/{target[2]}")
         assert r.status_code == 200
         d = r.json()
-        assert set(d.keys()) == {"user", "ledger", "usage"}
+        assert set(d.keys()) == {"user", "ledger", "subscription", "usage"}
         assert any(e["type"] == "trial_grant" for e in d["ledger"])
         body = r.text.lower()
         for k in ("password", "notes", "journal", "_id"):

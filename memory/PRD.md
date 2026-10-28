@@ -93,3 +93,7 @@ Import https://github.com/mallireddymanikyalareddy/ai-personalos and get it runn
 - backend/billing_admin.py: live admin APIs for subscriptions, promotions and settings with role gates and audit logging. Admin Subscriptions, Promotions & Grants and Platform Settings pages are now live.
 - Subscriber UI reads the low-credit threshold from settings; an optional AI-spend confirmation modal is controlled by the ai_confirmation_modal flag.
 - Razorpay checkout/webhooks/reconciliation remain pending and are the only uncompleted stage.
+
+## 2026-06 - Exact credit buckets
+- credit_accounts now track included, promotional and purchased credits. Reservations hold and refund the same buckets in priority order (promotional -> included -> purchased), so monthly resets, promotion expiry and admin removals are exact rather than inferred from charges.
+- Startup migrations stage8_credit_buckets and stage8_promotion_remaining backfill older accounts and promotion grants. The admin user drawer shows the bucket breakdown.

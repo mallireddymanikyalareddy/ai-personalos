@@ -74,31 +74,20 @@ async def find_user(identifier: str) -> dict:
     return user
 
 
-async def _charges_since(user_id: str, since: datetime) -> int:
-    rows = await db.credit_ledger.aggregate([
-        {"$match": {"user_id": user_id, "type": "charge", "created_at": {"$gte": since}}},
-        {"$group": {"_id": None, "n": {"$sum": "$credits"}}},
-    ]).to_list(1)
-    return rows[0]["n"] if rows else 0
-
-
-async def _expire_included(user_id: str, before: datetime, key: str, actor: str) -> int:
+async def expire_included(user_id: str, key: str, actor: str) -> int:
+    """Expire the exact unspent included-credit bucket (held credits are not included)."""
     acc = await db.credit_accounts.find_one({"user_id": user_id}, {"_id": 0})
-    total = (acc or {}).get("included", 0)
-    since = (acc or {}).get("included_since")
-    if not acc or total <= 0 or not since or utc(since) >= before:
-        return 0
-    spent = await _charges_since(user_id, utc(since))
-    unused = max(0, min(total - spent, acc.get("available", 0)))
+    unused = max(0, min((acc or {}).get("included", 0), (acc or {}).get("available", 0)))
     if not unused:
         return 0
     done = await db.credit_accounts.find_one_and_update(
-        {"user_id": user_id, "available": {"$gte": unused}},
-        {"$inc": {"available": -unused}, "$set": {"included": 0, "included_total": 0, "updated_at": now()}})
+        {"user_id": user_id, "available": {"$gte": unused}, "included": {"$gte": unused}},
+        {"$inc": {"available": -unused}, "$set": {"included": 0, "updated_at": now()}})
     if done:
         await credits.write_ledger(user_id, "included_expire", unused, -unused, 0,
-                                   "Unused included credits expired", f"{key}:expire", actor)
-    return unused
+                                   "Unused included credits expired", f"{key}:expire", actor, bucket="included")
+        return unused
+    return 0
 
 
 async def _event(subscription_id: str, kind: str, actor: str, details: dict | None = None) -> None:
@@ -130,12 +119,13 @@ async def grant_period(sub: dict, period_start: datetime, actor: str = "system")
     amount = period_credits(version, sub["billing_period"])
     if sub["billing_period"] == "annual" and not annual_bonus:
         amount = version["monthly_credits"]
-    await _expire_included(sub["user_id"], period_start, key, actor)
+    await expire_included(sub["user_id"], key, actor)
     if amount > 0:
-        await credits.grant(sub["user_id"], amount, "plan_grant", f"{version['name']} included credits", key, actor)
+        await credits.grant(sub["user_id"], amount, "plan_grant", f"{version['name']} included credits", key, actor,
+                            bucket="included")
         await db.credit_accounts.update_one(
             {"user_id": sub["user_id"]},
-            {"$set": {"included": amount, "included_total": amount, "included_since": period_start, "updated_at": now()}})
+            {"$set": {"included_total": amount, "included_since": period_start, "updated_at": now()}})
     else:
         await db.credit_accounts.update_one(
             {"user_id": sub["user_id"]},
@@ -150,7 +140,8 @@ async def grant_period(sub: dict, period_start: datetime, actor: str = "system")
 async def _grant_trial(sub: dict, version: dict, actor: str) -> None:
     amount = version.get("trial_credits", 0)
     if amount > 0:
-        await credits.grant(sub["user_id"], amount, "plan_trial", "Trial credits", f"sub:{sub['id']}:trial", actor)
+        await credits.grant(sub["user_id"], amount, "plan_trial", "Trial credits", f"sub:{sub['id']}:trial", actor,
+                            bucket="purchased")
     await _event(sub["id"], "trial_started", actor, {"credits": amount, "trial_days": version.get("trial_days", 0)})
 
 

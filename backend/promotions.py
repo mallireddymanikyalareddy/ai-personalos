@@ -8,7 +8,7 @@ import platform_settings
 from auth import iso
 from billing import now
 from db import db
-from entitlements import ACTIVE_STATUSES, _charges_since, utc
+from entitlements import ACTIVE_STATUSES, utc
 
 STATUSES = ("draft", "active", "ended")
 
@@ -129,17 +129,15 @@ async def grant_now(promo_id: str, actor: str, reason: str) -> dict:
             continue
         key = f"promo:{promo_id}:{user_id}:{already + 1}"
         applied = await credits.grant(user_id, promo["credits"], "promotion_grant",
-                                      f"{promo['name']} promotional credits", key, actor)
+                                      f"{promo['name']} promotional credits", key, actor, bucket="promotional")
         if not applied:
             skipped += 1
             continue
         await db.promotion_grants.insert_one({
             "id": f"pg_{uuid.uuid4().hex[:12]}", "promotion_id": promo_id, "user_id": user_id,
-            "credits": promo["credits"], "ledger_key": key, "status": "active", "granted_at": now(),
-            "expires_at": expires, "granted_by": actor, "reason": reason,
+            "credits": promo["credits"], "remaining": promo["credits"], "ledger_key": key,
+            "status": "active", "granted_at": now(), "expires_at": expires, "granted_by": actor, "reason": reason,
         })
-        await db.credit_accounts.update_one(
-            {"user_id": user_id}, {"$inc": {"promotional": promo["credits"]}, "$set": {"updated_at": now()}})
         granted += 1
     return {"granted": granted, "skipped": skipped, "creditsEach": promo["credits"]}
 
@@ -152,23 +150,33 @@ async def grants_for(promo_id: str, limit: int = 200) -> list[dict]:
                  "expires_at": iso(r.get("expires_at"))} for r in rows]
 
 
+async def backfill_remaining() -> dict:
+    """One-time repair for grants created before per-grant remaining balances existed."""
+    updated = 0
+    async for grant in db.promotion_grants.find({"remaining": {"$exists": False}}):
+        remaining = grant["credits"] if grant.get("status") == "active" else 0
+        await db.promotion_grants.update_one({"id": grant["id"]}, {"$set": {"remaining": remaining}})
+        updated += 1
+    return {"grants": updated}
+
+
 async def expire_due(limit: int = 1000) -> int:
     changed = 0
     async for grant in db.promotion_grants.find(
             {"status": "active", "expires_at": {"$ne": None, "$lte": now()}}).limit(limit):
+        remaining = max(0, grant.get("remaining", 0))
         acc = await db.credit_accounts.find_one({"user_id": grant["user_id"]}, {"_id": 0})
-        spent = await _charges_since(grant["user_id"], utc(grant["granted_at"]))
-        unused = max(0, min(grant["credits"] - spent, (acc or {}).get("available", 0)))
+        unused = min(remaining, max(0, (acc or {}).get("promotional", 0)), max(0, (acc or {}).get("available", 0)))
         if unused:
-            promo_part = min(unused, max(0, (acc or {}).get("promotional", 0)))
             done = await db.credit_accounts.find_one_and_update(
-                {"user_id": grant["user_id"], "available": {"$gte": unused}},
-                {"$inc": {"available": -unused, "promotional": -promo_part}, "$set": {"updated_at": now()}})
+                {"user_id": grant["user_id"], "available": {"$gte": unused}, "promotional": {"$gte": unused}},
+                {"$inc": {"available": -unused, "promotional": -unused}, "$set": {"updated_at": now()}})
             if done:
                 await credits.write_ledger(grant["user_id"], "promotion_expire", unused, -unused, 0,
-                                           "Promotional credits expired", f"{grant['ledger_key']}:expire", "system")
+                                           "Promotional credits expired", f"{grant['ledger_key']}:expire", "system",
+                                           bucket="promotional")
         await db.promotion_grants.update_one(
-            {"id": grant["id"]}, {"$set": {"status": "expired", "expired_at": now()}})
+            {"id": grant["id"]}, {"$set": {"status": "expired", "remaining": 0, "expired_at": now()}})
         changed += 1
     async for promo in db.promotions.find({"status": "active", "ends_at": {"$lte": now()}}).limit(limit):
         await db.promotions.update_one({"id": promo["id"]}, {"$set": {"status": "ended", "updated_at": now()}})
