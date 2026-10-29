@@ -130,7 +130,7 @@ export function TasksModule() {
   const [answer, setAnswer] = React.useState<string | null>(null);
   const [detailId, setDetailId] = React.useState<ID | null>(null);
   const [period, setPeriod] = React.useState("This Month");
-  const [showCompleted, setShowCompleted] = React.useState(true);
+  const [showCompleted, setShowCompleted] = React.useState(false);
   const [lifeAreaFilter, setLifeAreaFilter] = React.useState<ID | "all">("all");
   const [includeArchived, setIncludeArchived] = React.useState(false);
   const [sort, setSort] = React.useState<SortKey>("due");

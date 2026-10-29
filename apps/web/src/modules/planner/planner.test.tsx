@@ -337,7 +337,7 @@ describe("planner regressions", () => {
   it("shows the active AI model in the assistant", () => {
     os.updateSettings({ aiProvider: "openai" });
     renderPlanner();
-    expect(within(screen.getByTestId("planner-assistant")).getByText("OpenAI GPT")).toBeDefined();
+    expect(within(screen.getByTestId("planner-assistant")).getByText("GPT 6 Luna")).toBeDefined();
   });
 
   it("explains that planning is off instead of pretending the day is empty", () => {

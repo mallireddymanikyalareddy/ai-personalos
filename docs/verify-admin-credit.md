@@ -113,4 +113,4 @@ npm run lint --workspace @personalos/web   # 0 errors
 $env:STATIC_EXPORT='1'; npm run build --workspace @personalos/web
 ```
 
-The full web suite has two remaining stale onboarding tests; all admin, credit, AI, settings and today tests pass.
+The full web suite passes 829/830; the only failure is a `paper-workspace` 5-second timeout under parallel load that passes when run alone.

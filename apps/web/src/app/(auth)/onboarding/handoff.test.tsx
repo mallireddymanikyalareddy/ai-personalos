@@ -148,6 +148,7 @@ describe("onboarding handoff to the home screen", () => {
     fireEvent.click(screen.getByRole("button", { name: /Work/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Open my OS" }));
 
@@ -189,7 +190,10 @@ describe("onboarding handoff to the home screen", () => {
           });
         });
       }
-      return json(fakeProfile());
+      if (url.endsWith("/api/v1/users/me")) {
+        return json(fakeProfile());
+      }
+      return json({});
     }) as unknown as typeof fetch;
 
     render(<Harness />);
@@ -198,6 +202,7 @@ describe("onboarding handoff to the home screen", () => {
     fireEvent.change(screen.getByLabelText(/What should we call you/), { target: { value: "Ada" } });
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: /Work/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 

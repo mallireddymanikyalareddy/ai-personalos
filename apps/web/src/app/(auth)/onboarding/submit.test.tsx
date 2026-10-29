@@ -64,6 +64,8 @@ async function fillSteps() {
 
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
   await screen.findByRole("button", { name: "Open my OS" });
 }
 
