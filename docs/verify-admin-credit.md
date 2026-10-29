@@ -113,4 +113,4 @@ npm run lint --workspace @personalos/web   # 0 errors
 $env:STATIC_EXPORT='1'; npm run build --workspace @personalos/web
 ```
 
-The full web suite passes 829/830; the only failure is a `paper-workspace` 5-second timeout under parallel load that passes when run alone.
+The full web suite passes **830/830 tests across 52 files**. `vitest.config.mts` uses the `threads` pool and a 15s timeout so heavy module renders do not flake under parallel load.
