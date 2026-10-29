@@ -34,7 +34,7 @@ import referrals  # noqa: E402
 from admin_ops import router as admin_ops_router  # noqa: E402
 from billing_admin import public_router as billing_public_router, router as billing_admin_router  # noqa: E402
 from plan_admin import admin_router as plan_admin_router, public_router as plans_router  # noqa: E402
-from billing import run_once, setup_billing  # noqa: E402
+from billing import run_once, setup_billing, now  # noqa: E402
 from db import db, ensure_indexes  # noqa: E402
 
 BILLING_CODES = ("insufficient_credits", "integration_disabled", "daily_limit_reached")
@@ -285,7 +285,7 @@ def sse(payload: dict) -> str:
 
 @app.get("/api/v1/credits")
 async def my_credits(auth=Depends(require_auth)):
-    return await credits.balance(auth[0]["id"])
+    return await entitlements.credit_overview(auth[0]["id"])
 
 
 @app.get("/api/v1/credits/history")
@@ -333,9 +333,9 @@ async def gift_credits(body: GiftIn, auth=Depends(require_auth)):
     return {**result, "amount": body.amount, "recipientHandle": recipient["handle"]}
 
 
-async def reserve_or_response(user_id: str, body: ChatRequest):
+async def reserve_or_response(user_id: str, body: ChatRequest, input_chars: int = 0):
     try:
-        return await credits.reserve(user_id, body.action, body.requestId or str(uuid.uuid4())), None
+        return await credits.reserve(user_id, body.action, body.requestId or str(uuid.uuid4()), input_chars), None
     except credits.CreditError as exc:
         return None, JSONResponse({"detail": exc.message, "code": exc.code, **exc.extra}, status_code=exc.status)
 
@@ -347,23 +347,21 @@ async def ai_chat(body: ChatRequest, request: Request):
     found = await current_session(request)
     if not found:
         return JSONResponse({"detail": "Please sign in to use GPT 6 Luna"}, status_code=401)
-    if body.action not in AI_ACTIONS:
-        return JSONResponse({"detail": "That AI action isn't available.", "code": "UNKNOWN_ACTION"}, status_code=400)
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
         return JSONResponse({"detail": "OpenAI API key is not configured"}, status_code=503)
     settings = await platform_settings.get_settings()
     if not digest.allow_send_now(f"ai:{found[0]['id']}", limit=settings["maxRequestsPerMinute"], window=60):
         return JSONResponse({"detail": "Too many AI requests. Try again in a minute.", "code": "RATE_LIMITED"}, status_code=429)
-    res, error = await reserve_or_response(found[0]["id"], body)
-    if error:
-        return error
-    model = settings["defaultModel"] or "gpt-6-luna"
     context = body.context[: max(1000, settings["maxInputTokens"]) * 4]
-    res["model"] = model
-    chat = LlmChat(api_key=key, session_id=str(uuid.uuid4()), system_message=SYSTEM_PROMPT + context).with_model("openai", model)
     transcript = "\n".join(f"{t.role.upper()}: {t.text}" for t in body.history[-10:])
     text = f"Conversation so far:\n{transcript}\n\nUSER: {body.prompt}" if transcript else body.prompt
+    res, error = await reserve_or_response(found[0]["id"], body, len(context) + len(text))
+    if error:
+        return error
+    model = res.get("model") or settings["defaultModel"] or "gpt-6-luna"
+    res["model"] = model
+    chat = LlmChat(api_key=key, session_id=str(uuid.uuid4()), system_message=SYSTEM_PROMPT + context).with_model("openai", model)
     # BackgroundTask runs after the response, so a hold is released even if the client left before streaming began.
     return StreamingResponse(chat_events(chat, text, res), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -373,10 +371,15 @@ async def ai_chat(body: ChatRequest, request: Request):
 async def chat_events(chat, text: str, res: dict):
     started, output, settled = time.monotonic(), "", False
     elapsed = lambda: int((time.monotonic() - started) * 1000)  # noqa: E731
+    await db.credit_reservations.update_one(
+        {"id": res["id"], "status": "held"}, {"$set": {"provider_started_at": now()}})
     try:
         try:
             async for ev in chat.stream_message(UserMessage(text=text)):
                 if isinstance(ev, TextDelta):
+                    if not output:
+                        await db.credit_reservations.update_one(
+                            {"id": res["id"], "status": "held"}, {"$set": {"output_started_at": now()}})
                     output += ev.content
                     yield sse({"delta": ev.content})
                 elif isinstance(ev, StreamDone):
@@ -384,6 +387,7 @@ async def chat_events(chat, text: str, res: dict):
             if not output:
                 raise RuntimeError("empty response")
         except Exception as exc:
+            # The provider reported a failure, so the hold can be returned safely.
             await credits.release(res, "AI request failed — credits returned")
             await credits.record_usage(res, "failed", 0, len(output), elapsed(), str(exc)[:300], len(text))
             yield sse({"error": friendly_ai_error(str(exc)), "creditsReturned": True})

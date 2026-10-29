@@ -28,6 +28,7 @@ const LABELS: Record<string, string> = {
   reserve: "Held",
   charge: "Used",
   release: "Returned",
+  refund: "Refunded",
 };
 
 function amountText(e: Entry): string {
@@ -170,6 +171,48 @@ export function CreditsCard() {
           </Link>
         </div>
       </header>
+      {balance?.planId && (
+        <dl
+          data-testid="credits-card-plan"
+          className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-line bg-surface-2/50 p-3 text-xs"
+        >
+          <div>
+            <dt className="text-ink-3">Plan</dt>
+            <dd className="font-medium text-ink" data-testid="credits-card-plan-name">
+              {balance.planName}
+              {balance.billing ? ` · ${balance.billing}` : ""}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-ink-3">Next reset</dt>
+            <dd className="font-medium text-ink" data-testid="credits-card-reset">
+              {balance.nextResetAt
+                ? new Date(balance.nextResetAt).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })
+                : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-ink-3">Monthly allowance</dt>
+            <dd className="font-medium text-ink" data-testid="credits-card-allowance">
+              {balance.allowance ?? 0} credits
+              {balance.annualBonus
+                ? ` (includes ${balance.annualBonus} annual bonus)`
+                : ""}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-ink-3">Buckets</dt>
+            <dd className="font-medium text-ink" data-testid="credits-card-buckets">
+              {balance.included ?? 0} included · {balance.promotional ?? 0} promo ·{" "}
+              {balance.purchased ?? 0} purchased
+            </dd>
+          </div>
+        </dl>
+      )}
       {balance && balance.available <= lowThreshold && (
         <p
           data-testid="credits-card-low"

@@ -147,4 +147,6 @@ async def mfa_verify(body: VerifyIn, request: Request, response: Response):
     user = await db.users.find_one({"id": doc["user_id"]}, {"_id": 0})
     if not user or not user.get("mfa_enabled") or not await verify_code(user, body.code):
         raise ApiError(401, "INVALID_MFA_CODE", "That authenticator code isn't valid.")
+    if user.get("suspended_at"):
+        raise ApiError(403, "ACCOUNT_SUSPENDED", "This account is suspended. Contact support.")
     return await issue_session(user, request, response, mfa_verified=True)

@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/toast";
 
 import type { AdminUserRow } from "./live-sections";
 import { LedgerTable } from "./live-sections";
+import { StatusBadge } from "./ui";
 import {
   adminSend,
   LoadState,
@@ -18,8 +19,24 @@ import {
   type LedgerEntry,
 } from "./live";
 
-type Detail = { user: AdminUserRow; ledger: LedgerEntry[] };
+type Detail = {
+  user: AdminUserRow;
+  ledger: LedgerEntry[];
+  subscription: {
+    id: string;
+    planId: string;
+    billing: string;
+    status: string;
+    payment: string;
+    periodStart: string;
+    periodEnd: string;
+    trialEnds: string | null;
+    cancelAtPeriodEnd: boolean;
+  } | null;
+  subscriptionEvents: { id: string; type: string; actor: string; created_at: string }[];
+};
 const CREDIT_ROLES = ["super_admin", "billing_admin", "support_admin"];
+const SUSPEND_ROLES = ["super_admin", "support_admin"];
 const field =
   "h-9 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink focus:border-accent focus:outline-none";
 
@@ -72,7 +89,34 @@ function UserDetail({
           Admin role:{" "}
           <span className="font-medium text-ink">{roleLabel(u.role)}</span>
         </p>
+        {u.suspended && (
+          <p className="mt-2 rounded-lg border border-red-300/60 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300" data-testid="admin-user-suspended">
+            Suspended{u.suspensionReason ? `: ${u.suspensionReason}` : ""}
+          </p>
+        )}
       </div>
+      {data.subscription && (
+        <div className="rounded-xl border border-line p-4" data-testid="admin-user-subscription">
+          <h3 className="mb-2 text-sm font-semibold text-ink">Subscription</h3>
+          <div className="grid grid-cols-2 gap-2 text-xs text-ink-2">
+            <span>Plan: <strong className="text-ink">{u.plan ?? data.subscription.planId}</strong></span>
+            <span>Billing: <strong className="text-ink">{data.subscription.billing}</strong></span>
+            <span>Status: <StatusBadge value={data.subscription.status} /></span>
+            <span>Payment: <strong className="text-ink">{data.subscription.payment}</strong></span>
+            <span>Period end: <strong className="text-ink">{new Date(data.subscription.periodEnd).toLocaleDateString("en-IN")}</strong></span>
+            <span>Cancels at end: <strong className="text-ink">{data.subscription.cancelAtPeriodEnd ? "Yes" : "No"}</strong></span>
+          </div>
+          {data.subscriptionEvents.length > 0 && (
+            <ul className="mt-3 space-y-1 text-xs text-ink-3" data-testid="admin-user-subscription-events">
+              {data.subscriptionEvents.map((event) => (
+                <li key={event.id}>
+                  {event.type.replace(/_/g, " ")} · {new Date(event.created_at).toLocaleString("en-IN")}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Balance
           label="Available"
@@ -91,6 +135,9 @@ function UserDetail({
       )}
       {role === "super_admin" && userId !== selfId && (
         <RoleForm user={u} onDone={changed} />
+      )}
+      {SUSPEND_ROLES.includes(role) && userId !== selfId && u.roleSource !== "env" && (
+        <SuspendForm user={u} onDone={changed} />
       )}
       <div>
         <h3 className="mb-2 text-sm font-semibold text-ink">Credit history</h3>
@@ -216,6 +263,71 @@ function CreditForm({
         data-testid="admin-credit-submit"
       >
         {busy ? "Saving…" : mode === "add" ? "Add credits" : "Remove credits"}
+      </Button>
+    </form>
+  );
+}
+
+function SuspendForm({
+  user,
+  onDone,
+}: {
+  user: AdminUserRow;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const valid = reason.trim().length >= 5;
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid) return;
+    setBusy(true);
+    try {
+      await adminSend(`users/${user.id}/${user.suspended ? "reinstate" : "suspend"}`, "POST", {
+        reason: reason.trim(),
+      });
+      toast(user.suspended ? `${user.handle} reinstated` : `${user.handle} suspended`, {
+        tone: "success",
+      });
+      setReason("");
+      onDone();
+    } catch (err) {
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      onSubmit={submit}
+      className="space-y-2 rounded-xl border border-line p-4"
+      data-testid="admin-suspend-form"
+    >
+      <h3 className="text-sm font-semibold text-ink">
+        {user.suspended ? "Reinstate account" : "Suspend account"}
+      </h3>
+      <p className="text-xs text-ink-3">
+        {user.suspended
+          ? "Reinstating lets the user sign in again. Data is never deleted."
+          : "Suspending revokes active sessions and blocks sign-in. Data is never deleted."}
+      </p>
+      <input
+        data-testid="admin-suspend-reason"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        maxLength={300}
+        placeholder="Reason (required)"
+        className={field}
+      />
+      <Button
+        type="submit"
+        size="sm"
+        variant={user.suspended ? "secondary" : "danger"}
+        disabled={!valid || busy}
+        data-testid="admin-suspend-submit"
+      >
+        {busy ? "Saving…" : user.suspended ? "Reinstate" : "Suspend"}
       </Button>
     </form>
   );

@@ -274,3 +274,28 @@ def public_subscription(sub: dict, user: dict | None = None, version: dict | Non
         "cancelAtPeriodEnd": bool(sub.get("cancel_at_period_end")), "canceledAt": iso(sub.get("canceled_at")),
         "createdAt": iso(sub.get("created_at")),
     }
+
+
+async def credit_overview(user_id: str) -> dict:
+    """Balance plus the plan, allowance and reset information shown to the subscriber."""
+    import credits
+
+    acc = await credits.balance_detail(user_id)
+    sub = await db.subscriptions.find_one(
+        {"user_id": user_id, "status": {"$in": list(ACTIVE_STATUSES)}}, {"_id": 0},
+        sort=[("created_at", -1)])
+    if not sub:
+        return acc | {"planId": None, "planName": None, "status": None, "billing": None,
+                      "nextResetAt": None, "allowance": 0, "annualBonus": 0,
+                      "cancelAtPeriodEnd": False}
+    version = await pinned_plan_version(sub) or {}
+    allowance = period_credits(version, sub["billing_period"]) if version else 0
+    bonus = version.get("annual_bonus_credits", 0) if sub["billing_period"] == "annual" else 0
+    return acc | {
+        "planId": sub["plan_id"], "planName": version.get("name", sub["plan_id"]),
+        "status": sub["status"], "billing": sub["billing_period"],
+        "nextResetAt": iso(sub.get("current_period_end")),
+        "allowance": allowance, "annualBonus": bonus,
+        "cancelAtPeriodEnd": bool(sub.get("cancel_at_period_end")),
+        "trialEndsAt": iso(sub.get("trial_ends_at")),
+    }

@@ -5,7 +5,22 @@ import * as React from "react";
 import { CREDITS_EVENT } from "@/lib/ai-stream";
 
 export const LOW_CREDITS = 3;
-export type CreditBalance = { available: number; reserved: number };
+export type CreditBalance = {
+  available: number;
+  reserved: number;
+  included?: number;
+  promotional?: number;
+  purchased?: number;
+  planId?: string | null;
+  planName?: string | null;
+  status?: string | null;
+  billing?: string | null;
+  nextResetAt?: string | null;
+  allowance?: number;
+  annualBonus?: number;
+  cancelAtPeriodEnd?: boolean;
+  trialEndsAt?: string | null;
+};
 export type PublicSettings = {
   lowCreditThreshold: number;
   flags: Record<string, boolean>;
@@ -13,7 +28,7 @@ export type PublicSettings = {
 
 const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   lowCreditThreshold: LOW_CREDITS,
-  flags: { ai_confirmation_modal: false, annual_bonus_credits: true, promotions: true },
+  flags: { ai_confirmation_modal: true, annual_bonus_credits: true, promotions: true },
 };
 
 export function usePublicSettings() {

@@ -13,11 +13,12 @@ from db import db
 admin_router = APIRouter(prefix="/api/v1/admin")
 public_router = APIRouter(prefix="/api/v1")
 OWNER = require_role("super_admin")
+PRICING_OWNER = require_role("super_admin", "ai_ops_admin")
 Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=300)]
 Credits = Annotated[int, Field(ge=0, le=100000)]
 Paise = Annotated[int, Field(ge=0, le=100_000_000)]
 PLAN_FIELDS = ("name", "monthly_price_paise", "annual_price_paise", "monthly_credits", "annual_monthly_credits",
-               "annual_bonus_credits", "trial_days", "trial_credits")
+               "annual_bonus_credits", "trial_days", "trial_credits", "features")
 
 
 def effective_filter() -> dict:
@@ -41,8 +42,13 @@ async def plan_state(plan_id: str) -> dict:
     current = max(live, key=lambda v: (utc(v["effective_at"]), v["version"]), default=None)
     scheduled = [v for v in versions if v["status"] == "published" and utc(v["effective_at"]) > t]
     draft = next((v for v in versions if v["status"] == "draft"), None)
-    return {"current": out(current), "scheduled": [out(v) for v in scheduled], "draft": out(draft),
-            "history": [out(v) for v in versions if v["status"] == "published"]}
+
+    def with_features(v: dict | None) -> dict | None:
+        return (out(v) | {"features": v.get("features", [])}) if v else None
+
+    return {"current": with_features(current), "scheduled": [with_features(v) for v in scheduled],
+            "draft": with_features(draft),
+            "history": [with_features(v) for v in versions if v["status"] == "published"]}
 
 
 @admin_router.get("/plans")
@@ -65,6 +71,8 @@ class PlanDraftIn(BaseModel):
     annual_bonus_credits: Credits
     trial_days: Annotated[int, Field(ge=0, le=90)]
     trial_credits: Credits
+    features: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]] = Field(
+        default_factory=list, max_length=30)
     reason: Reason
 
 
@@ -142,6 +150,43 @@ async def publish_plan(plan_id: str, body: PublishIn, auth=Depends(OWNER)):
     return await plan_state(plan_id)
 
 
+class AvailabilityIn(BaseModel):
+    available: bool
+    reason: Reason
+
+
+@admin_router.put("/plans/{plan_id}/availability")
+async def set_plan_availability(plan_id: str, body: AvailabilityIn, auth=Depends(OWNER)):
+    plan = await require_plan(plan_id)
+    await db.plans.update_one({"plan_id": plan_id}, {"$set": {"available": body.available, "updated_at": now()}})
+    await record_audit(auth[0]["handle"], "plan.availability", "plan", plan_id, body.reason.strip(),
+                       role="super_admin", details={"from": plan.get("available", True), "to": body.available})
+    return {"plan_id": plan_id, "available": body.available}
+
+
+@admin_router.get("/plans/{plan_id}/preview")
+async def preview_plan(plan_id: str, _=Depends(require_role())):
+    plan = await require_plan(plan_id)
+    state = await plan_state(plan_id)
+    current = state["current"] or {}
+    draft = state["draft"] or {}
+    if not draft:
+        return {"planId": plan_id, "hasDraft": False, "diff": [], "subscribers": 0,
+                "note": "There is no draft. Edit the plan to preview a change."}
+    diff = []
+    for field in PLAN_FIELDS:
+        before, after = current.get(field), draft.get(field)
+        if before != after:
+            diff.append({"field": field, "from": before, "to": after})
+    subscribers = await db.subscriptions.count_documents(
+        {"plan_id": plan_id, "status": {"$in": ["active", "trialing", "past_due"]}})
+    return {"planId": plan_id, "hasDraft": True, "currentVersion": current.get("version"),
+            "draftVersion": draft.get("version"), "diff": diff, "subscribers": subscribers,
+            "available": plan.get("available", True),
+            "note": ("Changes apply prospectively. Existing subscriptions keep their pinned version until "
+                     "renewal; new subscriptions use the published version.")}
+
+
 async def pricing_state() -> dict:
     versions = await db.ai_pricing_versions.find({}, {"_id": 0}).sort("version", -1).to_list(100)
     t = now()
@@ -160,9 +205,13 @@ async def admin_pricing(_=Depends(require_role())):
 
 class ActionCostIn(BaseModel):
     action: str
-    min_credits: Annotated[int, Field(ge=1, le=100)]
-    max_credits: Annotated[int, Field(ge=1, le=100)]
+    min_credits: Annotated[int, Field(ge=1, le=1000)]
+    max_credits: Annotated[int, Field(ge=1, le=1000)]
     max_output_tokens: Annotated[int, Field(ge=50, le=16000)]
+    model: str | None = Field(default=None, max_length=60)
+    input_credits_per_1k: Annotated[int, Field(ge=0, le=100)] = 0
+    max_input_tokens: Annotated[int, Field(ge=0, le=200000)] = 0
+    request_limit_per_day: Annotated[int, Field(ge=0, le=10000)] = 0
 
 
 class PricingDraftIn(BaseModel):
@@ -178,11 +227,11 @@ def merged_actions(base: list[dict], edits: list[ActionCostIn]) -> list[dict]:
         if e.min_credits > e.max_credits:
             raise ApiError(400, "VALIDATION_FAILED", f"{by_key[e.action]['label']}: the minimum can't be above the maximum.",
                            [{"field": e.action, "issue": "min_credits > max_credits"}])
-    return [by_key[e.action] | e.model_dump() for e in edits]
+    return [by_key[e.action] | e.model_dump(exclude_unset=True) for e in edits]
 
 
 @admin_router.put("/pricing/draft")
-async def save_pricing_draft(body: PricingDraftIn, auth=Depends(OWNER)):
+async def save_pricing_draft(body: PricingDraftIn, auth=Depends(PRICING_OWNER)):
     state = await pricing_state()
     if not state["current"]:
         raise ApiError(409, "CONFLICT", "No published pricing to base a draft on.")
@@ -206,7 +255,7 @@ async def save_pricing_draft(body: PricingDraftIn, auth=Depends(OWNER)):
 
 
 @admin_router.delete("/pricing/draft")
-async def discard_pricing_draft(auth=Depends(OWNER)):
+async def discard_pricing_draft(auth=Depends(PRICING_OWNER)):
     gone = await db.ai_pricing_versions.find_one_and_delete({"status": "draft"})
     if not gone:
         raise ApiError(404, "NOT_FOUND", "There is no draft to discard.")
@@ -216,7 +265,7 @@ async def discard_pricing_draft(auth=Depends(OWNER)):
 
 
 @admin_router.post("/pricing/publish")
-async def publish_pricing(body: PublishIn, auth=Depends(OWNER)):
+async def publish_pricing(body: PublishIn, auth=Depends(PRICING_OWNER)):
     when = publish_time(body)
     done = await db.ai_pricing_versions.find_one_and_update(
         {"status": "draft"}, {"$set": {"status": "published", "effective_at": when, "published_at": now(),
@@ -235,8 +284,10 @@ async def public_plans():
     for p in plans:
         current = (await plan_state(p["plan_id"]))["current"]
         if current:
-            rows.append({"planId": p["plan_id"], "version": current["version"]} | {k: current[k] for k in PLAN_FIELDS})
+            rows.append({"planId": p["plan_id"], "version": current["version"]} | {k: current[k] for k in PLAN_FIELDS}
+                        | {"features": current.get("features", [])})
     pricing = (await pricing_state())["current"]
-    actions = [{"action": a["action"], "label": a["label"], "minCredits": a["min_credits"], "maxCredits": a["max_credits"]}
+    actions = [{"action": a["action"], "label": a["label"], "minCredits": a["min_credits"], "maxCredits": a["max_credits"],
+                "maxInputTokens": a.get("max_input_tokens", 0), "maxOutputTokens": a.get("max_output_tokens", 0)}
                for a in (pricing or {}).get("actions", [])]
     return {"plans": rows, "actions": actions, "pricingVersion": (pricing or {}).get("version")}

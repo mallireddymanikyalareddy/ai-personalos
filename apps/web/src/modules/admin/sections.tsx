@@ -320,6 +320,22 @@ function SubscriptionDrawer({
   const [status, setStatus] = React.useState("");
   const [planId, setPlanId] = React.useState("");
   const [billing, setBilling] = React.useState("");
+  const [paymentStatus, setPaymentStatus] = React.useState("");
+  const [preview, setPreview] = React.useState<{
+    estimatedProrationPaise: number;
+    daysLeft: number;
+    newAllowance: number;
+    note: string;
+  } | null>(null);
+  const loadPreview = async () => {
+    const res = await fetch(
+      `/api/v1/admin/subscriptions/${id}/change-preview?plan_id=${planId}&billing_period=${billing}`,
+      { credentials: "include", cache: "no-store" },
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return;
+    setPreview(data);
+  };
   const canWrite = WRITE_SUBS.includes(role);
   const auditReady = reason.trim().length >= 5;
   const sub = data?.subscription;
@@ -327,6 +343,7 @@ function SubscriptionDrawer({
     if (!sub) return;
     setPlanId(sub.planId);
     setBilling(sub.billing);
+    setPaymentStatus(sub.payment);
   }, [sub]);
   const act = (key: string, path: string, method: "POST" | "PUT", body: unknown, ok: string) =>
     void run(key, () => adminSend(path, method, body), ok);
@@ -424,6 +441,28 @@ function SubscriptionDrawer({
                     Save status
                   </Button>
                 </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <Field label="Payment status">
+                    <select className={field} value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)}>
+                      {["manual", "paid", "failed", "refunded"].map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Button
+                    size="sm"
+                    loading={busy === "payment"}
+                    disabled={!auditReady || !paymentStatus || paymentStatus === sub.payment}
+                    onClick={() =>
+                      act("payment", `subscriptions/${id}`, "PUT",
+                        { payment_status: paymentStatus, reason: reason.trim() }, "Payment status updated")
+                    }
+                  >
+                    Save payment status
+                  </Button>
+                </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Field label="Plan">
                     <select className={field} value={planId} onChange={(event) => setPlanId(event.target.value)}>
@@ -441,17 +480,42 @@ function SubscriptionDrawer({
                     </select>
                   </Field>
                 </div>
-                <Button
-                  size="sm"
-                  loading={busy === "plan"}
-                  disabled={!auditReady || (planId === sub.planId && billing === sub.billing)}
-                  onClick={() =>
-                    act("plan", `subscriptions/${id}`, "PUT",
-                      { plan_id: planId, billing_period: billing, reason: reason.trim() }, "Subscription updated")
-                  }
-                >
-                  Change plan or billing cycle
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={planId === sub.planId && billing === sub.billing}
+                    onClick={() => void loadPreview()}
+                    data-testid="admin-subscription-preview"
+                  >
+                    Preview change
+                  </Button>
+                  <Button
+                    size="sm"
+                    loading={busy === "plan"}
+                    disabled={!auditReady || (planId === sub.planId && billing === sub.billing)}
+                    onClick={() =>
+                      act("plan", `subscriptions/${id}`, "PUT",
+                        { plan_id: planId, billing_period: billing, reason: reason.trim() }, "Subscription updated")
+                    }
+                    data-testid="admin-subscription-change-plan"
+                  >
+                    Change plan or billing cycle
+                  </Button>
+                </div>
+                {preview && (
+                  <div className="rounded-lg border border-line bg-surface-2 p-3 text-xs text-ink-2" data-testid="admin-subscription-preview-result">
+                    <p>
+                      {preview.daysLeft} day{preview.daysLeft === 1 ? "" : "s"} left · new allowance{" "}
+                      <strong className="text-ink">{preview.newAllowance}</strong> credits.
+                    </p>
+                    <p className="mt-1">
+                      Estimated proration:{" "}
+                      <strong className="text-ink">{inr(preview.estimatedProrationPaise)}</strong>.
+                    </p>
+                    <p className="mt-1 text-ink-3">{preview.note}</p>
+                  </div>
+                )}
               </div>
             )}
             <div>
@@ -835,6 +899,13 @@ type Settings = {
   lowCreditThreshold: number;
   resetPolicy: string;
   trialDays: number;
+  supportEmail: string;
+  supportUrl: string;
+  statusPageUrl: string;
+  supportHours: string;
+  requireMfaForAdmins: boolean;
+  adminSessionMinutes: number;
+  auditRetentionDays: number;
   flags: Record<string, boolean>;
 };
 
@@ -855,6 +926,13 @@ export function AdminSettings() {
       giftMaxCredits: data.settings.giftMaxCredits ?? 1000,
       inputCostPaisePerMTok: data.settings.inputCostPaisePerMTok ?? 0,
       outputCostPaisePerMTok: data.settings.outputCostPaisePerMTok ?? 0,
+      supportEmail: data.settings.supportEmail ?? "",
+      supportUrl: data.settings.supportUrl ?? "",
+      statusPageUrl: data.settings.statusPageUrl ?? "",
+      supportHours: data.settings.supportHours ?? "",
+      requireMfaForAdmins: data.settings.requireMfaForAdmins ?? false,
+      adminSessionMinutes: data.settings.adminSessionMinutes ?? 1440,
+      auditRetentionDays: data.settings.auditRetentionDays ?? 365,
     });
   }, [data]);
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) =>
@@ -939,6 +1017,36 @@ export function AdminSettings() {
           <Panel title="Credit reset policy">
             <textarea className={textarea} disabled={!canWrite} value={form.resetPolicy} onChange={(e) => set("resetPolicy", e.target.value)} />
           </Panel>
+          <Panel title="Support configuration" testId="admin-support-settings">
+            <div className="grid gap-3">
+              <Field label="Support email">
+                <input className={field} disabled={!canWrite} value={form.supportEmail} onChange={(e) => set("supportEmail", e.target.value)} placeholder="support@example.com" />
+              </Field>
+              <Field label="Support link">
+                <input className={field} disabled={!canWrite} value={form.supportUrl} onChange={(e) => set("supportUrl", e.target.value)} placeholder="https://…" />
+              </Field>
+              <Field label="Status page">
+                <input className={field} disabled={!canWrite} value={form.statusPageUrl} onChange={(e) => set("statusPageUrl", e.target.value)} placeholder="https://status.…" />
+              </Field>
+              <Field label="Support hours">
+                <input className={field} disabled={!canWrite} value={form.supportHours} onChange={(e) => set("supportHours", e.target.value)} placeholder="Mon–Fri, 9am–6pm IST" />
+              </Field>
+            </div>
+          </Panel>
+          <Panel title="Admin security" testId="admin-security-settings">
+            <div className="grid gap-3">
+              <label className="flex items-center justify-between gap-3 text-sm text-ink-2">
+                <span>Require MFA for every admin</span>
+                <input type="checkbox" disabled={!canWrite} checked={form.requireMfaForAdmins} onChange={(e) => set("requireMfaForAdmins", e.target.checked)} />
+              </label>
+              <Field label="Admin session lifetime (minutes)" hint="Displayed policy. Existing sessions are not shortened retroactively.">
+                <input className={field} type="number" min={30} max={10080} disabled={!canWrite} value={form.adminSessionMinutes} onChange={(e) => set("adminSessionMinutes", Number(e.target.value))} />
+              </Field>
+              <Field label="Audit log retention (days)" hint="Operational target; purge is not automated yet.">
+                <input className={field} type="number" min={30} max={3650} disabled={!canWrite} value={form.auditRetentionDays} onChange={(e) => set("auditRetentionDays", Number(e.target.value))} />
+              </Field>
+            </div>
+          </Panel>
           <Panel title="Feature flags">
             <ul className="space-y-2 text-sm">
               {Object.entries(form.flags).map(([key, on]) => (
@@ -975,6 +1083,13 @@ export function AdminSettings() {
                         low_credit_threshold: form.lowCreditThreshold,
                         reset_policy: form.resetPolicy,
                         trial_days: form.trialDays,
+                        support_email: form.supportEmail,
+                        support_url: form.supportUrl,
+                        status_page_url: form.statusPageUrl,
+                        support_hours: form.supportHours,
+                        require_mfa_for_admins: form.requireMfaForAdmins,
+                        admin_session_minutes: form.adminSessionMinutes,
+                        audit_retention_days: form.auditRetentionDays,
                         flags: form.flags,
                         reason: reason.trim(),
                       }),

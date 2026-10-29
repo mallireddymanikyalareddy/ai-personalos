@@ -87,7 +87,8 @@ async def seed_plans() -> dict:
 
 async def seed_pricing() -> dict:
     actions = [{"action": a, "label": label, "min_credits": lo, "max_credits": hi, "provider": "openai", "model": M,
-                "max_output_tokens": out} for a, label, lo, hi, out in ACTION_SEEDS]
+                "max_output_tokens": out, "input_credits_per_1k": 0, "max_input_tokens": 0,
+                "request_limit_per_day": 0} for a, label, lo, hi, out in ACTION_SEEDS]
     await db.ai_pricing_versions.update_one({"version": 1}, {"$setOnInsert": {
         "version": 1, "status": "published", "effective_at": SEED_EFFECTIVE_AT, "actions": actions,
         "created_at": now(), "created_by": "system", "published_at": now()}}, upsert=True)

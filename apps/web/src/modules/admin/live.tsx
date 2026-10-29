@@ -15,6 +15,7 @@ export type PlanVersion = {
   annual_bonus_credits: number;
   trial_days: number;
   trial_credits: number;
+  features: string[];
 };
 export type LivePlan = {
   plan_id: string;
@@ -32,6 +33,9 @@ export type PricingAction = {
   max_credits: number;
   model: string;
   max_output_tokens: number;
+  input_credits_per_1k?: number;
+  max_input_tokens?: number;
+  request_limit_per_day?: number;
 };
 export type PricingVersion = {
   version: number;
@@ -177,16 +181,33 @@ export type LedgerEntry = {
 };
 export type UsageRow = {
   id: string;
+  reservation_id?: string;
+  user_id?: string;
   handle?: string;
   action: string;
+  label?: string;
   model: string;
   reserved: number;
   charged: number;
+  refunded_credits?: number;
+  refund_status?: string;
   est_output_tokens: number;
   ms: number;
   status: string;
   error?: string | null;
   created_at: string;
+};
+export type ReconciliationItem = {
+  id: string;
+  user_id: string;
+  handle?: string;
+  action: string;
+  label: string;
+  amount: number;
+  status: string;
+  created_at: string;
+  provider_started_at?: string;
+  reconciliation_reason?: string;
 };
 export type AuditRow = {
   id: string;

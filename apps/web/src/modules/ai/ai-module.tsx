@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import Link from "next/link";
+
 import { CalendarClock, ListChecks, NotebookPen, Target } from "lucide-react";
 
 import type { AIObject, AIResult, ID } from "@personalos/core";
@@ -44,6 +46,34 @@ export function AIModule() {
   const skipConfirm = React.useRef(false);
   const composerRef = React.useRef<HTMLTextAreaElement | null>(null);
   const { balance, flags } = useCredits(true);
+  const [actionPrice, setActionPrice] = React.useState<{
+    label: string;
+    minCredits: number;
+    maxCredits: number;
+    maxInputTokens: number;
+    maxOutputTokens: number;
+  } | null>(null);
+  React.useEffect(() => {
+    let alive = true;
+    fetch("/api/v1/plans", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { actions?: { action: string; label: string; minCredits: number; maxCredits: number; maxInputTokens?: number; maxOutputTokens?: number }[] } | null) => {
+        const price = data?.actions?.find((item) => item.action === "quick_question");
+        if (alive && price) {
+          setActionPrice({
+            label: price.label,
+            minCredits: price.minCredits,
+            maxCredits: price.maxCredits,
+            maxInputTokens: price.maxInputTokens ?? 0,
+            maxOutputTokens: price.maxOutputTokens ?? 0,
+          });
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const now = Date.now();
   const context = os.aiContext(now);
@@ -124,7 +154,18 @@ export function AIModule() {
         const setText = (text: string) =>
           setEntries((prev) => prev.map((entry) => (entry.id === assistantMessage.id ? { ...entry, text } : entry)));
         setText("Thinking…");
-        streamAIChat({ prompt: trimmed, context: buildAIContext(os.getState(), result.message), history }, setText)
+        streamAIChat(
+          { prompt: trimmed, context: buildAIContext(os.getState(), result.message), history },
+          setText,
+          (info) =>
+            setEntries((prev) =>
+              prev.map((entry) =>
+                entry.id === assistantMessage.id
+                  ? { ...entry, credits: { charged: info.charged, available: info.available } }
+                  : entry,
+              ),
+            ),
+        )
           .then((text) => os.updateMessage(assistantMessage.id, { content: text }))
           .catch((error: Error) => {
             setText(result.message);
@@ -356,6 +397,16 @@ export function AIModule() {
     );
   };
 
+  const price = actionPrice ?? {
+    label: "Quick AI question",
+    minCredits: 1,
+    maxCredits: 1,
+    maxInputTokens: 0,
+    maxOutputTokens: 0,
+  };
+  const available = balance?.available ?? 0;
+  const enough = available >= price.minCredits;
+
   return (
     <div className="space-y-4">
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -488,10 +539,55 @@ export function AIModule() {
           run(prompt);
         }}
         title="Use AI credits?"
-        description={`This answer uses credits from your balance. You have ${balance?.available ?? 0} available.`}
-        confirmLabel="Use credits"
+        description={`${actionPrice?.label ?? "Quick AI question"} — this answer uses credits from your balance.`}
+        confirmLabel={enough ? "Use credits" : "Not enough credits"}
+        confirmDisabled={!enough}
         tone="accent"
-      />
+      >
+        <dl className="mt-3 space-y-1.5 text-xs" data-testid="ai-confirm-cost">
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-3">Estimated cost</dt>
+            <dd className="font-medium text-ink">
+              {price.minCredits === price.maxCredits
+                ? `${price.minCredits} credit${price.minCredits === 1 ? "" : "s"}`
+                : `${price.minCredits}–${price.maxCredits} credits`}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-3">Current balance</dt>
+            <dd className="font-medium text-ink">{available}</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-3">Expected remaining</dt>
+            <dd className="font-medium text-ink">{Math.max(0, available - price.maxCredits)}</dd>
+          </div>
+          {price.maxInputTokens > 0 && (
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-3">Input limit</dt>
+              <dd className="font-medium text-ink">{price.maxInputTokens.toLocaleString()} tokens</dd>
+            </div>
+          )}
+          {price.maxOutputTokens > 0 && (
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-3">Output limit</dt>
+              <dd className="font-medium text-ink">{price.maxOutputTokens.toLocaleString()} tokens</dd>
+            </div>
+          )}
+        </dl>
+        {!enough && (
+          <p
+            className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
+            data-testid="ai-confirm-shortfall"
+          >
+            You need {price.minCredits - available} more credit
+            {price.minCredits - available === 1 ? "" : "s"}.{" "}
+            <Link href="/plans" className="underline underline-offset-2">
+              Upgrade or wait for your reset
+            </Link>
+            . Non-AI features keep working.
+          </p>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

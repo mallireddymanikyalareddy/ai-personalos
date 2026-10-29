@@ -31,6 +31,7 @@ import {
   type ActionInsight,
   type AuditRow,
   type LedgerEntry,
+  type ReconciliationItem,
   type UsageInsights,
   type TrendPoint,
   type UsageRow,
@@ -127,6 +128,22 @@ type CreditSummary = {
   consumed: number;
   granted: number;
   removed: number;
+  refunded: number;
+  nextResetAt: string | null;
+  stuckHolds: number;
+  reconciliationOpen: number;
+  reconciliationItems: {
+    id: string;
+    user_id: string;
+    handle?: string;
+    available: number;
+    reserved: number;
+    ledger_available: number;
+    ledger_reserved: number;
+    available_delta: number;
+    reserved_delta: number;
+    checked_at: string;
+  }[];
 };
 type Overview = {
   users: number;
@@ -139,6 +156,27 @@ type Overview = {
   subscriptions: { active: number; trialing: number; pastDue: number; total: number };
   promotions: { active: number; grants: number };
   spend: { month: string; chargedCredits: number; estimatedPaise: number; thresholdPaise: number };
+  revenue: { mrrPaise: number; arrPaise: number; annualContractValuePaise: number; payingSubscribers: number };
+  planDistribution: {
+    planId: string;
+    name: string;
+    subscribers: number;
+    annual: number;
+    monthly: number;
+    mrrPaise: number;
+    arrPaise: number;
+  }[];
+  recentSubscriptionEvents: {
+    id: string;
+    type: string;
+    actor: string;
+    handle: string;
+    plan: string;
+    billing: string | null;
+    created_at: string;
+  }[];
+  costPerSuccessPaise: number;
+  estimatedCostPaise: number;
   alerts: { type: string; level: string; count: number; title: string; detail: string; href: string }[];
   credits: CreditSummary;
   recentAudit: AuditRow[];
@@ -241,8 +279,63 @@ export function AdminDashboard() {
               value={inr(data.spend.estimatedPaise)}
               hint={`${data.spend.chargedCredits} credits · alert at ${inr(data.spend.thresholdPaise)}`}
             />
+            <Stat
+              testId="stat-mrr"
+              label="Monthly recurring revenue"
+              value={inr(data.revenue.mrrPaise)}
+              hint={`${data.revenue.payingSubscribers} paying subscribers`}
+            />
+            <Stat
+              testId="stat-arr"
+              label="Annual recurring revenue"
+              value={inr(data.revenue.arrPaise)}
+              hint="MRR × 12 — not recognised revenue"
+            />
+            <Stat
+              testId="stat-cost-success"
+              label="Estimated cost / success"
+              value={inr(data.costPerSuccessPaise)}
+              hint={`${inr(data.estimatedCostPaise)} estimated total`}
+            />
           </div>
+          <Panel title="Subscriber distribution" testId="admin-plan-distribution">
+            <div className="grid gap-2 sm:grid-cols-3">
+              {data.planDistribution.map((plan) => (
+                <div
+                  key={plan.planId}
+                  data-testid={`plan-distribution-${plan.planId}`}
+                  className="rounded-xl border border-line bg-surface-2/40 p-3"
+                >
+                  <p className="text-sm font-medium text-ink">{plan.name}</p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums text-ink">
+                    {plan.subscribers}
+                  </p>
+                  <p className="text-xs text-ink-3">
+                    {plan.monthly} monthly · {plan.annual} annual · {inr(plan.mrrPaise)} MRR
+                  </p>
+                </div>
+              ))}
+              {data.planDistribution.length === 0 && (
+                <p className="text-sm text-ink-3">No paying subscribers yet.</p>
+              )}
+            </div>
+          </Panel>
           <TrendChart data={data.trend} testId="chart-usage" />
+          <Panel title="Recent subscription events" testId="admin-recent-subscriptions">
+            <ul className="space-y-1.5 text-sm text-ink-2">
+              {data.recentSubscriptionEvents.map((event) => (
+                <li key={event.id}>
+                  <span className="font-medium text-ink">@{event.handle}</span> ·{" "}
+                  {event.type.replace(/_/g, " ")} · {event.plan}
+                  {event.billing ? ` (${event.billing})` : ""} ·{" "}
+                  {dateTime(event.created_at)}
+                </li>
+              ))}
+              {data.recentSubscriptionEvents.length === 0 && (
+                <li className="text-ink-3">No subscription events yet.</li>
+              )}
+            </ul>
+          </Panel>
           <Panel
             title="Recent administrative actions"
             testId="admin-recent-audit"
@@ -274,6 +367,13 @@ export type AdminUserRow = {
   emailVerified: boolean;
   role: string | null;
   roleSource: string | null;
+  suspended: boolean;
+  suspendedAt: string | null;
+  suspensionReason: string | null;
+  planId: string | null;
+  plan: string | null;
+  subscriptionStatus: string | null;
+  billing: string | null;
   available: number;
   reserved: number;
   included: number;
@@ -290,10 +390,12 @@ export function AdminUsers() {
   const [query, setQuery] = React.useState("");
   const [selected, setSelected] = React.useState<string | null>(null);
   const [checked, setChecked] = React.useState<string[]>([]);
+  const [status, setStatus] = React.useState("");
+  const [plan, setPlan] = React.useState("");
   const { data, error, reload } = useAdminData<{
     users: AdminUserRow[];
     total: number;
-  }>(`users?q=${encodeURIComponent(query)}&limit=200`);
+  }>(`users?q=${encodeURIComponent(query)}&status=${status}&plan=${plan}&limit=200`);
   React.useEffect(() => {
     const t = setTimeout(() => setQuery(q), 300);
     return () => clearTimeout(t);
@@ -329,6 +431,29 @@ export function AdminUsers() {
         <Button size="sm" onClick={() => void exportCsv("exports/audit.csv", "admin-audit.csv")}>
           Export audit
         </Button>
+        <select
+          data-testid="admin-users-status"
+          className="h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          aria-label="Account status"
+        >
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+        </select>
+        <select
+          data-testid="admin-users-plan"
+          className="h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink"
+          value={plan}
+          onChange={(e) => setPlan(e.target.value)}
+          aria-label="Plan"
+        >
+          <option value="">All plans</option>
+          <option value="basic">Basic</option>
+          <option value="ai">AI</option>
+          <option value="ai_pro">AI Pro</option>
+        </select>
       </div>
       {!data ? (
         <LoadState error={error} testId="admin-users-state" />
@@ -355,6 +480,31 @@ export function AdminUsers() {
                 key: "role",
                 label: "Admin role",
                 render: (r) => (r.role ? <StatusBadge value={r.role} /> : "—"),
+              },
+              {
+                key: "plan",
+                label: "Plan",
+                render: (r) =>
+                  r.plan ? (
+                    <span className="text-xs">
+                      {r.plan}
+                      {r.billing ? ` · ${r.billing}` : ""}
+                    </span>
+                  ) : (
+                    "—"
+                  ),
+              },
+              {
+                key: "subscriptionStatus",
+                label: "Status",
+                render: (r) =>
+                  r.suspended ? (
+                    <StatusBadge value="suspended" />
+                  ) : r.subscriptionStatus ? (
+                    <StatusBadge value={r.subscriptionStatus} />
+                  ) : (
+                    "—"
+                  ),
               },
               { key: "available", label: "Available", align: "right" },
               { key: "reserved", label: "Reserved", align: "right" },
@@ -594,25 +744,224 @@ export function AdminCredits() {
             value={s.granted.toLocaleString()}
             hint={`${s.removed} removed by admins`}
           />
+          <Stat
+            testId="stat-refunded"
+            label="Refunded"
+            value={String(s.refunded)}
+            hint="Returned to accounts"
+          />
+          <Stat
+            testId="stat-next-reset"
+            label="Next credit reset"
+            value={s.nextResetAt ? new Date(s.nextResetAt).toLocaleDateString("en-IN") : "—"}
+            hint="Earliest entitlement period end"
+          />
+          <Stat
+            testId="stat-stuck-holds"
+            label="Stuck / reconciliation"
+            value={`${s.stuckHolds} / ${s.reconciliationOpen}`}
+            hint="Stale holds / ledger mismatches"
+          />
         </div>
+      )}
+      {s && s.reconciliationItems.length > 0 && (
+        <Panel title="Ledger reconciliation errors" testId="admin-reconciliation-errors">
+          <p className="mb-3 text-xs text-ink-3">
+            Accounts whose stored balance differs from the immutable ledger. The hourly job rechecks these.
+          </p>
+          <DataTable
+            testId="admin-reconciliation-errors-table"
+            rows={s.reconciliationItems}
+            columns={[
+              { key: "handle", label: "User", render: (r) => `@${r.handle ?? r.user_id}` },
+              { key: "available", label: "Stored", align: "right" },
+              { key: "ledger_available", label: "Ledger", align: "right" },
+              { key: "available_delta", label: "Delta", align: "right", render: (r) => signed(r.available_delta) },
+              { key: "reserved_delta", label: "Reserved delta", align: "right", render: (r) => signed(r.reserved_delta) },
+              { key: "checked_at", label: "Checked", render: (r) => dateTime(r.checked_at) },
+            ]}
+          />
+        </Panel>
       )}
       {!ledger.data ? (
         <LoadState error={ledger.error} testId="admin-ledger-state" />
       ) : (
         <LedgerTable rows={ledger.data.entries} testId="admin-ledger-table" />
       )}
+      <ReconciliationPanel
+        onChanged={() => {
+          summary.reload();
+          ledger.reload();
+        }}
+      />
     </LivePage>
+  );
+}
+
+function ReconciliationPanel({ onChanged }: { onChanged: () => void }) {
+  const { data, error, reload } = useAdminData<{ items: ReconciliationItem[] }>(
+    "credits/reconciliations",
+  );
+  const [selected, setSelected] = React.useState<ReconciliationItem | null>(null);
+  return (
+    <Panel title="Stuck holds & reconciliation" testId="admin-reconciliations">
+      <p className="mb-3 text-xs text-ink-3">
+        Requests the AI provider may have completed but never returned. They stay reserved
+        until an admin decides to charge or refund them.
+      </p>
+      {!data ? (
+        <LoadState error={error} testId="admin-reconciliations-state" />
+      ) : data.items.length === 0 ? (
+        <p className="text-sm text-ink-3" data-testid="admin-reconciliations-empty">
+          Nothing is waiting for reconciliation.
+        </p>
+      ) : (
+        <DataTable
+          testId="admin-reconciliations-table"
+          rows={data.items}
+          onRowClick={setSelected}
+          columns={[
+            { key: "created_at", label: "Started", render: (r) => dateTime(r.created_at) },
+            { key: "handle", label: "User", render: (r) => `@${r.handle ?? "—"}` },
+            { key: "label", label: "Action" },
+            { key: "amount", label: "Held", align: "right" },
+            { key: "status", label: "State", render: (r) => <StatusBadge value={r.status} /> },
+            {
+              key: "reconciliation_reason",
+              label: "Why",
+              render: (r) => r.reconciliation_reason ?? "Held longer than expected",
+            },
+          ]}
+        />
+      )}
+      {selected && (
+        <ReconciliationDrawer
+          item={selected}
+          onClose={() => setSelected(null)}
+          onDone={() => {
+            setSelected(null);
+            reload();
+            onChanged();
+          }}
+        />
+      )}
+    </Panel>
+  );
+}
+
+function ReconciliationDrawer({
+  item,
+  onClose,
+  onDone,
+}: {
+  item: ReconciliationItem;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+  const [decision, setDecision] = React.useState<"refund" | "charge">("refund");
+  const [amount, setAmount] = React.useState(String(item.amount));
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const submit = async () => {
+    if (reason.trim().length < 5) {
+      toast("Add a decision reason (at least 5 characters).", { tone: "danger" });
+      return;
+    }
+    setBusy(true);
+    try {
+      await adminSend(`credits/reconciliations/${item.id}/resolve`, "POST", {
+        decision,
+        amount: decision === "charge" ? Number(amount) || 0 : undefined,
+        reason: reason.trim(),
+      });
+      toast(decision === "charge" ? "Request charged" : "Credits refunded", { tone: "success" });
+      onDone();
+    } catch (err) {
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title={item.label}
+      description={`@${item.handle ?? "unknown"} · ${item.amount} credits held`}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            data-testid="reconciliation-submit"
+            loading={busy}
+            onClick={submit}
+          >
+            {decision === "charge" ? "Charge credits" : "Refund credits"}
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-xs text-ink-3">
+          {item.reconciliation_reason ?? "This hold is older than expected."}
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {(["refund", "charge"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={decision === value}
+              onClick={() => setDecision(value)}
+              className={
+                decision === value
+                  ? "rounded-xl border border-accent bg-accent/10 px-3 py-2 text-sm font-medium text-accent-ink"
+                  : "rounded-xl border border-line px-3 py-2 text-sm text-ink-2 hover:bg-surface-2"
+              }
+            >
+              {value === "refund" ? "Return all credits" : "Charge a confirmed amount"}
+            </button>
+          ))}
+        </div>
+        {decision === "charge" && (
+          <label className="block text-xs">
+            <span className="mb-1 block font-medium text-ink-2">Credits to charge</span>
+            <input
+              className="h-9 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink focus:border-accent focus:outline-none"
+              type="number"
+              min={0}
+              max={item.amount}
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </label>
+        )}
+        <label className="block text-xs">
+          <span className="mb-1 block font-medium text-ink-2">Decision reason</span>
+          <textarea
+            className="min-h-24 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+            value={reason}
+            maxLength={300}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="What did you verify with the provider?"
+          />
+        </label>
+      </div>
+    </Drawer>
   );
 }
 
 export function AdminUsage() {
   const [days, setDays] = React.useState(7);
-  const { data, error } = useAdminData<{
+  const { data, error, reload } = useAdminData<{
     totals: UsageTotals;
     trend: TrendPoint[];
     requests: UsageRow[];
   }>(`usage?days=${days}&limit=200`);
   const insights = useAdminData<UsageInsights>(`usage/insights?days=${days}`);
+  const [refundTarget, setRefundTarget] = React.useState<UsageRow | null>(null);
   return (
     <LivePage
       title="AI Usage & Costs"
@@ -717,11 +1066,140 @@ export function AdminUsage() {
                 label: "Status",
                 render: (r) => <StatusBadge value={r.status} />,
               },
+              {
+                key: "refund",
+                label: "",
+                render: (r) =>
+                  r.status === "succeeded" && r.charged > 0 && r.reservation_id ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      data-testid={`refund-${r.id}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setRefundTarget(r);
+                      }}
+                    >
+                      {r.refund_status === "refunded" ? "Refunded" : "Refund"}
+                    </Button>
+                  ) : null,
+              },
             ]}
           />
         </>
       )}
+      {refundTarget && (
+        <RefundDrawer
+          row={refundTarget}
+          onClose={() => setRefundTarget(null)}
+          onDone={() => {
+            setRefundTarget(null);
+            reload();
+          }}
+        />
+      )}
     </LivePage>
+  );
+}
+
+function RefundDrawer({ row, onClose, onDone }: { row: UsageRow; onClose: () => void; onDone: () => void }) {
+  const { toast } = useToast();
+  const refunded = row.refunded_credits ?? 0;
+  const remaining = Math.max(0, row.charged - refunded);
+  const [amount, setAmount] = React.useState(String(remaining));
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const submit = async () => {
+    if (reason.trim().length < 5) {
+      toast("Add a refund reason (at least 5 characters).", { tone: "danger" });
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await adminSend<{ approval_required?: boolean; refunded?: number }>(
+        "credits/refunds",
+        "POST",
+        {
+          reservationId: row.reservation_id ?? null,
+          amount: Number(amount) || undefined,
+          reason: reason.trim(),
+          idempotencyKey: `refund:${row.id}:${Date.now()}`,
+        },
+      );
+      if (result.approval_required) {
+        toast("Refund sent for a second admin to approve.", { tone: "success" });
+      } else {
+        toast(`${result.refunded ?? 0} credits refunded.`, { tone: "success" });
+      }
+      onDone();
+    } catch (err) {
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title="Refund AI charge"
+      description={`${row.label ?? row.action} · @${row.handle ?? "unknown"}`}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button data-testid="refund-submit" loading={busy} onClick={submit}>
+            Refund credits
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4 text-sm text-ink-2">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-ink-3">Charged</p>
+            <p className="text-lg font-semibold text-ink">{row.charged}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-ink-3">Already refunded</p>
+            <p className="text-lg font-semibold text-ink">{refunded}</p>
+          </div>
+        </div>
+        {remaining === 0 ? (
+          <p className="rounded-xl border border-line bg-surface-2 p-3 text-xs">
+            This transaction is fully refunded. Refunds can never be repeated.
+          </p>
+        ) : (
+          <>
+            <label className="block text-xs">
+              <span className="mb-1 block font-medium text-ink-2">Credits to refund</span>
+              <input
+                className="h-9 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink focus:border-accent focus:outline-none"
+                type="number"
+                min={1}
+                max={remaining}
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+              />
+            </label>
+            <label className="block text-xs">
+              <span className="mb-1 block font-medium text-ink-2">Reason</span>
+              <textarea
+                className="min-h-24 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                value={reason}
+                maxLength={300}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Why are these credits being returned?"
+              />
+            </label>
+            <p className="text-xs text-ink-3">
+              Refunds over the approval threshold are sent to a second admin.
+            </p>
+          </>
+        )}
+      </div>
+    </Drawer>
   );
 }
 

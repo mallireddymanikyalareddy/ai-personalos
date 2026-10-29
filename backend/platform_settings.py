@@ -20,7 +20,14 @@ DEFAULT_SETTINGS = {
     "lowCreditThreshold": 3,
     "resetPolicy": "Included credits reset each entitlement period; unused included credits do not carry over.",
     "trialDays": 30,
-    "flags": {"ai_confirmation_modal": False, "annual_bonus_credits": True, "promotions": True,
+    "supportEmail": "",
+    "supportUrl": "",
+    "statusPageUrl": "",
+    "supportHours": "",
+    "requireMfaForAdmins": False,
+    "adminSessionMinutes": 1440,
+    "auditRetentionDays": 365,
+    "flags": {"ai_confirmation_modal": True, "annual_bonus_credits": True, "promotions": True,
               "referrals": True},
 }
 
@@ -58,4 +65,6 @@ def provider_status() -> list[dict]:
 
 async def public_settings() -> dict:
     values = await get_settings()
-    return {"lowCreditThreshold": values["lowCreditThreshold"], "flags": values["flags"]}
+    return {"lowCreditThreshold": values["lowCreditThreshold"], "flags": values["flags"],
+            "support": {"email": values.get("supportEmail"), "url": values.get("supportUrl"),
+                        "statusPageUrl": values.get("statusPageUrl"), "hours": values.get("supportHours")}}

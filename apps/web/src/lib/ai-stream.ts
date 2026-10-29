@@ -36,11 +36,13 @@ export function buildAIContext(state: AppState, localAnswer: string): string {
 export const CREDITS_EVENT = "personalos:credits-changed";
 const notifyCreditsChanged = () => window.dispatchEvent(new Event(CREDITS_EVENT));
 
-export type AIAction = "quick_question" | "daily_plan" | "journal_summary";
+export type AIAction = string;
+export type ChatCreditInfo = { charged: number; available: number; reserved?: number };
 
 export async function streamAIChat(
   body: { prompt: string; context: string; history: ChatTurn[]; action?: AIAction },
   onDelta: (text: string) => void,
+  onCredits?: (info: ChatCreditInfo) => void,
 ): Promise<string> {
   const requestId = `ai-${crypto.randomUUID()}`;
   const res = await fetch("/api/ai/chat", {
@@ -67,8 +69,13 @@ export async function streamAIChat(
     for (const event of events) {
       const line = event.replace(/^data: /, "");
       if (!line) continue;
-      const payload = JSON.parse(line) as { delta?: string; error?: string; credits?: { available: number } };
+      const payload = JSON.parse(line) as {
+        delta?: string;
+        error?: string;
+        credits?: ChatCreditInfo;
+      };
       if (payload.error || payload.credits) notifyCreditsChanged();
+      if (payload.credits) onCredits?.(payload.credits);
       if (payload.error) throw new Error(payload.error);
       if (payload.delta) {
         full += payload.delta;

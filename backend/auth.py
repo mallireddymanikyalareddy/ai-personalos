@@ -226,7 +226,7 @@ async def current_session(request: Request) -> tuple[dict, dict] | None:
     if not session or session["expires_at"].replace(tzinfo=timezone.utc) < now():
         return None
     user = await db.users.find_one({"id": session["user_id"]}, {"_id": 0})
-    if not user:
+    if not user or user.get("suspended_at"):
         return None
     await db.sessions.update_one({"id": session["id"]}, {"$set": {"last_seen_at": now()}})
     return user, session
@@ -321,6 +321,8 @@ async def login(body: LoginIn, request: Request, response: Response):
         await db.login_attempts.insert_one({"key": key, "ident": ident, "at": now()})
         raise ApiError(401, "INVALID_CREDENTIALS", "Incorrect handle/email or password.")
     await db.login_attempts.delete_many({"key": key})
+    if user.get("suspended_at"):
+        raise ApiError(403, "ACCOUNT_SUSPENDED", "This account is suspended. Contact support.")
     if user.get("mfa_enabled"):
         challenge = await create_token(user["id"], "mfa", timedelta(minutes=5))
         return {"mfaRequired": True, "challenge": challenge}

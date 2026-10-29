@@ -167,6 +167,7 @@ export function AdminPlans() {
   const { role } = useAdminRole();
   const { data, error, reload } = useAdminData<{ plans: LivePlan[] }>("plans");
   const [editing, setEditing] = React.useState<LivePlan | null>(null);
+  const [previewing, setPreviewing] = React.useState<LivePlan | null>(null);
   return (
     <Shell
       title="Plans & Pricing"
@@ -182,6 +183,7 @@ export function AdminPlans() {
               plan={plan}
               canEdit={role === "super_admin"}
               onEdit={() => setEditing(plan)}
+              onPreview={() => setPreviewing(plan)}
               onChanged={reload}
             />
           ))}
@@ -200,7 +202,49 @@ export function AdminPlans() {
           />
         )}
       </Drawer>
+      <Drawer
+        open={previewing != null}
+        onClose={() => setPreviewing(null)}
+        title="Preview plan change"
+        description="A read-only comparison before anything is published."
+        className="sm:max-w-xl"
+      >
+        {previewing && <PlanPreview planId={previewing.plan_id} />}
+      </Drawer>
     </Shell>
+  );
+}
+
+function PlanPreview({ planId }: { planId: string }) {
+  const { data, error } = useAdminData<{
+    hasDraft: boolean;
+    diff: { field: string; from: unknown; to: unknown }[];
+    subscribers: number;
+    note: string;
+  }>(`plans/${planId}/preview`);
+  if (!data) return <LoadState error={error} testId="admin-plan-preview-state" />;
+  return (
+    <div className="space-y-3 text-sm" data-testid="admin-plan-preview">
+      <p className="text-ink-2">
+        {data.subscribers} subscription{data.subscribers === 1 ? "" : "s"} on this plan. {data.note}
+      </p>
+      {!data.hasDraft ? (
+        <p className="text-ink-3">There is no draft to preview.</p>
+      ) : data.diff.length === 0 ? (
+        <p className="text-ink-3">The draft matches the live version.</p>
+      ) : (
+        <ul className="divide-y divide-line/60">
+          {data.diff.map((row) => (
+            <li key={row.field} className="grid grid-cols-[1fr_auto] gap-2 py-2">
+              <span className="font-medium text-ink">{row.field.replace(/_/g, " ")}</span>
+              <span className="text-right text-xs text-ink-3">
+                {String(row.from ?? "—")} → <strong className="text-ink">{String(row.to ?? "—")}</strong>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -240,11 +284,13 @@ function PlanCard({
   plan,
   canEdit,
   onEdit,
+  onPreview,
   onChanged,
 }: {
   plan: LivePlan;
   canEdit: boolean;
   onEdit: () => void;
+  onPreview: () => void;
   onChanged: () => void;
 }) {
   const v = plan.current;
@@ -262,7 +308,23 @@ function PlanCard({
           {v ? `v${v.version} · live` : "no live version"}
         </span>
       </div>
+      <p className="text-xs" data-testid={`admin-plan-${plan.plan_id}-availability`}>
+        {plan.available ? (
+          <span className="text-emerald-700 dark:text-emerald-300">Available for new subscriptions</span>
+        ) : (
+          <span className="text-ink-3">Hidden from new subscriptions</span>
+        )}
+      </p>
       {v && <PlanFacts v={v} />}
+      {v && (v.features ?? []).length > 0 && (
+        <ul className="flex flex-wrap gap-1.5" data-testid={`admin-plan-${plan.plan_id}-features`}>
+          {(v.features ?? []).map((feature) => (
+            <li key={feature} className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-ink-2">
+              {feature}
+            </li>
+          ))}
+        </ul>
+      )}
       {plan.scheduled.map((s) => (
         <div
           key={s.version}
@@ -291,22 +353,95 @@ function PlanCard({
           )}
         </div>
       )}
-      {canEdit && (
+      <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
-          variant="secondary"
-          className="w-full"
-          onClick={onEdit}
-          data-testid={`admin-plan-${plan.plan_id}-edit`}
+          variant="ghost"
+          onClick={onPreview}
+          data-testid={`admin-plan-${plan.plan_id}-preview`}
         >
-          {plan.draft ? "Edit draft" : "Edit as new version"}
+          Preview
         </Button>
-      )}
+        {canEdit && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="flex-1"
+            onClick={onEdit}
+            data-testid={`admin-plan-${plan.plan_id}-edit`}
+          >
+            {plan.draft ? "Edit draft" : "Edit as new version"}
+          </Button>
+        )}
+      </div>
+      {canEdit && <AvailabilityToggle plan={plan} onDone={onChanged} />}
       <HistoryLine
         testId={`admin-plan-${plan.plan_id}-history`}
         versions={plan.history}
       />
     </div>
+  );
+}
+
+function AvailabilityToggle({ plan, onDone }: { plan: LivePlan; onDone: () => void }) {
+  const save = useSave();
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    const ok = await save(
+      () => adminSend(`plans/${plan.plan_id}/availability`, "PUT", {
+        available: !plan.available,
+        reason,
+      }),
+      plan.available ? "Plan hidden from new subscriptions" : "Plan is available again",
+    );
+    setBusy(false);
+    if (ok) {
+      setReason("");
+      setOpen(false);
+      onDone();
+    }
+  };
+  if (!open) {
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="w-full justify-start"
+        onClick={() => setOpen(true)}
+        data-testid={`admin-plan-${plan.plan_id}-availability-toggle`}
+      >
+        {plan.available ? "Hide from new subscriptions" : "Make available"}
+      </Button>
+    );
+  }
+  return (
+    <form onSubmit={submit} className="space-y-1.5 rounded-lg border border-line p-2">
+      <input
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Reason (required)"
+        maxLength={300}
+        className={field}
+        aria-label="Availability change reason"
+      />
+      <div className="flex gap-2">
+        <Button
+          type="submit"
+          size="sm"
+          disabled={busy || reason.trim().length < 5}
+          data-testid={`admin-plan-${plan.plan_id}-availability-save`}
+        >
+          Confirm
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -366,6 +501,7 @@ function PlanForm({ plan, onSaved }: { plan: LivePlan; onSaved: () => void }) {
     ),
   );
   const [reason, setReason] = React.useState("");
+  const [features, setFeatures] = React.useState((base.features ?? []).join("\n"));
   const parsed = Object.fromEntries(
     PLAN_INPUTS.map(([k, , kind]) => [
       k,
@@ -387,6 +523,10 @@ function PlanForm({ plan, onSaved }: { plan: LivePlan; onSaved: () => void }) {
           adminSend(`plans/${plan.plan_id}/draft`, "PUT", {
             name,
             ...parsed,
+            features: features
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean),
             reason,
           }),
         "Draft saved",
@@ -425,6 +565,17 @@ function PlanForm({ plan, onSaved }: { plan: LivePlan; onSaved: () => void }) {
           />
         </label>
       ))}
+      <label className="block text-xs font-medium text-ink-2">
+        Feature entitlements (one per line)
+        <textarea
+          data-testid="admin-plan-form-features"
+          value={features}
+          onChange={(e) => setFeatures(e.target.value)}
+          rows={4}
+          placeholder={"AI assistant\nDaily briefing\nUnlimited notes"}
+          className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+        />
+      </label>
       <input
         data-testid="admin-plan-form-reason"
         value={reason}
@@ -473,11 +624,7 @@ export function AdminActionPricing() {
                   ` · v${s.version} scheduled from ${dateTime(s.effective_at)}`,
               )}
             </p>
-            {role === "super_admin" && (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setEditing(true)}
+            {["super_admin", "ai_ops_admin"].includes(role) && (<Button size="sm" variant="secondary" onClick={() => setEditing(true)}
                 data-testid="admin-pricing-edit"
               >
                 {data.draft ? "Edit draft" : "Edit costs as new version"}
@@ -494,7 +641,7 @@ export function AdminActionPricing() {
                 compare={current.actions}
                 testId="admin-pricing-draft-table"
               />
-              {role === "super_admin" && (
+              {["super_admin", "ai_ops_admin"].includes(role) && (
                 <PublishBar
                   base="pricing"
                   testId="admin-pricing-publishbar"
@@ -608,6 +755,24 @@ function PricingTable({
               : r.max_output_tokens;
           },
         },
+        {
+          key: "input_credits_per_1k",
+          label: "In cr /1k",
+          align: "right",
+          render: (r) => r.input_credits_per_1k ?? 0,
+        },
+        {
+          key: "max_input_tokens",
+          label: "Max in tok",
+          align: "right",
+          render: (r) => r.max_input_tokens ?? 0,
+        },
+        {
+          key: "request_limit_per_day",
+          label: "Daily limit",
+          align: "right",
+          render: (r) => r.request_limit_per_day ?? 0,
+        },
       ]}
     />
   );
@@ -625,7 +790,13 @@ function PricingForm({
   const [reason, setReason] = React.useState("");
   const set = (
     i: number,
-    key: "min_credits" | "max_credits" | "max_output_tokens",
+    key:
+      | "min_credits"
+      | "max_credits"
+      | "max_output_tokens"
+      | "input_credits_per_1k"
+      | "max_input_tokens"
+      | "request_limit_per_day",
     value: string,
   ) =>
     setRows((prev) =>
@@ -633,22 +804,41 @@ function PricingForm({
         j === i ? { ...r, [key]: Number(value.replace(/\D/g, "") || 0) } : r,
       ),
     );
+  const setModel = (i: number, value: string) =>
+    setRows((prev) => prev.map((r, j) => (j === i ? { ...r, model: value } : r)));
   const bad = rows.find(
     (r) =>
       r.min_credits < 1 ||
-      r.max_credits > 100 ||
+      r.max_credits > 1000 ||
       r.min_credits > r.max_credits ||
       r.max_output_tokens < 50 ||
-      r.max_output_tokens > 16000,
+      r.max_output_tokens > 16000 ||
+      (r.input_credits_per_1k ?? 0) < 0 ||
+      (r.input_credits_per_1k ?? 0) > 100 ||
+      (r.max_input_tokens ?? 0) > 200000 ||
+      (r.request_limit_per_day ?? 0) > 10000,
   );
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const actions = rows.map(
-      ({ action, min_credits, max_credits, max_output_tokens }) => ({
+      ({
         action,
         min_credits,
         max_credits,
         max_output_tokens,
+        model,
+        input_credits_per_1k,
+        max_input_tokens,
+        request_limit_per_day,
+      }) => ({
+        action,
+        min_credits,
+        max_credits,
+        max_output_tokens,
+        model: model?.trim() || null,
+        input_credits_per_1k: input_credits_per_1k ?? 0,
+        max_input_tokens: max_input_tokens ?? 0,
+        request_limit_per_day: request_limit_per_day ?? 0,
       }),
     );
     if (
@@ -674,6 +864,10 @@ function PricingForm({
             <th className="text-right">Min</th>
             <th className="text-right">Max</th>
             <th className="text-right">Max out tok</th>
+            <th className="text-right">In credits /1k</th>
+            <th className="text-right">Max in tok</th>
+            <th className="text-right">Daily limit</th>
+            <th className="pl-2">Model</th>
           </tr>
         </thead>
         <tbody>
@@ -707,6 +901,43 @@ function PricingForm({
                   className={cell}
                 />
               </td>
+              <td className="text-right">
+                <input
+                  aria-label={`${r.label} input credits per 1000 tokens`}
+                  data-testid={`admin-pricing-form-${r.action}-input-rate`}
+                  value={r.input_credits_per_1k ?? 0}
+                  onChange={(e) => set(i, "input_credits_per_1k", e.target.value)}
+                  className={cell}
+                />
+              </td>
+              <td className="text-right">
+                <input
+                  aria-label={`${r.label} max input tokens`}
+                  data-testid={`admin-pricing-form-${r.action}-max-input`}
+                  value={r.max_input_tokens ?? 0}
+                  onChange={(e) => set(i, "max_input_tokens", e.target.value)}
+                  className={cell}
+                />
+              </td>
+              <td className="text-right">
+                <input
+                  aria-label={`${r.label} daily request limit`}
+                  data-testid={`admin-pricing-form-${r.action}-daily-limit`}
+                  value={r.request_limit_per_day ?? 0}
+                  onChange={(e) => set(i, "request_limit_per_day", e.target.value)}
+                  className={cell}
+                />
+              </td>
+              <td className="pl-2">
+                <input
+                  aria-label={`${r.label} model route`}
+                  data-testid={`admin-pricing-form-${r.action}-model`}
+                  value={r.model ?? ""}
+                  onChange={(e) => setModel(i, e.target.value)}
+                  className={`${cell} w-28 text-left`}
+                  placeholder="platform default"
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -716,8 +947,8 @@ function PricingForm({
           className="text-xs text-red-600"
           data-testid="admin-pricing-form-error"
         >
-          {bad.label}: credits must be 1–100 with min ≤ max, and max output
-          50–16,000 tokens.
+          {bad.label}: credits must be 1–1000 with min ≤ max, max output
+          50–16,000 tokens, input rate 0–100, and limits must be positive.
         </p>
       )}
       <input

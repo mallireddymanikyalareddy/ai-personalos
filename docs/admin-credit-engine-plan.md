@@ -70,3 +70,24 @@ Runs on server start via `setup_billing()`:
 
 ## Backup & recovery
 Take an Atlas snapshot before publishing. All Stage 3 changes are additive: existing collections (`users`, `app_state`, …) are untouched. To roll back, deploy the previous build and drop the new collections listed above; to re-run a seed, delete its `schema_migrations` key and restart.
+
+## Iteration 27 — high-priority and admin/subscriber completion
+- **Settled-charge refunds:** `credits.refund_usage` restores the buckets that paid the charge, supports partial refunds, is idempotent per key, never refunds twice, and writes a `refund` ledger entry. Admin endpoint `POST /admin/credits/refunds` and a refund drawer on AI Usage. Refunds at/above `approvalThresholdCredits` go through maker-checker (`credit_refund`).
+- **Reconciliation-required:** a stale hold is only auto-released when the provider never started. Holds where the provider may have completed are marked `reconciliation_required` with credits still reserved. `GET /admin/credits/reconciliations` lists them; `POST /admin/credits/reconciliations/{id}/resolve` charges a confirmed amount or returns the hold. The gateway records `provider_started_at`/`output_started_at` and flags client disconnects instead of blind refunds.
+- **Dashboard:** MRR/ARR (monthly-equivalent, paying subscribers only), plan distribution, recent subscription events, estimated cost per successful request, plus the existing alerts.
+- **Users:** suspend/reinstate with session revocation and login blocking (`ACCOUNT_SUSPENDED`), plan/status filters, plan + subscription status columns, subscription event history in the drawer.
+- **Credits page:** next reset date, refunded total, stuck-hold count, open ledger mismatches with deltas.
+- **Plans:** feature entitlements, availability toggle (new subscriptions only), and a pre-publish preview diff with affected subscriber count. Changes remain prospective through plan-version pinning.
+- **AI action pricing:** per-action model routing, input-token surcharge (`input_credits_per_1k`), per-action input cap and daily request limit, all enforced in `credits.reserve`. `ai_ops_admin` can write pricing (not plans or billing settings).
+- **Platform settings:** support email/link/status page/hours, optional admin-wide MFA requirement, admin session policy and audit-retention targets. Public settings expose support details.
+- **Subscriptions:** plan/billing change starts a fresh entitlement period, grants the new allowance exactly once, records `plan_changed` and an entitlement run, and exposes an informational proration preview. Payment status (`manual`/`paid`/`failed`/`refunded`) can be recorded; `past_due` sets `failed`.
+- **Subscriber UX:** header badge shows plan and reset date in its tooltip; credits panel shows plan, next reset, allowance, annual bonus and bucket split; the AI confirmation modal shows action, estimated cost, balance, expected remaining, size limits and a shortfall/upgrade path; completed answers show credits used and remaining.
+
+**Still blocked / outstanding**
+- Actual provider-invoice cost: usage costs remain estimates from configurable token rates (`inputCostPaisePerMTok`/`outputCostPaisePerMTok`). The provider response does not return a billed amount.
+- Razorpay: checkout, webhooks, payment reconciliation, real proration collection and subscription refunds remain excluded.
+- Central execution gateway: real provider calls (chat, briefing, reflection) are charged server-side, and the gateway now accepts every priced action with routing/limits. Deterministic browser-side assistants (tasks, habits, journal, goals, notebook, planner) still run locally and do not pass through the server for execution. Moving them requires porting the TS core AI engine or calling it from the Python service.
+- Referral rewards are still granted at signup without email-verification gating.
+- Approval requests claimed as `processing` still need a crash-recovery sweep.
+- Full LifeOS regression suite is not run; targeted unit/API checks only.
+

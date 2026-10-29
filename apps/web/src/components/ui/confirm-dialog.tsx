@@ -16,6 +16,7 @@ export interface ConfirmDialogProps {
   cancelLabel?: string;
   tone?: "danger" | "accent";
   busy?: boolean;
+  confirmDisabled?: boolean;
   children?: React.ReactNode;
 }
 
@@ -29,6 +30,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   tone = "danger",
   busy = false,
+  confirmDisabled = false,
   children,
 }: ConfirmDialogProps) {
   const isDanger = tone === "danger";
@@ -67,7 +69,7 @@ export function ConfirmDialog({
         <Button
           type="button"
           variant={isDanger ? "danger" : "primary"}
-          disabled={busy}
+          disabled={busy || confirmDisabled}
           onClick={() => {
             onConfirm();
           }}

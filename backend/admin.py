@@ -46,6 +46,12 @@ def require_role(*allowed: str):
         role = user.get("admin_role")
         if role not in ROLES:
             raise ApiError(403, "FORBIDDEN", "You don't have access to this admin area.")
+        import platform_settings
+
+        settings = await platform_settings.get_settings()
+        if settings.get("requireMfaForAdmins") and not user.get("mfa_enabled"):
+            raise ApiError(403, "ADMIN_MFA_REQUIRED",
+                           "Enable two-factor authentication in Settings before using the admin console.")
         if allowed and role not in allowed and role != "super_admin":
             from billing import record_audit
 

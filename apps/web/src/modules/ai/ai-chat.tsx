@@ -31,6 +31,7 @@ export interface ChatEntry {
   at: Timestamp;
   messageId?: ID;
   feedback?: "up" | "down" | null;
+  credits?: { charged: number; available: number };
 }
 
 export interface ChatSuggestion {
@@ -184,6 +185,16 @@ export function AIChat({
                         onRegenerate && index === entries.length - 1 ? onRegenerate : undefined
                       }
                     />
+                    {entry.credits && (
+                      <p
+                        className="mt-1.5 text-[11px] text-ink-3"
+                        data-testid="ai-credits-used"
+                      >
+                        {entry.credits.charged} credit
+                        {entry.credits.charged === 1 ? "" : "s"} used ·{" "}
+                        {entry.credits.available} remaining
+                      </p>
+                    )}
                   </div>
                 </li>
               ),

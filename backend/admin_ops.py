@@ -25,7 +25,8 @@ Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, m
 
 CREDIT_ROLES = ("billing_admin", "support_admin")
 USER_FIELDS = {"_id": 0, "id": 1, "handle": 1, "email": 1, "display_name": 1, "created_at": 1, "admin_role": 1,
-               "admin_role_source": 1, "email_verified_at": 1}
+               "admin_role_source": 1, "email_verified_at": 1, "suspended_at": 1, "suspension_reason": 1,
+               "suspended_by": 1}
 
 
 def csv_cell(value):
@@ -55,24 +56,61 @@ async def with_handles(rows: list[dict], *time_keys: str) -> list[dict]:
     return [r | {"handle": names.get(r.get("user_id"), "—")} | {k: iso(r[k]) for k in time_keys if r.get(k)} for r in rows]
 
 
-def public_admin_user(u: dict, acc: dict | None) -> dict:
+def public_admin_user(u: dict, acc: dict | None, sub: dict | None = None) -> dict:
     return {"id": u["id"], "handle": u["handle"], "email": u.get("email"), "displayName": u.get("display_name"),
             "joined": iso(u.get("created_at")), "emailVerified": bool(u.get("email_verified_at")),
             "role": u.get("admin_role"), "roleSource": u.get("admin_role_source"),
+            "suspended": bool(u.get("suspended_at")), "suspendedAt": iso(u.get("suspended_at")),
+            "suspensionReason": u.get("suspension_reason"),
+            "planId": (sub or {}).get("plan_id"), "plan": (sub or {}).get("plan_name"),
+            "subscriptionStatus": (sub or {}).get("status"), "billing": (sub or {}).get("billing_period"),
             "available": (acc or {}).get("available", 0), "reserved": (acc or {}).get("reserved", 0),
             "included": (acc or {}).get("included", 0), "promotional": (acc or {}).get("promotional", 0),
             "purchased": (acc or {}).get("purchased", 0)}
 
 
+async def active_subscriptions(user_ids: list[str]) -> dict[str, dict]:
+    if not user_ids:
+        return {}
+    subs = await db.subscriptions.find(
+        {"user_id": {"$in": user_ids}, "status": {"$in": ["active", "trialing", "past_due"]}},
+        {"_id": 0}).to_list(5000)
+    plan_ids = {s["plan_id"] for s in subs}
+    names = {(v["plan_id"], v["version"]): v.get("name", v["plan_id"])
+             async for v in db.plan_versions.find({"plan_id": {"$in": list(plan_ids)}}, {"_id": 0})}
+    latest = await db.plan_versions.find(
+        {"plan_id": {"$in": list(plan_ids)}, "status": "published", "effective_at": {"$lte": now()}},
+        {"_id": 0}).sort([("plan_id", 1), ("version", -1)]).to_list(500)
+    live: dict[str, str] = {}
+    for v in latest:
+        live.setdefault(v["plan_id"], v.get("name", v["plan_id"]))
+    out = {}
+    for sub in subs:
+        out.setdefault(sub["user_id"], sub | {
+            "plan_name": names.get((sub["plan_id"], sub.get("plan_version", 1))) or live.get(sub["plan_id"])})
+    return out
+
+
 @router.get("/users")
-async def list_users(q: str = "", limit: int = 100, _=Depends(require_role())):
+async def list_users(q: str = "", status: str = "", plan: str = "", limit: int = 100,
+                     _=Depends(require_role())):
     match = {}
     if q.strip():
         pattern = re.escape(q.strip().lower())
         match = {"$or": [{"handle": {"$regex": pattern, "$options": "i"}}, {"email": {"$regex": pattern, "$options": "i"}}]}
+    if status == "suspended":
+        match["suspended_at"] = {"$ne": None}
+    elif status == "active":
+        match["suspended_at"] = None
+    subscriptions = await active_subscriptions(
+        [u["id"] async for u in db.users.find(match, {"_id": 0, "id": 1})])
+    if plan:
+        allowed = {uid for uid, sub in subscriptions.items() if sub["plan_id"] == plan}
+        match["id"] = {"$in": list(allowed)}
     users = await db.users.find(match, USER_FIELDS).sort("created_at", -1).to_list(max(1, min(limit, 200)))
     accounts = {a["user_id"]: a async for a in db.credit_accounts.find({"user_id": {"$in": [u["id"] for u in users]}}, {"_id": 0})}
-    return {"users": [public_admin_user(u, accounts.get(u["id"])) for u in users], "total": await db.users.count_documents(match)}
+    return {"users": [public_admin_user(u, accounts.get(u["id"]), subscriptions.get(u["id"])) for u in users],
+            "total": await db.users.count_documents(match)}
 
 
 async def find_user(user_id: str) -> dict:
@@ -89,11 +127,56 @@ async def user_detail(user_id: str, _=Depends(require_role())):
     ledger = await credits.history(user_id, 25)
     usage = await db.ai_usage.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(10)
     sub = await db.subscriptions.find_one({"user_id": user_id}, {"_id": 0}, sort=[("created_at", -1)])
-    return {"user": public_admin_user(user, acc), "ledger": ledger,
-            "subscription": sub | {k: iso(sub[k]) for k in ("started_at", "current_period_start", "current_period_end",
-                                                            "trial_ends_at", "canceled_at", "created_at")
-                                   if sub.get(k)} if sub else None,
+    sub_public = sub | {k: iso(sub[k]) for k in ("started_at", "current_period_start", "current_period_end",
+                                                  "trial_ends_at", "canceled_at", "created_at")
+                         if sub.get(k)} if sub else None
+    events = []
+    plan_name = None
+    if sub:
+        version = await db.plan_versions.find_one(
+            {"plan_id": sub["plan_id"], "version": sub.get("plan_version", 1)}, {"_id": 0})
+        plan_name = (version or {}).get("name", sub["plan_id"])
+        events = await db.subscription_events.find({"subscription_id": sub["id"]}, {"_id": 0}).sort(
+            "created_at", -1).to_list(20)
+        events = [e | {"created_at": iso(e["created_at"])} for e in events]
+    return {"user": public_admin_user(user, acc, sub | {"plan_name": plan_name} if sub else None),
+            "ledger": ledger, "subscription": sub_public, "subscriptionEvents": events,
             "usage": [u | {"created_at": iso(u["created_at"])} for u in usage]}
+
+
+class SuspendIn(BaseModel):
+    reason: Reason
+
+
+@router.post("/users/{user_id}/suspend")
+async def suspend_user(user_id: str, body: SuspendIn, auth=Depends(require_role("super_admin", "support_admin"))):
+    admin = auth[0]
+    if user_id == admin["id"]:
+        raise ApiError(400, "VALIDATION_FAILED", "You can't suspend your own account.")
+    user = await find_user(user_id)
+    if user.get("admin_role_source") == "env" or user.get("email") in admin_emails():
+        raise ApiError(400, "VALIDATION_FAILED", "This owner account can't be suspended.")
+    reason = body.reason.strip()
+    await db.users.update_one({"id": user_id}, {"$set": {
+        "suspended_at": now(), "suspension_reason": reason, "suspended_by": admin["handle"]}})
+    revoked = await db.sessions.update_many(
+        {"user_id": user_id, "revoked_at": None}, {"$set": {"revoked_at": now()}})
+    await record_audit(admin["handle"], "user.suspend", "user", user_id, reason, "success", admin["admin_role"],
+                       {"sessionsRevoked": revoked.modified_count})
+    return {"user": public_admin_user(await find_user(user_id),
+                                      await db.credit_accounts.find_one({"user_id": user_id}, {"_id": 0}))}
+
+
+@router.post("/users/{user_id}/reinstate")
+async def reinstate_user(user_id: str, body: SuspendIn, auth=Depends(require_role("super_admin", "support_admin"))):
+    admin = auth[0]
+    await find_user(user_id)
+    reason = body.reason.strip()
+    await db.users.update_one({"id": user_id}, {
+        "$unset": {"suspended_at": "", "suspension_reason": "", "suspended_by": ""}})
+    await record_audit(admin["handle"], "user.reinstate", "user", user_id, reason, "success", admin["admin_role"])
+    return {"user": public_admin_user(await find_user(user_id),
+                                      await db.credit_accounts.find_one({"user_id": user_id}, {"_id": 0}))}
 
 
 class CreditAdjustIn(BaseModel):
@@ -275,7 +358,7 @@ class DecisionIn(BaseModel):
 
 def can_decide(admin: dict, action: str) -> bool:
     role = admin.get("admin_role")
-    if action in ("credit_adjust", "bulk_credit_adjust"):
+    if action in ("credit_adjust", "bulk_credit_adjust", "credit_refund"):
         return role == "super_admin" or role in CREDIT_ROLES
     return role == "super_admin"
 
@@ -309,6 +392,10 @@ async def approve_request(approval_id: str, body: DecisionIn, auth=Depends(requi
         elif approval["action"] == "bulk_credit_adjust":
             result = await _apply_bulk_credit(admin, approval["payload"]["user_ids"], approval["payload"]["amount"],
                                               approval["reason"], f"approval:{approval_id}")
+        elif approval["action"] == "credit_refund":
+            result = await _apply_refund(admin, approval["payload"]["reservationId"], None,
+                                         approval["payload"].get("amount"), approval["reason"],
+                                         f"approval:{approval_id}")
         elif approval["action"] == "role_change":
             result = await _apply_role_change(admin, approval["target_user_id"], approval["payload"]["role"],
                                               approval["reason"])
@@ -354,6 +441,101 @@ async def ledger(type: str = "", limit: int = 100, _=Depends(require_role())):
     return {"entries": await with_handles(rows, "created_at")}
 
 
+@router.get("/credits/reconciliations")
+async def list_reconciliations(limit: int = 200, _=Depends(require_role())):
+    stale_before = now() - credits.STALE_AFTER
+    rows = await db.credit_reservations.find(
+        {"status": {"$in": ["reconciliation_required", "held"]}}, {"_id": 0}
+    ).sort("created_at", 1).to_list(max(1, min(limit, 500)))
+    rows = [r for r in rows if r["status"] == "reconciliation_required" or r.get("created_at", now()) < stale_before]
+    return {"items": await with_handles(rows, "created_at", "provider_started_at", "reconciliation_flagged_at")}
+
+
+class ReconciliationIn(BaseModel):
+    decision: str = Field(pattern="^(charge|refund)$")
+    amount: int | None = Field(default=None, ge=0, le=10000)
+    reason: Reason
+
+
+@router.post("/credits/reconciliations/{reservation_id}/resolve")
+async def resolve_reconciliation(reservation_id: str, body: ReconciliationIn,
+                                 auth=Depends(require_role(*CREDIT_ROLES))):
+    admin = auth[0]
+    res = await db.credit_reservations.find_one({"id": reservation_id}, {"_id": 0})
+    if not res:
+        raise ApiError(404, "NOT_FOUND", "AI request not found.")
+    reason = body.reason.strip()
+    amount = body.amount if body.amount is not None else int(res.get("amount", 0))
+    try:
+        result = await credits.resolve_reconciliation(
+            res, None if body.decision == "refund" else amount, reason, admin["handle"])
+    except credits.CreditError as exc:
+        raise ApiError(exc.status, exc.code, exc.message)
+    status = "released" if body.decision == "refund" else "succeeded"
+    changed = await db.ai_usage.update_one(
+        {"reservation_id": reservation_id, "status": "reconciliation_required"},
+        {"$set": {"status": status, "charged": result["charged"], "resolution": body.decision,
+                  "resolution_reason": reason, "resolved_by": admin["handle"], "resolved_at": now()}})
+    if not changed.matched_count:
+        await credits.record_usage(res, status, result["charged"], 0, 0, None)
+    await record_audit(admin["handle"], f"credit.reconcile_{body.decision}", "user", res["user_id"], reason, "success",
+                       admin["admin_role"], {"reservationId": reservation_id, "charged": result["charged"],
+                                             "amount": amount})
+    return result
+
+
+class RefundIn(BaseModel):
+    reservationId: str | None = Field(default=None, max_length=64)
+    requestId: str | None = Field(default=None, max_length=64)
+    amount: int | None = Field(default=None, ge=1, le=10000)
+    reason: Reason
+    idempotencyKey: str = Field(min_length=8, max_length=64)
+
+
+async def _apply_refund(admin: dict, reservation_id: str | None, request_id: str | None, amount: int | None,
+                        reason: str, key: str) -> dict:
+    query = {"id": reservation_id} if reservation_id else {"request_id": request_id}
+    res = await db.credit_reservations.find_one(query, {"_id": 0})
+    if not res:
+        raise ApiError(404, "NOT_FOUND", "AI transaction not found.")
+    try:
+        result = await credits.refund_usage(res["user_id"], res["id"], None, amount, reason, key, admin["handle"])
+    except credits.CreditError as exc:
+        await record_audit(admin["handle"], "credit.refund", "user", res["user_id"], reason, "failed",
+                           admin["admin_role"], {"reservationId": res["id"], "error": exc.code})
+        raise ApiError(exc.status, exc.code, exc.message)
+    await record_audit(admin["handle"], "credit.refund", "user", res["user_id"], reason, "success",
+                       admin["admin_role"], {"reservationId": res["id"], "refunded": result["refunded"],
+                                             "duplicate": result["duplicate"]})
+    return result | {"userId": res["user_id"], "reservationId": res["id"]}
+
+
+@router.post("/credits/refunds")
+async def refund_usage(body: RefundIn, auth=Depends(require_role(*CREDIT_ROLES))):
+    admin = auth[0]
+    if not body.reservationId and not body.requestId:
+        raise ApiError(400, "VALIDATION_FAILED", "Choose the AI transaction to refund.")
+    res = await db.credit_reservations.find_one(
+        {"id": body.reservationId} if body.reservationId else {"request_id": body.requestId}, {"_id": 0})
+    if not res:
+        raise ApiError(404, "NOT_FOUND", "AI transaction not found.")
+    reason = body.reason.strip()
+    amount = body.amount
+    if amount is None:
+        amount = max(0, int(res.get("charged", 0)) - int(res.get("refunded_credits", 0)))
+    threshold = await approval_threshold()
+    if threshold and amount >= threshold:
+        user = await find_user(res["user_id"])
+        approval = await approvals.create(
+            "credit_refund", res["user_id"], user["handle"], {"reservationId": res["id"], "amount": body.amount},
+            reason, admin)
+        await record_audit(admin["handle"], "approval.requested", "user", res["user_id"], reason, "success",
+                           admin["admin_role"], {"approvalId": approval["id"], "amount": amount,
+                                                 "reservationId": res["id"]})
+        return JSONResponse(status_code=202, content={"approval_required": True, "approval": jsonable_encoder(approval)})
+    return await _apply_refund(admin, res["id"], None, body.amount, reason, f"refund:{body.idempotencyKey}")
+
+
 async def sum_credits(match: dict) -> int:
     rows = await db.credit_ledger.aggregate([{"$match": match}, {"$group": {"_id": None, "n": {"$sum": "$credits"}}}]).to_list(1)
     return rows[0]["n"] if rows else 0
@@ -367,15 +549,26 @@ async def credit_summary(_=Depends(require_role())):
         "purchased": {"$sum": "$purchased"}}}]).to_list(1)
     totals = rows[0] if rows else {"accounts": 0, "available": 0, "reserved": 0, "included": 0,
                                    "promotional": 0, "purchased": 0}
+    next_reset = await db.subscriptions.find_one(
+        {"status": {"$in": ["active", "trialing", "past_due"]}}, {"_id": 0},
+        sort=[("current_period_end", 1)])
+    reconciliation_items = await db.reconciliation_items.find(
+        {"status": "open"}, {"_id": 0}).sort("checked_at", -1).to_list(25)
     return {"accounts": totals["accounts"], "available": totals["available"], "reserved": totals["reserved"],
             "included": totals.get("included", 0), "promotional": totals.get("promotional", 0),
             "purchased": totals.get("purchased", 0),
             "ledgerEntries": await db.credit_ledger.count_documents({}),
             "consumed": await sum_credits({"type": "charge"}),
+            "refunded": await sum_credits({"type": "refund"}),
             "granted": await sum_credits({"type": {"$in": ["trial_grant", "admin_grant", "plan_grant",
                                                            "plan_trial", "promotion_grant"]}}),
             "expired": await sum_credits({"type": {"$in": ["included_expire", "promotion_expire"]}}),
-            "removed": await sum_credits({"type": "admin_debit"})}
+            "removed": await sum_credits({"type": "admin_debit"}),
+            "nextResetAt": iso(next_reset["current_period_end"]) if next_reset else None,
+            "stuckHolds": await db.credit_reservations.count_documents(
+                {"status": "held", "created_at": {"$lt": now() - credits.STALE_AFTER}}),
+            "reconciliationOpen": len(reconciliation_items),
+            "reconciliationItems": await with_handles(reconciliation_items, "checked_at")}
 
 
 async def usage_totals(since) -> dict:
@@ -457,13 +650,16 @@ async def export_users(q: str = "", ids: str = "", limit: int = 5000, _=Depends(
     users = await db.users.find(match, USER_FIELDS).sort("created_at", -1).to_list(max(1, min(limit, 5000)))
     accounts = {a["user_id"]: a async for a in db.credit_accounts.find(
         {"user_id": {"$in": [u["id"] for u in users]}}, {"_id": 0})}
+    subs = await active_subscriptions([u["id"] for u in users])
     rows = []
     for user in users:
-        row = public_admin_user(user, accounts.get(user["id"]))
+        row = public_admin_user(user, accounts.get(user["id"]), subs.get(user["id"]))
         rows.append([row["id"], row["handle"], row["email"], row["displayName"], row["joined"], row["emailVerified"],
-                     row["role"], row["available"], row["reserved"], row["included"], row["promotional"], row["purchased"]])
+                     row["role"], row["suspended"], row["planId"], row["subscriptionStatus"],
+                     row["available"], row["reserved"], row["included"], row["promotional"], row["purchased"]])
     return csv_download("users.csv", ["id", "handle", "email", "displayName", "joined", "emailVerified", "role",
-                                      "available", "reserved", "included", "promotional", "purchased"], rows)
+                                      "suspended", "planId", "subscriptionStatus", "available", "reserved",
+                                      "included", "promotional", "purchased"], rows)
 
 
 @router.get("/exports/ledger.csv")
@@ -496,6 +692,62 @@ async def ai_charged_since(since) -> int:
     return rows[0]["n"] if rows else 0
 
 
+async def subscription_revenue() -> tuple[dict, list[dict]]:
+    """Monthly-equivalent recurring revenue from paying subscribers, never trials."""
+    subs = await db.subscriptions.find({"status": {"$in": ["active", "past_due"]}}, {"_id": 0}).to_list(5000)
+    plan_ids = {s["plan_id"] for s in subs}
+    versions = {(v["plan_id"], v["version"]): v
+                async for v in db.plan_versions.find({"plan_id": {"$in": list(plan_ids)}}, {"_id": 0})}
+    live = {}
+    for plan_id in plan_ids:
+        live[plan_id] = await db.plan_versions.find_one(
+            {"plan_id": plan_id, "status": "published", "effective_at": {"$lte": now()}}, {"_id": 0},
+            sort=[("effective_at", -1), ("version", -1)])
+    distribution: dict[str, dict] = {}
+    mrr = annual_contracts = 0
+    for sub in subs:
+        version = versions.get((sub["plan_id"], sub.get("plan_version", 1))) or live.get(sub["plan_id"]) or {}
+        monthly = (round(version.get("annual_price_paise", 0) / 12)
+                   if sub.get("billing_period") == "annual" else int(version.get("monthly_price_paise", 0)))
+        item = distribution.setdefault(sub["plan_id"], {
+            "planId": sub["plan_id"], "name": version.get("name", sub["plan_id"]),
+            "subscribers": 0, "annual": 0, "monthly": 0, "mrrPaise": 0})
+        item["subscribers"] += 1
+        item["annual" if sub.get("billing_period") == "annual" else "monthly"] += 1
+        item["mrrPaise"] += monthly
+        mrr += monthly
+        annual_contracts += int(version.get("annual_price_paise", 0)) if sub.get("billing_period") == "annual" else 0
+    for item in distribution.values():
+        item["arrPaise"] = item["mrrPaise"] * 12
+    return ({"mrrPaise": mrr, "arrPaise": mrr * 12, "annualContractValuePaise": annual_contracts,
+             "payingSubscribers": len(subs)}, sorted(distribution.values(), key=lambda x: x["mrrPaise"], reverse=True))
+
+
+async def recent_subscription_events(limit: int = 10) -> list[dict]:
+    events = await db.subscription_events.find({}, {"_id": 0}).sort("created_at", -1).to_list(max(1, min(limit, 50)))
+    sub_ids = {e["subscription_id"] for e in events}
+    subs = {s["id"]: s async for s in db.subscriptions.find({"id": {"$in": list(sub_ids)}}, {"_id": 0})}
+    user_ids = {s["user_id"] for s in subs.values()}
+    names = await handles_for(user_ids)
+    plan_ids = {s["plan_id"] for s in subs.values()}
+    plans = {}
+    for plan_id in plan_ids:
+        plan = await db.plan_versions.find_one(
+            {"plan_id": plan_id, "status": "published", "effective_at": {"$lte": now()}}, {"_id": 0},
+            sort=[("effective_at", -1), ("version", -1)])
+        plans[plan_id] = (plan or {}).get("name", plan_id)
+    out = []
+    for event in events:
+        sub = subs.get(event["subscription_id"]) or {}
+        out.append(event | {
+            "created_at": iso(event["created_at"]),
+            "handle": names.get(sub.get("user_id"), "—"),
+            "plan": plans.get(sub.get("plan_id"), sub.get("plan_id", "—")),
+            "billing": sub.get("billing_period"),
+        })
+    return out
+
+
 @router.get("/overview")
 async def overview(days: int = 7, _=Depends(require_role())):
     days = window(days)
@@ -515,6 +767,10 @@ async def overview(days: int = 7, _=Depends(require_role())):
     pending_approvals = await db.admin_approvals.count_documents({"status": "pending"})
     failed_24h = await db.ai_usage.count_documents(
         {"status": "failed", "created_at": {"$gte": now() - timedelta(hours=24)}})
+    revenue, plan_distribution = await subscription_revenue()
+    usage_report = await usage_insights.insights(days)
+    cost_per_success = round(usage_report["totals"]["estimatedCostPaise"]
+                             / max(1, usage_report["totals"].get("succeeded", 0)), 2)
     alerts = []
     if subscriptions["pastDue"]:
         alerts.append({"type": "past_due", "level": "warning", "count": subscriptions["pastDue"],
@@ -560,6 +816,11 @@ async def overview(days: int = 7, _=Depends(require_role())):
         "spend": {"month": month_start.strftime("%Y-%m"), "chargedCredits": month_credits,
                   "estimatedPaise": month_credits * int(settings.get("creditValuePaise", 0)),
                   "thresholdPaise": int(settings.get("monthlySpendAlertPaise", 0))},
+        "revenue": revenue,
+        "planDistribution": plan_distribution,
+        "recentSubscriptionEvents": await recent_subscription_events(10),
+        "costPerSuccessPaise": cost_per_success,
+        "estimatedCostPaise": usage_report["totals"]["estimatedCostPaise"],
         "alerts": alerts,
         "credits": await credit_summary(),
         "recentAudit": (await audit(5))["entries"],

@@ -91,6 +91,7 @@ class SubscriptionUpdateIn(BaseModel):
     plan_id: str | None = None
     billing_period: Literal["monthly", "annual"] | None = None
     status: Literal["trialing", "active", "past_due", "canceled", "expired"] | None = None
+    payment_status: Literal["manual", "paid", "failed", "refunded"] | None = None
     reason: Reason
 
 
@@ -101,25 +102,71 @@ async def update_subscription(subscription_id: str, body: SubscriptionUpdateIn, 
     if not sub:
         raise ApiError(404, "NOT_FOUND", "Subscription not found.")
     update: dict = {"updated_at": now()}
-    if body.plan_id and body.plan_id != sub["plan_id"]:
+    changed_plan = bool(body.plan_id and body.plan_id != sub["plan_id"])
+    changed_billing = bool(body.billing_period and body.billing_period != sub["billing_period"])
+    if changed_plan:
         version = await entitlements.live_plan_version(body.plan_id)
         if not version:
             raise ApiError(404, "NOT_FOUND", "That plan is not available.")
         update |= {"plan_id": body.plan_id, "plan_version": version["version"]}
-    if body.billing_period and body.billing_period != sub["billing_period"]:
+    if changed_billing:
+        update["billing_period"] = body.billing_period
+    if changed_plan or changed_billing:
+        # A plan change starts a fresh entitlement period and never carries included credits over.
         start = now()
-        update |= {"billing_period": body.billing_period, "current_period_start": start,
-                   "current_period_end": entitlements.period_end(start, body.billing_period)}
+        billing = body.billing_period or sub["billing_period"]
+        update |= {"current_period_start": start, "current_period_end": entitlements.period_end(start, billing)}
     if body.status:
         update["status"] = body.status
         if body.status == "canceled" and not sub.get("canceled_at"):
             update["canceled_at"] = now()
+        if body.status == "past_due":
+            update["payment_status"] = "failed"
+    if body.payment_status:
+        update["payment_status"] = body.payment_status
     await db.subscriptions.update_one({"id": subscription_id}, {"$set": update})
+    if changed_plan or changed_billing:
+        fresh = await db.subscriptions.find_one({"id": subscription_id}, {"_id": 0})
+        await entitlements.grant_period(fresh, entitlements.utc(update["current_period_start"]), admin["handle"])
+        await entitlements._event(subscription_id, "plan_changed", admin["handle"], {
+            "from_plan": sub["plan_id"], "to_plan": update.get("plan_id", sub["plan_id"]),
+            "from_billing": sub["billing_period"], "to_billing": update.get("billing_period", sub["billing_period"]),
+            "proration": "manual"})
     await entitlements._event(subscription_id, "updated", admin["handle"], {"changes": {k: str(v) for k, v in update.items() if k != "updated_at"}})
     await record_audit(admin["handle"], "subscription.update", "subscription", subscription_id, body.reason,
                        role=admin["admin_role"], details={k: str(v) for k, v in update.items() if k != "updated_at"})
     fresh = await db.subscriptions.find_one({"id": subscription_id}, {"_id": 0})
     return (await _views([fresh]))[0]
+
+
+@router.get("/subscriptions/{subscription_id}/change-preview")
+async def preview_subscription_change(subscription_id: str, plan_id: str = "", billing_period: str = "",
+                                      _=Depends(require_role())):
+    sub = await db.subscriptions.find_one({"id": subscription_id}, {"_id": 0})
+    if not sub:
+        raise ApiError(404, "NOT_FOUND", "Subscription not found.")
+    next_plan = plan_id or sub["plan_id"]
+    next_billing = billing_period or sub["billing_period"]
+    old_version = await entitlements.pinned_plan_version(sub) or {}
+    new_version = await entitlements.live_plan_version(next_plan)
+    if not new_version:
+        raise ApiError(404, "NOT_FOUND", "That plan is not available.")
+    now_ts = now()
+    end = entitlements.utc(sub["current_period_end"])
+    days_left = max(0, (end - now_ts).days)
+    days_in_period = max(1, (end - entitlements.utc(sub["current_period_start"])).days)
+    old_monthly = (round(old_version.get("annual_price_paise", 0) / 12) if sub["billing_period"] == "annual"
+                   else old_version.get("monthly_price_paise", 0))
+    new_monthly = (round(new_version.get("annual_price_paise", 0) / 12) if next_billing == "annual"
+                   else new_version.get("monthly_price_paise", 0))
+    return {"subscriptionId": subscription_id, "fromPlan": sub["plan_id"], "toPlan": next_plan,
+            "fromBilling": sub["billing_period"], "toBilling": next_billing,
+            "daysLeft": days_left, "daysInPeriod": days_in_period,
+            "currentMonthlyPaise": old_monthly, "newMonthlyPaise": new_monthly,
+            "estimatedProrationPaise": round((new_monthly - old_monthly) * days_left / days_in_period),
+            "newAllowance": entitlements.period_credits(new_version, next_billing),
+            "note": ("Manual/manual-mode billing: no money is collected here. The amount is an estimate for "
+                     "the admin; a payment provider must collect or credit it.")}
 
 
 class CancelIn(BaseModel):
@@ -294,6 +341,13 @@ class SettingsIn(BaseModel):
     low_credit_threshold: int = Field(ge=0, le=1000)
     reset_policy: str = Field(min_length=10, max_length=500)
     trial_days: int = Field(ge=0, le=90)
+    support_email: str = Field(default="", max_length=120)
+    support_url: str = Field(default="", max_length=200)
+    status_page_url: str = Field(default="", max_length=200)
+    support_hours: str = Field(default="", max_length=120)
+    require_mfa_for_admins: bool = False
+    admin_session_minutes: int = Field(default=1440, ge=30, le=10080)
+    audit_retention_days: int = Field(default=365, ge=30, le=3650)
     flags: dict[str, bool]
     reason: Reason
 
@@ -310,7 +364,12 @@ def settings_payload(body: SettingsIn) -> dict:
             "inputCostPaisePerMTok": body.input_cost_paise_per_mtok,
             "outputCostPaisePerMTok": body.output_cost_paise_per_mtok,
             "lowCreditThreshold": body.low_credit_threshold, "resetPolicy": body.reset_policy,
-            "trialDays": body.trial_days, "flags": body.flags}
+            "trialDays": body.trial_days, "flags": body.flags,
+            "supportEmail": body.support_email, "supportUrl": body.support_url,
+            "statusPageUrl": body.status_page_url, "supportHours": body.support_hours,
+            "requireMfaForAdmins": body.require_mfa_for_admins,
+            "adminSessionMinutes": body.admin_session_minutes,
+            "auditRetentionDays": body.audit_retention_days}
 
 
 @router.get("/settings")
