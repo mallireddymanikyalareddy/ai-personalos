@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { estimateAIAction, type AIEstimate } from "@/lib/ai-stream";
@@ -253,9 +254,11 @@ export function AIActionCatalog() {
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
 
       {ai.answer ? (
-        <p className="mt-3 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-sm text-ink-2" data-testid="ai-catalog-answer">
-          {ai.answer}
-        </p>
+        <AIAnswer
+          text={ai.answer}
+          testId="ai-catalog-answer"
+          className="mt-3 rounded-xl border border-line bg-surface-2 p-3"
+        />
       ) : null}
       <p className="mt-1.5 text-[10px] text-ink-3" data-testid="ai-catalog-credits">
         {ai.creditsNote}

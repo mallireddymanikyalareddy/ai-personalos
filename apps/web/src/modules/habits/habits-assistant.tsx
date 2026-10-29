@@ -9,6 +9,7 @@ import type { LucideIcon } from "lucide-react";
 import { BarChart3, CalendarPlus, Heart, Lightbulb, MoreHorizontal, RefreshCw, Sparkles, TrendingUp } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { Input } from "@/components/ui/input";
@@ -179,12 +180,11 @@ export function HabitAssistant({
       ) : null}
 
       {answer ? (
-        <p
-          data-testid="habits-assistant-answer"
-          className="mt-3 rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
-        >
-          {answer}
-        </p>
+        <AIAnswer
+          text={answer}
+          testId="habits-assistant-answer"
+          className="mt-3 rounded-xl border border-line bg-surface-2 p-3 text-[12px]"
+        />
       ) : null}
 
       <p className="mt-3 text-[10px] text-ink-3" data-testid="habits-assistant-stats">

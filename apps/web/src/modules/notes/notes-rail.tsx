@@ -28,6 +28,7 @@ import {
 import type { NoteDetail, NoteFolderRow, NoteRelated } from "@personalos/core";
 
 import { Button } from "@/components/ui/button";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { Input } from "@/components/ui/input";
 
@@ -117,12 +118,11 @@ export function NoteAssistant({
       </form>
 
       {answer ? (
-        <p
-          data-testid="notes-assistant-answer"
-          className="mt-2 rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
-        >
-          {answer}
-        </p>
+        <AIAnswer
+          text={answer}
+          testId="notes-assistant-answer"
+          className="mt-2 rounded-xl border border-line bg-surface-2 p-3 text-[12px]"
+        />
       ) : null}
       {creditsNote ? (
         <p className="mt-1.5 text-[10px] text-ink-3" data-testid="notes-assistant-credits">

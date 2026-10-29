@@ -15,6 +15,7 @@ import {
 } from "@personalos/core";
 
 import { Badge } from "@/components/ui/badge";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { Button } from "@/components/ui/button";
 import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -886,9 +887,11 @@ export function MemoryModule() {
           <Button variant="ghost" size="sm" onClick={() => runMemoryAI("dedupe")}>Find duplicates</Button>
         </div>
         {answer && (
-          <p className="mt-3 whitespace-pre-wrap rounded-xl border border-line bg-surface-2/60 p-3 text-sm leading-relaxed text-ink-2" data-testid="memory-ai-answer">
-            {answer}
-          </p>
+          <AIAnswer
+            text={answer}
+            testId="memory-ai-answer"
+            className="mt-3 rounded-xl border border-line bg-surface-2/60 p-3 text-sm"
+          />
         )}
         <p className="mt-1.5 text-[10px] text-ink-3" data-testid="memory-ai-credits">{ai.creditsNote}</p>
         <CreditConfirmDialog

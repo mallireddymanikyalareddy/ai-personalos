@@ -28,6 +28,7 @@ import type { ID, Project } from "@personalos/core";
 
 import { Button } from "@/components/ui/button";
 import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
@@ -374,12 +375,11 @@ export function WorkModeRail({
         </div>
 
         {answer != null ? (
-          <p
-            data-testid="workmode-assistant-answer"
-            className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
-          >
-            {answer}
-          </p>
+          <AIAnswer
+            text={answer}
+            testId="workmode-assistant-answer"
+            className="mt-2 rounded-xl border border-line bg-surface-2 p-3 text-[12px]"
+          />
         ) : null}
         <p className="mt-1.5 text-[10px] text-ink-3" data-testid="workmode-assistant-credits">
           {ai.creditsNote}

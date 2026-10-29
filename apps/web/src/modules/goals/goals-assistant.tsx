@@ -10,6 +10,7 @@ import { GOAL_CATEGORY_LABELS } from "@personalos/core";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { useToast } from "@/components/ui/toast";
 import { useAIGateway } from "@/lib/use-ai-gateway";
 import { useOS } from "@/store/use-os";
@@ -104,13 +105,12 @@ export function GoalAssistant() {
       </div>
 
       {answer ? (
-        <div
+        <AIAnswer
+          text={answer}
+          testId="goals-assistant-answer"
           role="status"
-          data-testid="goals-assistant-answer"
-          className="mt-2 rounded-lg bg-surface-2 p-2.5 text-[13px] leading-relaxed text-ink-2"
-        >
-          {answer}
-        </div>
+          className="mt-2 rounded-lg bg-surface-2 p-2.5"
+        />
       ) : null}
       <p className="mt-1.5 text-[10px] text-ink-3" data-testid="goals-assistant-credits">
         {ai.creditsNote}

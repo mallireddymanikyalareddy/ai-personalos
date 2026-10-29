@@ -21,6 +21,7 @@ import {
 import type { PaperPageRow } from "@personalos/core";
 
 import { Badge } from "@/components/ui/badge";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { cn } from "@/lib/cn";
 
 import { PAPER_QUICK_CAPTURE_KINDS, paperKindMeta, relativeTime } from "./paper-meta";
@@ -89,12 +90,11 @@ export function PaperAssistant({
       </div>
 
       {answer != null ? (
-        <p
-          data-testid="paper-assistant-answer"
-          className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
-        >
-          {answer}
-        </p>
+        <AIAnswer
+          text={answer}
+          testId="paper-assistant-answer"
+          className="mt-2 rounded-xl border border-line bg-surface-2 p-3 text-[12px]"
+        />
       ) : null}
 
       {creditsNote ? (

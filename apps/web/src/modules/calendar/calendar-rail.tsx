@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { ModelLabel } from "@/components/ai/model-label";
+import { AIAnswer } from "@/components/ai/ai-answer";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -334,12 +335,11 @@ export function CalendarAssistant({
       </div>
 
       {answer != null ? (
-        <p
-          data-testid="calendar-assistant-answer"
-          className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
-        >
-          {answer}
-        </p>
+        <AIAnswer
+          text={answer}
+          testId="calendar-assistant-answer"
+          className="mt-2 rounded-xl border border-line bg-surface-2 p-3 text-[12px]"
+        />
       ) : null}
       {creditsNote ? (
         <p className="mt-1.5 text-[10px] text-ink-3" data-testid="calendar-assistant-credits">

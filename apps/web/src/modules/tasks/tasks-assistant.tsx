@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { ModelLabel } from "@/components/ai/model-label";
+import { AIAnswer } from "@/components/ai/ai-answer";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -155,12 +156,11 @@ export function TaskAssistant({
       </div>
 
       {answer ? (
-        <p
-          data-testid="tasks-assistant-answer"
-          className="mt-3 rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
-        >
-          {answer}
-        </p>
+        <AIAnswer
+          text={answer}
+          testId="tasks-assistant-answer"
+          className="mt-3 rounded-xl border border-line bg-surface-2 p-3 text-[12px]"
+        />
       ) : null}
       {creditsNote ? (
         <p className="mt-1.5 text-[10px] text-ink-3" data-testid="tasks-assistant-credits">

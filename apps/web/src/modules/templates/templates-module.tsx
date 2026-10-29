@@ -51,6 +51,7 @@ import {
 
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { Button } from "@/components/ui/button";
 import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { DropdownMenu } from "@/components/ui/dropdown";
@@ -337,9 +338,11 @@ export function TemplatesModule() {
           <Button size="sm" variant="ghost" onClick={() => runTemplateAI("improve")}>Improve template</Button>
         </div>
         {ai.answer ? (
-          <p className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] text-ink-2" data-testid="templates-ai-answer">
-            {ai.answer}
-          </p>
+          <AIAnswer
+            text={ai.answer}
+            testId="templates-ai-answer"
+            className="mt-2 rounded-xl border border-line bg-surface-2 p-3 text-[12px]"
+          />
         ) : null}
         <p className="mt-1.5 text-[10px] text-ink-3" data-testid="templates-ai-credits">{ai.creditsNote}</p>
       </section>

@@ -174,5 +174,11 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - This exposes actions without a dedicated module button (for example `document_compare`, `document_style_match`, `note_merge_dedupe`, `capture_route`) without adding a bespoke UI for each.
 - **Tests:** AI suite 29/29; full web suite 52 files, 831/831.
 
+## Iteration 38 — richer AI answer rendering
+- Added `components/ai/ai-answer.tsx`, a safe markdown-style renderer for AI responses. It supports headings, bold, italic, inline code, fenced code blocks, ordered and unordered lists, blockquotes and http(s) links, without `dangerouslySetInnerHTML`.
+- Applied it to the main AI chat and every module answer surface: Tasks, Calendar, Meetings, Paper, Work, Inbox, Journal, Notebook, Insights, Rewards, Templates, Work Mode, Collaboration, Life Memory, Today, Planner, Goals, Habits, Notes and the AI action catalogue.
+- Answers now render like the example: **bold labels**, numbered steps and bullet lists instead of raw markdown text.
+- **Tests:** full web suite 52 files, 831/831 with `--maxWorkers=1`; typecheck, lint and static build pass.
+
 
 

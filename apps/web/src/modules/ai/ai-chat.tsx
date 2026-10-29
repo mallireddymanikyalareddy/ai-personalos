@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 import type { AIObject, AIResult, ID, Timestamp } from "@personalos/core";
-
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { AIObjectCard } from "@/components/entities/ai-object-card";
 import { DropdownMenu } from "@/components/ui/dropdown";
 
@@ -399,7 +399,7 @@ function AssistantResponse({
 
   return (
     <div>
-      <p className="text-[13px] leading-relaxed text-ink-2">{text}</p>
+      <AIAnswer text={text} />
       <div className="mt-1.5 flex flex-wrap items-center gap-3">
         {onCopy ? (
           <button

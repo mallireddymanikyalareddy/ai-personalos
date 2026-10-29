@@ -8,6 +8,7 @@ import { runNotebookAssistant, type NotebookAiAction, type NotebookAiResult } fr
 import type { Page } from "@personalos/core";
 
 import { Badge } from "@/components/ui/badge";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { Button } from "@/components/ui/button";
 import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { Input } from "@/components/ui/input";
@@ -132,9 +133,11 @@ export function NotebookAiPanel({ page, onApplyBlocks, onAddRef }: NotebookAiPan
       </div>
 
       {ai.answer ? (
-        <p className="mt-4 whitespace-pre-line rounded-lg bg-surface-2 p-3 text-sm text-ink-2" data-testid="notebook-ai-answer">
-          {ai.answer}
-        </p>
+        <AIAnswer
+          text={ai.answer}
+          testId="notebook-ai-answer"
+          className="mt-4 rounded-lg bg-surface-2 p-3"
+        />
       ) : null}
       <p className="mt-1.5 text-[10px] text-ink-3" data-testid="notebook-ai-credits">
         {ai.creditsNote}

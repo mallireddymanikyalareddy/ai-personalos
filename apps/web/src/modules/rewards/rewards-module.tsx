@@ -28,6 +28,7 @@ import { startOfDay, XP_RULES } from "@personalos/core";
 
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { Button } from "@/components/ui/button";
 import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { DropdownMenu } from "@/components/ui/dropdown";
@@ -370,9 +371,11 @@ export function RewardsModule() {
           <Button size="sm" variant="ghost" onClick={() => runRewardAI("celebrate")}>Celebrate</Button>
         </div>
         {ai.answer ? (
-          <p className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] text-ink-2" data-testid="rewards-ai-answer">
-            {ai.answer}
-          </p>
+          <AIAnswer
+            text={ai.answer}
+            testId="rewards-ai-answer"
+            className="mt-2 rounded-xl border border-line bg-surface-2 p-3 text-[12px]"
+          />
         ) : null}
         <p className="mt-1.5 text-[10px] text-ink-3" data-testid="rewards-ai-credits">{ai.creditsNote}</p>
       </section>

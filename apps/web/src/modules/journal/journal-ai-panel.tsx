@@ -21,6 +21,7 @@ import { PersonalOS } from "@personalos/core";
 
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { Button } from "@/components/ui/button";
 import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { useToast } from "@/components/ui/toast";
@@ -192,9 +193,12 @@ export function JournalAIPanel({ os, entry }: JournalAIPanelProps) {
         </div>
 
         {(ai.answer ?? message) ? (
-          <p className="mt-3 whitespace-pre-line rounded-lg bg-surface-2 p-3 text-sm text-ink-2" role="status" data-testid="journal-ai-answer">
-            {ai.answer ?? message}
-          </p>
+          <AIAnswer
+            text={ai.answer ?? message ?? ""}
+            testId="journal-ai-answer"
+            role="status"
+            className="mt-3 rounded-lg bg-surface-2 p-3 text-sm"
+          />
         ) : null}
         <p className="mt-1.5 text-[10px] text-ink-3" data-testid="journal-ai-credits">
           {ai.creditsNote}

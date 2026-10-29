@@ -9,6 +9,7 @@ import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { selectInboxTasks, type InboxItem } from "@personalos/core";
 import { buildAIContext, estimateAIAction, streamAIChat, type AIEstimate } from "@/lib/ai-stream";
@@ -161,12 +162,11 @@ export default function InboxPage() {
           </Button>
         </div>
         {answer ? (
-          <p
-            data-testid="inbox-ai-answer"
-            className="mt-3 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] text-ink-2"
-          >
-            {answer}
-          </p>
+          <AIAnswer
+            text={answer}
+            testId="inbox-ai-answer"
+            className="mt-3 rounded-xl border border-line bg-surface-2 p-3 text-[12px]"
+          />
         ) : null}
         <p className="mt-1.5 text-[10px] text-ink-3" data-testid="inbox-ai-credits">
           {gatewayEnabled

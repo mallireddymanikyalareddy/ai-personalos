@@ -21,6 +21,7 @@ import { relativeTime, type TeamMemberView, type WorkActivityEntry } from "@pers
 
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { AIAnswer } from "@/components/ai/ai-answer";
 import { cn } from "@/lib/cn";
 
 const ACTIVITY_ICON: Record<
@@ -226,12 +227,11 @@ export function WorkAIAssistant({
         })}
       </div>
       {answer != null ? (
-        <p
-          data-testid="work-ai-answer"
-          className="mt-2 whitespace-pre-line rounded-lg border border-line bg-surface-2 p-2.5 text-[12px] text-ink-2"
-        >
-          {answer}
-        </p>
+        <AIAnswer
+          text={answer}
+          testId="work-ai-answer"
+          className="mt-2 rounded-lg border border-line bg-surface-2 p-2.5 text-[12px]"
+        />
       ) : null}
       <p className="mt-1.5 text-[10px] text-ink-3" data-testid="work-ai-credits">
         {creditsNote ?? "Local — no credits"}
