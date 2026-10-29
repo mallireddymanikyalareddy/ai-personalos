@@ -228,6 +228,21 @@ export function CreditsCard() {
           </Link>
         </p>
       )}
+      {balance?.aiAllowed === false && (
+        <p
+          data-testid="credits-card-past-due"
+          className="mt-3 rounded-lg border border-red-300/60 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+        >
+          AI is paused because this subscription is past due
+          {balance.graceEndsAt
+            ? ` (grace ended ${new Date(balance.graceEndsAt).toLocaleDateString("en-IN")})`
+            : ""}
+          . Your data and non-AI features still work.{" "}
+          <Link href="/plans" className="underline underline-offset-2">
+            Update your plan
+          </Link>
+        </p>
+      )}
       {forecast && (
         <p
           data-testid="credits-card-forecast"

@@ -20,6 +20,10 @@ export type CreditBalance = {
   annualBonus?: number;
   cancelAtPeriodEnd?: boolean;
   trialEndsAt?: string | null;
+  pastDueSince?: string | null;
+  aiAllowed?: boolean;
+  aiBlockReason?: string | null;
+  graceEndsAt?: string | null;
 };
 export type PublicSettings = {
   lowCreditThreshold: number;

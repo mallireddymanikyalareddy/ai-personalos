@@ -7,6 +7,12 @@ import { getOS } from "@/store/os";
 
 import SettingsPage from "./page";
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  usePathname: () => "/settings",
+}));
+
 const mock = vi.hoisted(() => {
   const profile = {
     id: "user-1",

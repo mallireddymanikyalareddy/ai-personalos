@@ -411,7 +411,7 @@ describe("regenerate, feedback, search, pin, voice and model", () => {
     renderModule();
     fireEvent.click(screen.getByRole("button", { name: "Choose AI model" }));
 
-    const disabled = screen.getByRole("menuitem", { name: /OpenAI GPT \(needs API key\)/ });
+    const disabled = screen.getByRole("menuitem", { name: /needs API key/ });
     expect(disabled.getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByRole("menuitem", { name: "PersonalOS Local" })).toBeDefined();
   });

@@ -169,6 +169,7 @@ async def create_subscription(identifier: str, plan_id: str, billing_period: str
         "plan_version": version["version"], "billing_period": billing_period, "status": status,
         "started_at": start, "current_period_start": start, "current_period_end": end,
         "trial_ends_at": end if status == "trialing" else None, "cancel_at_period_end": False,
+        "past_due_at": start if status == "past_due" else None,
         "canceled_at": None, "provider": "manual", "payment_status": "manual",
         "created_by": actor, "created_at": start, "updated_at": start,
     }
@@ -189,7 +190,7 @@ async def renew(sub: dict, actor: str = "system") -> dict:
         start, end = end, period_end(end, sub["billing_period"])
     live = await live_plan_version(sub["plan_id"])
     update = {"status": "active", "current_period_start": start, "current_period_end": end,
-              "cancel_at_period_end": False, "canceled_at": None, "updated_at": now()}
+              "cancel_at_period_end": False, "canceled_at": None, "past_due_at": None, "updated_at": now()}
     if live:
         update["plan_version"] = live["version"]
     await db.subscriptions.update_one({"id": sub["id"]}, {"$set": update})
@@ -234,7 +235,7 @@ async def resume(sub: dict, actor: str) -> dict:
         raise SubscriptionError(409, "CONFLICT", "This subscription has already ended.")
     await db.subscriptions.update_one(
         {"id": sub["id"]}, {"$set": {"status": "active", "cancel_at_period_end": False,
-                                     "canceled_at": None, "updated_at": now()}})
+                                     "canceled_at": None, "past_due_at": None, "updated_at": now()}})
     await _event(sub["id"], "resumed", actor, {})
     return await db.subscriptions.find_one({"id": sub["id"]}, {"_id": 0})
 
@@ -285,10 +286,12 @@ async def credit_overview(user_id: str) -> dict:
     sub = await db.subscriptions.find_one(
         {"user_id": user_id, "status": {"$in": list(ACTIVE_STATUSES)}}, {"_id": 0},
         sort=[("created_at", -1)])
+    access = await ai_access(user_id)
     if not sub:
         return acc | {"planId": None, "planName": None, "status": None, "billing": None,
                       "nextResetAt": None, "allowance": 0, "annualBonus": 0,
-                      "cancelAtPeriodEnd": False}
+                      "cancelAtPeriodEnd": False, "aiAllowed": True, "aiBlockReason": None,
+                      "graceEndsAt": None}
     version = await pinned_plan_version(sub) or {}
     allowance = period_credits(version, sub["billing_period"]) if version else 0
     bonus = version.get("annual_bonus_credits", 0) if sub["billing_period"] == "annual" else 0
@@ -299,4 +302,23 @@ async def credit_overview(user_id: str) -> dict:
         "allowance": allowance, "annualBonus": bonus,
         "cancelAtPeriodEnd": bool(sub.get("cancel_at_period_end")),
         "trialEndsAt": iso(sub.get("trial_ends_at")),
+        "pastDueSince": iso(sub.get("past_due_at")),
+        "aiAllowed": access["allowed"], "aiBlockReason": access["reason"],
+        "graceEndsAt": access.get("graceEndsAt"),
     }
+
+
+async def ai_access(user_id: str) -> dict:
+    """AI stays available during a short past-due grace window, then pauses until payment is fixed."""
+    sub = await db.subscriptions.find_one(
+        {"user_id": user_id, "status": {"$in": list(ACTIVE_STATUSES)}}, {"_id": 0},
+        sort=[("created_at", -1)])
+    if not sub or sub.get("status") != "past_due":
+        return {"allowed": True, "reason": None, "graceEndsAt": None}
+    since = sub.get("past_due_at") or sub.get("updated_at") or sub.get("current_period_end")
+    settings = await platform_settings.get_settings()
+    days = max(0, int(settings.get("pastDueGraceDays", 3)))
+    deadline = (utc(since) + timedelta(days=days)) if since else now()
+    allowed = now() <= deadline
+    return {"allowed": allowed, "reason": None if allowed else "PAYMENT_GRACE_EXPIRED",
+            "graceEndsAt": iso(deadline), "subscriptionId": sub["id"]}

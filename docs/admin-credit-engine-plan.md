@@ -100,4 +100,11 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - **Actual provider cost (manual):** usage rows accept `provider_cost_paise` via `POST /admin/usage/{id}/cost`. All cost reports and margins prefer a recorded actual cost and fall back to the token-rate estimate. The AI Usage table shows both, with a “Cost” drawer to record invoice/reconciliation amounts. Automatic provider-invoice ingestion is still not available.
 - **Regression snapshot:** full web suite currently runs 762 tests; 725 pass. The 37 failures are pre-existing and confined to `today`, `settings`, `onboarding` and one stale AI provider-label assertion; admin/credit/AI-chat tests that touch this work pass.
 
+## Iteration 29 — past-due policy, verification and test repair
+- **Past-due grace:** `pastDueGraceDays` (default 3) is configurable in Platform Settings. A `past_due` subscription keeps AI access until the grace deadline; after that `credits.reserve` returns `402 PAYMENT_GRACE_EXPIRED` and the subscriber sees a banner in the credits card and AI page. Non-AI features and data remain available. Paying (`payment_status=paid`) or renewing clears `past_due_at` and restores access immediately.
+- **Admin workflows:** setting `past_due` records `past_due_at`; setting `payment_status=failed` auto-marks an active subscription past due; `paid` reactivates it.
+- **Verification script:** `scripts/verify_admin_credit.py` logs in as an admin and checks dashboard revenue, credit summary, reconciliation queue, plan features/preview, pricing, support/security/grace settings, subscriber credits, usage costs and audit request IDs. See `docs/verify-admin-credit.md`.
+- **Test repair:** fixed the stale AI provider-label assertion and the settings/today/onboarding test fixtures (missing `next/navigation` mock, missing `useAuth` mock, incomplete profile preferences). The repaired files now pass 63/63. Two older onboarding flow assertions remain stale.
+
+
 

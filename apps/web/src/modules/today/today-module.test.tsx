@@ -9,6 +9,10 @@ import { getOS } from "@/store/os";
 
 import { TodayModule } from "./today-module";
 
+vi.mock("@/modules/auth/auth-context", () => ({
+  useAuth: () => ({ status: "authenticated", profile: null, refresh: async () => undefined }),
+}));
+
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
 

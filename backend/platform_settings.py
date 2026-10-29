@@ -20,6 +20,7 @@ DEFAULT_SETTINGS = {
     "lowCreditThreshold": 3,
     "resetPolicy": "Included credits reset each entitlement period; unused included credits do not carry over.",
     "trialDays": 30,
+    "pastDueGraceDays": 3,
     "supportEmail": "",
     "supportUrl": "",
     "statusPageUrl": "",

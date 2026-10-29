@@ -899,6 +899,7 @@ type Settings = {
   lowCreditThreshold: number;
   resetPolicy: string;
   trialDays: number;
+  pastDueGraceDays: number;
   supportEmail: string;
   supportUrl: string;
   statusPageUrl: string;
@@ -926,6 +927,7 @@ export function AdminSettings() {
       giftMaxCredits: data.settings.giftMaxCredits ?? 1000,
       inputCostPaisePerMTok: data.settings.inputCostPaisePerMTok ?? 0,
       outputCostPaisePerMTok: data.settings.outputCostPaisePerMTok ?? 0,
+      pastDueGraceDays: data.settings.pastDueGraceDays ?? 3,
       supportEmail: data.settings.supportEmail ?? "",
       supportUrl: data.settings.supportUrl ?? "",
       statusPageUrl: data.settings.statusPageUrl ?? "",
@@ -1009,9 +1011,14 @@ export function AdminSettings() {
                   <span className="mt-1 block text-xs text-ink-3">{inr(form.outputCostPaisePerMTok)}</span>
                 </Field>
               </div>
-              <Field label="Trial length (days)">
-                <input className={field} type="number" disabled={!canWrite} value={form.trialDays} onChange={(e) => set("trialDays", Number(e.target.value))} />
-              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Trial length (days)">
+                  <input className={field} type="number" disabled={!canWrite} value={form.trialDays} onChange={(e) => set("trialDays", Number(e.target.value))} />
+                </Field>
+                <Field label="Past-due grace (days)" hint="AI pauses after this many days past due.">
+                  <input className={field} type="number" min={0} max={90} disabled={!canWrite} value={form.pastDueGraceDays} onChange={(e) => set("pastDueGraceDays", Number(e.target.value))} />
+                </Field>
+              </div>
             </div>
           </Panel>
           <Panel title="Credit reset policy">
@@ -1083,6 +1090,7 @@ export function AdminSettings() {
                         low_credit_threshold: form.lowCreditThreshold,
                         reset_policy: form.resetPolicy,
                         trial_days: form.trialDays,
+                        past_due_grace_days: form.pastDueGraceDays,
                         support_email: form.supportEmail,
                         support_url: form.supportUrl,
                         status_page_url: form.statusPageUrl,

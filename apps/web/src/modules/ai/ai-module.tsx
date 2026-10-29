@@ -405,10 +405,24 @@ export function AIModule() {
     maxOutputTokens: 0,
   };
   const available = balance?.available ?? 0;
-  const enough = available >= price.minCredits;
+  const aiAllowed = balance?.aiAllowed !== false;
+  const enough = aiAllowed && available >= price.minCredits;
 
   return (
     <div className="space-y-4">
+      {!aiAllowed && (
+        <div
+          data-testid="ai-past-due"
+          className="rounded-xl border border-red-300/60 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+        >
+          AI is paused because this subscription is past due. Your data and non-AI
+          features still work.{" "}
+          <Link href="/plans" className="underline underline-offset-2">
+            Update your plan
+          </Link>
+          .
+        </div>
+      )}
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
           <AIHero />
@@ -574,18 +588,28 @@ export function AIModule() {
             </div>
           )}
         </dl>
-        {!enough && (
+        {!aiAllowed ? (
           <p
-            className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
-            data-testid="ai-confirm-shortfall"
+            className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300"
+            data-testid="ai-confirm-past-due"
           >
-            You need {price.minCredits - available} more credit
-            {price.minCredits - available === 1 ? "" : "s"}.{" "}
-            <Link href="/plans" className="underline underline-offset-2">
-              Upgrade or wait for your reset
-            </Link>
-            . Non-AI features keep working.
+            AI is paused because the subscription is past due. Update payment or plan
+            to continue. Non-AI features still work.
           </p>
+        ) : (
+          !enough && (
+            <p
+              className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
+              data-testid="ai-confirm-shortfall"
+            >
+              You need {price.minCredits - available} more credit
+              {price.minCredits - available === 1 ? "" : "s"}.{" "}
+              <Link href="/plans" className="underline underline-offset-2">
+                Upgrade or wait for your reset
+              </Link>
+              . Non-AI features keep working.
+            </p>
+          )
         )}
       </ConfirmDialog>
     </div>

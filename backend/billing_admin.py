@@ -119,12 +119,22 @@ async def update_subscription(subscription_id: str, body: SubscriptionUpdateIn, 
         update |= {"current_period_start": start, "current_period_end": entitlements.period_end(start, billing)}
     if body.status:
         update["status"] = body.status
+        if body.status == "past_due" and sub.get("status") != "past_due":
+            update["past_due_at"] = now()
+        if body.status in ("active", "trialing"):
+            update["past_due_at"] = None
         if body.status == "canceled" and not sub.get("canceled_at"):
             update["canceled_at"] = now()
         if body.status == "past_due":
             update["payment_status"] = "failed"
     if body.payment_status:
         update["payment_status"] = body.payment_status
+        if body.payment_status == "failed" and not body.status and sub.get("status") in ("active", "trialing"):
+            update["status"] = "past_due"
+            update["past_due_at"] = now()
+        if body.payment_status == "paid" and not body.status and sub.get("status") == "past_due":
+            update["status"] = "active"
+            update["past_due_at"] = None
     await db.subscriptions.update_one({"id": subscription_id}, {"$set": update})
     if changed_plan or changed_billing:
         fresh = await db.subscriptions.find_one({"id": subscription_id}, {"_id": 0})
@@ -342,6 +352,7 @@ class SettingsIn(BaseModel):
     low_credit_threshold: int = Field(ge=0, le=1000)
     reset_policy: str = Field(min_length=10, max_length=500)
     trial_days: int = Field(ge=0, le=90)
+    past_due_grace_days: int = Field(default=3, ge=0, le=90)
     support_email: str = Field(default="", max_length=120)
     support_url: str = Field(default="", max_length=200)
     status_page_url: str = Field(default="", max_length=200)
@@ -366,6 +377,7 @@ def settings_payload(body: SettingsIn) -> dict:
             "outputCostPaisePerMTok": body.output_cost_paise_per_mtok,
             "lowCreditThreshold": body.low_credit_threshold, "resetPolicy": body.reset_policy,
             "trialDays": body.trial_days, "flags": body.flags,
+            "pastDueGraceDays": body.past_due_grace_days,
             "supportEmail": body.support_email, "supportUrl": body.support_url,
             "statusPageUrl": body.status_page_url, "supportHours": body.support_hours,
             "requireMfaForAdmins": body.require_mfa_for_admins,

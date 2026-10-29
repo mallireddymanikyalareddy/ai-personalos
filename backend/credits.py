@@ -173,6 +173,15 @@ async def _consume_promotions(user_id: str, amount: int) -> None:
 
 async def reserve(user_id: str, action: str, request_id: str, input_chars: int = 0) -> dict:
     price, pricing_version = await action_price(action)
+    from entitlements import ai_access
+
+    access = await ai_access(user_id)
+    if not access["allowed"]:
+        deadline = (access.get("graceEndsAt") or "")[:10]
+        raise CreditError(402, access["reason"],
+                          f"AI access is paused because this subscription is past due. "
+                          f"Update payment{' by ' + deadline if deadline else ''} to continue.",
+                          graceEndsAt=access.get("graceEndsAt"))
     limit = int(price.get("request_limit_per_day", 0))
     if limit:
         day_start = now().replace(hour=0, minute=0, second=0, microsecond=0)
