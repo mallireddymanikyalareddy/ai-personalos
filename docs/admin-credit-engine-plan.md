@@ -130,5 +130,12 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - **Test IDs:** meeting AI button IDs use `meeting-ai-action-*` to avoid colliding with the existing `meeting-ai-summary` panel.
 - **Tests:** Calendar and Meetings suites pass (47 tests); full web suite remains 831/831.
 
+## Iteration 33 — Projects, Digital Paper and Inbox wired
+- **Projects / Work:** added an AI project assistant to the project sidebar. Actions: `project_plan`, `project_status_summary`, `project_risk_review`, `project_task_extract`, `project_retrospective`, and `quick_question`. Context includes the project summary, status, milestones and tasks. Local mode gives free deterministic summaries and is labelled **“Local — no credits.”**
+- **Digital Paper:** the existing AI Paper Assistant now routes through the gateway when OpenAI is selected. Actions: `document_summary`, `document_analysis`, `document_rewrite`, `note_action_extract`, `document_extract_tables`, `document_translate`, `document_qa`, and `task_from_note`. Added **Analyze this document** and **Extract tables** buttons. Local mode keeps the existing summarize/rewrite/translate/explain/tasks behaviour.
+- **Inbox / Capture:** added an **AI triage** section with `inbox_triage` and `inbox_summary`, plus per-item **AI classify** using `capture_classify`. Local mode gives free triage/classification text and is labelled **“Local — no credits.”**
+- All three use the shared estimate → confirmation → stream → credits-used pattern.
+- **Tests:** Work, Paper and related suites pass (91 tests); full web suite remains 831/831.
+
 
 

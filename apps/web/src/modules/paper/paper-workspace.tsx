@@ -30,7 +30,10 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
+import { estimateAIAction, streamAIChat, type AIEstimate } from "@/lib/ai-stream";
 import { cn } from "@/lib/cn";
+import { useCredits } from "@/lib/use-credits";
 import { useAppState, useOS } from "@/store/use-os";
 import { useFocusNow } from "@/modules/focus/use-focus-now";
 
@@ -60,7 +63,7 @@ const ACTION_CARDS: { id: string; label: string; hint: string; icon: LucideIcon;
 
 export function PaperWorkspace() {
   const os = useOS();
-  useAppState();
+  const state = useAppState();
   const { toast } = useToast();
 
   const [view, setView] = React.useState<PaperView>("all");
@@ -73,6 +76,17 @@ export function PaperWorkspace() {
   const [activeId, setActiveId] = React.useState<ID | null>(null);
   const [canvasOpen, setCanvasOpen] = React.useState(false);
   const [assistant, setAssistant] = React.useState<string | null>(null);
+  const { balance, reload: reloadCredits } = useCredits(true);
+  const gatewayEnabled = (state.settings.aiProvider ?? "local") === "openai";
+  const [pendingAI, setPendingAI] = React.useState<{
+    action: string;
+    prompt: string;
+    label: string;
+    context: string;
+    estimate: AIEstimate;
+  } | null>(null);
+  const [aiBusy, setAiBusy] = React.useState(false);
+  const [lastCharge, setLastCharge] = React.useState<{ charged: number; available: number } | null>(null);
   const [quickText, setQuickText] = React.useState("");
   const [quickKind, setQuickKind] = React.useState<string | null>(null);
   const [pageDialogId, setPageDialogId] = React.useState<ID | null>(null);
@@ -344,6 +358,97 @@ export function PaperWorkspace() {
     os.deletePaperFolder(id);
     if (folderId === id) setFolderId("all");
     toast("Folder deleted", { tone: "success" });
+  };
+
+  const paperAIMeta = (id: string) => {
+    const pageName = active?.name ?? "this page";
+    if (id === "summarize") {
+      return { action: "document_summary", prompt: `Summarize “${pageName}” in a short paragraph and 3–5 bullet points.`, label: "Summarize document" };
+    }
+    if (id === "analyze") {
+      return { action: "document_analysis", prompt: `Analyze “${pageName}”: themes, decisions, risks and missing information.`, label: "Analyze document" };
+    }
+    if (id === "improve") {
+      return { action: "document_rewrite", prompt: `Rewrite “${pageName}” for clarity and concision. Keep the meaning.`, label: "Rewrite document" };
+    }
+    if (id === "actions") {
+      return { action: "note_action_extract", prompt: `Extract action items from “${pageName}”. Include owners and due dates if present.`, label: "Extract action items" };
+    }
+    if (id === "extract") {
+      return { action: "document_extract_tables", prompt: `Extract tables and structured data from “${pageName}”.`, label: "Extract tables" };
+    }
+    if (id === "translate") {
+      return { action: "document_translate", prompt: `Translate “${pageName}” into clear English, preserving structure.`, label: "Translate document" };
+    }
+    if (id === "explain") {
+      return { action: "document_qa", prompt: `Explain “${pageName}” and its key terms in plain language.`, label: "Explain document" };
+    }
+    return { action: "task_from_note", prompt: `Turn “${pageName}” into a short list of concrete tasks with owners if mentioned.`, label: "Turn into tasks" };
+  };
+
+  const requestPaperAI = async (action: string, prompt: string, label: string, context: string) => {
+    setLastCharge(null);
+    setAssistant("Pricing…");
+    try {
+      const estimate = await estimateAIAction(action, prompt.length + context.length);
+      if (!estimate.allowed) {
+        const message = estimate.reasons.includes("PAYMENT_GRACE_EXPIRED")
+          ? "AI is paused because this subscription is past due."
+          : estimate.reasons.includes("INSUFFICIENT_CREDITS")
+            ? `You need ${Math.max(0, estimate.minCredits - estimate.available)} more credits for this.`
+            : estimate.reasons.includes("INPUT_TOO_LARGE")
+              ? `This document is too large. The limit is ${estimate.maxInputTokens.toLocaleString()} tokens.`
+              : "This action is temporarily unavailable.";
+        setAssistant(message);
+        toast(message, { tone: "danger" });
+        return;
+      }
+      setPendingAI({ action, prompt, label, context, estimate });
+      setAssistant(null);
+    } catch (err) {
+      setAssistant(null);
+      toast((err as Error).message, { tone: "danger" });
+    }
+  };
+
+  const confirmPaperAI = async () => {
+    if (!pendingAI) return;
+    const { action, prompt, context } = pendingAI;
+    setPendingAI(null);
+    setAiBusy(true);
+    setAssistant("Thinking…");
+    try {
+      await streamAIChat(
+        { action, prompt, context, history: [] },
+        setAssistant,
+        (info) => {
+          setLastCharge({ charged: info.charged, available: info.available });
+          reloadCredits();
+          toast(
+            `${info.charged} credit${info.charged === 1 ? "" : "s"} used · ${info.available} remaining`,
+            { tone: "success" },
+          );
+        },
+      );
+    } catch (err) {
+      setAssistant(null);
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const runPaperAssistant = (id: string) => {
+    if (!gatewayEnabled) {
+      runAssistantAction(id, active?.textContent ?? "", activeId, os, setAssistant, toast);
+      return;
+    }
+    if (!active) {
+      toast("Select a page first", { tone: "danger" });
+      return;
+    }
+    const meta = paperAIMeta(id);
+    void requestPaperAI(meta.action, meta.prompt, meta.label, active.textContent ?? "");
   };
 
   return (
@@ -696,7 +801,16 @@ export function PaperWorkspace() {
           pageName={active?.name ?? null}
           pageText={active?.textContent ?? ""}
           answer={assistant}
-          onRun={(id) => runAssistantAction(id, active?.textContent ?? "", activeId, os, setAssistant, toast)}
+          onRun={runPaperAssistant}
+          creditsNote={
+            gatewayEnabled
+              ? lastCharge
+                ? `${lastCharge.charged} credits used · ${lastCharge.available} remaining`
+                : balance
+                  ? `GPT 6 Luna · ${balance.available} credits available`
+                  : "GPT 6 Luna · charges apply"
+              : "Local — no credits"
+          }
         />
         <RecentPages
           rows={workspace.recent}
@@ -750,6 +864,14 @@ export function PaperWorkspace() {
           }}
         />
       ) : null}
+      <CreditConfirmDialog
+        open={pendingAI != null}
+        label={pendingAI?.label ?? "AI action"}
+        estimate={pendingAI?.estimate ?? null}
+        busy={aiBusy}
+        onClose={() => setPendingAI(null)}
+        onConfirm={() => void confirmPaperAI()}
+      />
     </div>
   );
 }

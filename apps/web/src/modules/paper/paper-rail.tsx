@@ -8,11 +8,13 @@ import type { LucideIcon } from "lucide-react";
 
 import {
   ArrowRightLeft,
+  FileSearch,
   FileText,
   ListChecks,
   MessageSquareText,
   PenLine,
   Sparkles,
+  Table2,
   Wand2,
 } from "lucide-react";
 
@@ -25,8 +27,10 @@ import { PAPER_QUICK_CAPTURE_KINDS, paperKindMeta, relativeTime } from "./paper-
 
 const ASSISTANT_ACTIONS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: "summarize", label: "Summarize this page", icon: Sparkles },
+  { id: "analyze", label: "Analyze this document", icon: FileSearch },
   { id: "improve", label: "Edit or improve", icon: PenLine },
   { id: "actions", label: "Create action items", icon: ListChecks },
+  { id: "extract", label: "Extract tables", icon: Table2 },
   { id: "translate", label: "Translate", icon: ArrowRightLeft },
   { id: "explain", label: "Explain this document", icon: MessageSquareText },
   { id: "tasks", label: "Turn into tasks", icon: Wand2 },
@@ -37,11 +41,13 @@ export function PaperAssistant({
   pageText,
   answer,
   onRun,
+  creditsNote,
 }: {
   pageName: string | null;
   pageText: string;
   answer: string | null;
   onRun: (id: string) => void;
+  creditsNote?: string;
 }) {
   return (
     <section
@@ -88,6 +94,12 @@ export function PaperAssistant({
           className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
         >
           {answer}
+        </p>
+      ) : null}
+
+      {creditsNote ? (
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="paper-assistant-credits">
+          {creditsNote}
         </p>
       ) : null}
 

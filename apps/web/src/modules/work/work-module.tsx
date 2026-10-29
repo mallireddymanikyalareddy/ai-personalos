@@ -11,6 +11,9 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { Segmented } from "@/components/ui/segmented";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
+import { buildAIContext, estimateAIAction, streamAIChat, type AIEstimate } from "@/lib/ai-stream";
+import { useCredits } from "@/lib/use-credits";
 
 import { ProgressBar } from "@/components/ui/progress";
 import { TaskDetailSheet } from "@/modules/tasks/task-detail-sheet";
@@ -25,7 +28,7 @@ import { ProjectOverview } from "./project-overview";
 import { ProjectTimeline } from "./project-timeline";
 import { RoutineDetailSheet } from "./routine-detail-sheet";
 import { RoutineDialog } from "./routine-dialog";
-import { WorkActivity, WorkTeam } from "./work-side-panels";
+import { WorkActivity, WorkAIAssistant, WorkTeam } from "./work-side-panels";
 import { WorkProjectBoard } from "./work-project-board";
 import { seedSampleProjects } from "./sample-projects";
 import { useAppState, useOS } from "@/store/use-os";
@@ -145,6 +148,19 @@ export function WorkModule() {
   const [editingProject, setEditingProject] = React.useState<Project | null>(null);
   const [editingRoutine, setEditingRoutine] = React.useState<Routine | null>(null);
   const [openTaskId, setOpenTaskId] = React.useState<string | null>(null);
+  const { balance, reload: reloadCredits } = useCredits(true);
+  const gatewayEnabled = (state.settings.aiProvider ?? "local") === "openai";
+  const [aiDraft, setAiDraft] = React.useState("");
+  const [aiAnswer, setAiAnswer] = React.useState<string | null>(null);
+  const [pendingAI, setPendingAI] = React.useState<{
+    action: string;
+    prompt: string;
+    label: string;
+    context: string;
+    estimate: AIEstimate;
+  } | null>(null);
+  const [aiBusy, setAiBusy] = React.useState(false);
+  const [lastCharge, setLastCharge] = React.useState<{ charged: number; available: number } | null>(null);
 
   const allProjects = Object.values(state.projects).sort((a, b) => a.order - b.order);
   const projects = allProjects.filter((project) =>
@@ -164,6 +180,26 @@ export function WorkModule() {
     (selectedProjectId != null
       ? (visibleProjects.find((project) => project.id === selectedProjectId) ?? null)
       : null) ?? visibleProjects[0] ?? null;
+
+  const projectContext = selected
+    ? [
+        `Project: ${selected.name}`,
+        `Summary: ${selected.summary || "none"}`,
+        `Status: ${selected.status}`,
+        `Milestones: ${
+          os
+            .projectUpcomingMilestones(selected.id, 20, Date.now())
+            .map((view) => `${view.milestone.title}${view.milestone.dueAt ? ` (due ${new Date(view.milestone.dueAt).toDateString()})` : ""}`)
+            .join("; ") || "none"
+        }`,
+        `Tasks: ${
+          Object.values(state.tasks)
+            .filter((task) => task.projectId === selected.id)
+            .map((task) => `${task.title} [${task.status}]`)
+            .join("; ") || "none"
+        }`,
+      ].join("\n")
+    : "";
 
   const handleSaveProject = (input: ProjectFormInput) => {
     if (editingProject) {
@@ -211,6 +247,138 @@ export function WorkModule() {
   const openEditRoutine = (routine: Routine) => {
     setEditingRoutine(routine);
     setRoutineDialogOpen(true);
+  };
+
+  const workAIMeta = (id: string) => {
+    if (id === "plan") {
+      return { action: "project_plan", prompt: "Create a phased plan for this project with milestones, tasks and risks.", label: "Plan project" };
+    }
+    if (id === "status") {
+      return { action: "project_status_summary", prompt: "Summarize this project's status, blockers and next actions.", label: "Project status summary" };
+    }
+    if (id === "risks") {
+      return { action: "project_risk_review", prompt: "Review this project for risks, dependencies and overdue work.", label: "Project risk review" };
+    }
+    if (id === "tasks") {
+      return { action: "project_task_extract", prompt: "Extract concrete next tasks from this project's notes and milestones.", label: "Extract project tasks" };
+    }
+    if (id === "retro") {
+      return { action: "project_retrospective", prompt: "Draft a concise retrospective: what worked, what didn't, and what to change.", label: "Project retrospective" };
+    }
+    return { action: "quick_question", prompt: aiDraft.trim(), label: "Quick AI question" };
+  };
+
+  const requestWorkAI = async (action: string, prompt: string, label: string, context: string) => {
+    setLastCharge(null);
+    setAiAnswer("Pricing…");
+    try {
+      const merged = `${buildAIContext(os.getState(), "")}\n\n${context}`;
+      const estimate = await estimateAIAction(action, prompt.length + merged.length);
+      if (!estimate.allowed) {
+        const message = estimate.reasons.includes("PAYMENT_GRACE_EXPIRED")
+          ? "AI is paused because this subscription is past due."
+          : estimate.reasons.includes("INSUFFICIENT_CREDITS")
+            ? `You need ${Math.max(0, estimate.minCredits - estimate.available)} more credits for this.`
+            : estimate.reasons.includes("INPUT_TOO_LARGE")
+              ? `This project context is too large. The limit is ${estimate.maxInputTokens.toLocaleString()} tokens.`
+              : "This action is temporarily unavailable.";
+        setAiAnswer(message);
+        toast(message, { tone: "danger" });
+        return;
+      }
+      setPendingAI({ action, prompt, label, context: merged, estimate });
+      setAiAnswer(null);
+    } catch (err) {
+      setAiAnswer(null);
+      toast((err as Error).message, { tone: "danger" });
+    }
+  };
+
+  const confirmWorkAI = async () => {
+    if (!pendingAI) return;
+    const { action, prompt, context } = pendingAI;
+    setPendingAI(null);
+    setAiBusy(true);
+    setAiAnswer("Thinking…");
+    try {
+      await streamAIChat(
+        { action, prompt, context, history: [] },
+        setAiAnswer,
+        (info) => {
+          setLastCharge({ charged: info.charged, available: info.available });
+          reloadCredits();
+          toast(
+            `${info.charged} credit${info.charged === 1 ? "" : "s"} used · ${info.available} remaining`,
+            { tone: "success" },
+          );
+        },
+      );
+    } catch (err) {
+      setAiAnswer(null);
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const runWorkAI = (id: string) => {
+    if (!selected) {
+      toast("Select a project first", { tone: "danger" });
+      return;
+    }
+    if (!gatewayEnabled) {
+      const stats = os.projectStats(selected.id);
+      const milestones = os.projectUpcomingMilestones(selected.id, 5, Date.now());
+      const tasks = Object.values(state.tasks).filter((task) => task.projectId === selected.id);
+      if (id === "plan") {
+        setAiAnswer(
+          `Plan: start with ${milestones[0]?.milestone.title ?? "the next milestone"}, then break it into ${Math.max(3, Math.min(8, tasks.length || 5))} tasks and review progress weekly.`,
+        );
+        return;
+      }
+      if (id === "status") {
+        setAiAnswer(
+          `Status: ${stats.progress ?? 0}% complete, ${tasks.filter((task) => task.status === "done").length}/${tasks.length} tasks done, ${milestones.length} upcoming milestone${milestones.length === 1 ? "" : "s"}.`,
+        );
+        return;
+      }
+      if (id === "risks") {
+        const overdue = milestones.filter((milestone) => milestone.milestone.dueAt != null && milestone.milestone.dueAt < Date.now());
+        setAiAnswer(
+          overdue.length > 0
+            ? `${overdue.length} milestone${overdue.length === 1 ? " is" : "s are"} overdue. Re-plan those first.`
+            : "No overdue milestones. Watch task load and dependencies as the deadline approaches.",
+        );
+        return;
+      }
+      if (id === "tasks") {
+        setAiAnswer(
+          tasks.length > 0
+            ? `Existing tasks: ${tasks.slice(0, 6).map((task) => task.title).join(", ")}.`
+            : "No tasks yet. Add the first three from the project summary.",
+        );
+        return;
+      }
+      if (id === "retro") {
+        setAiAnswer(
+          `Retrospective: ${stats.progress ?? 0}% complete with ${tasks.length} tasks. Capture what worked, what slipped, and one change for the next cycle.`,
+        );
+        return;
+      }
+      const query = aiDraft.trim();
+      setAiAnswer(
+        query
+          ? `Project “${selected.name}”: ${selected.summary || "no summary yet"}. ${tasks.length} tasks, ${milestones.length} upcoming milestones.`
+          : "Ask a question about this project.",
+      );
+      return;
+    }
+    const meta = workAIMeta(id);
+    if (!meta.prompt) {
+      setAiAnswer("Ask a question about this project.");
+      return;
+    }
+    void requestWorkAI(meta.action, meta.prompt, meta.label, projectContext);
   };
 
   return (
@@ -403,6 +571,21 @@ export function WorkModule() {
                         setMilestoneTarget({ projectId: selected.id, milestoneId })
                       }
                     />
+                    <WorkAIAssistant
+                      draft={aiDraft}
+                      onDraftChange={setAiDraft}
+                      answer={aiAnswer}
+                      onRun={runWorkAI}
+                      creditsNote={
+                        gatewayEnabled
+                          ? lastCharge
+                            ? `${lastCharge.charged} credits used · ${lastCharge.available} remaining`
+                            : balance
+                              ? `GPT 6 Luna · ${balance.available} credits available`
+                              : "GPT 6 Luna · charges apply"
+                          : "Local — no credits"
+                      }
+                    />
                     <WorkTeam
                       team={os.projectTeam(selected.id)}
                       onAddMember={() => setMemberDialogOpen(true)}
@@ -501,6 +684,14 @@ export function WorkModule() {
 
       <MilestoneDialog target={milestoneTarget} onClose={() => setMilestoneTarget(null)} />\n      <MemberDialog open={memberDialogOpen} onClose={() => setMemberDialogOpen(false)} />
       <TaskDetailSheet taskId={openTaskId} onClose={() => setOpenTaskId(null)} />
+      <CreditConfirmDialog
+        open={pendingAI != null}
+        label={pendingAI?.label ?? "AI action"}
+        estimate={pendingAI?.estimate ?? null}
+        busy={aiBusy}
+        onClose={() => setPendingAI(null)}
+        onConfirm={() => void confirmWorkAI()}
+      />
     </>
   );
 }
