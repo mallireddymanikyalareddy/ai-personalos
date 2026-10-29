@@ -137,5 +137,15 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - All three use the shared estimate → confirmation → stream → credits-used pattern.
 - **Tests:** Work, Paper and related suites pass (91 tests); full web suite remains 831/831.
 
+## Iteration 34 — Today, Planner, Goals, Habits and Notes wired
+- **Shared client hook:** `lib/use-ai-gateway.ts` now owns the estimate → confirmation → stream → credits-note flow, so modules do not duplicate gateway logic.
+- **Today:** added an **AI day assistant** with `today_rescue_plan`, `today_focus_plan` and `today_weekly_preview`. The morning briefing/reflection cards continue to use their existing server actions.
+- **Planner:** `PlannerAssistant` now routes `daily_plan`, `weekly_plan`, `plan_rebalance`, `plan_energy_optimize`, `calendar_schedule_suggestion` and `plan_buffer_suggest` through the gateway. Added a **Suggest buffers** tool; local proposal generation remains the free fallback.
+- **Goals:** `GoalAssistant` uses `goal_milestone_breakdown`, `goal_plan`, `goal_progress_review`, `goal_risk_check`, `goal_okr_rewrite` and `quick_question`. Added **Check risks** and **Rewrite as OKRs**.
+- **Habits:** `habit_suggest`, `habit_stack_suggest`, `habit_recovery_plan`, `habit_pattern_insight` and `quick_question`. Added **Find patterns** and **Recover a streak**.
+- **Notes:** `note_summary`, `note_action_extract`, `note_rewrite`, `task_from_note`, `project_plan`, `note_tag_suggest`, `note_flashcards` and `quick_question`. Added **Suggest tags** and **Study flashcards**.
+- All five modules show **“Local — no credits”** when the provider is Local, and use the shared confirmation dialog when the provider is OpenAI.
+- **Tests:** Today/Planner/Goals/Habits/Notes suites pass (151 tests); full web suite remains 831/831.
+
 
 

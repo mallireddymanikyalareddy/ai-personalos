@@ -6,7 +6,7 @@ import { ModelLabel } from "@/components/ai/model-label";
 
 import type { LucideIcon } from "lucide-react";
 
-import { BarChart3, CalendarPlus, Heart, Lightbulb, MoreHorizontal, Sparkles } from "lucide-react";
+import { BarChart3, CalendarPlus, Heart, Lightbulb, MoreHorizontal, RefreshCw, Sparkles, TrendingUp } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ export interface HabitAssistantProps {
   suggestionTitles: string[];
   onAddSuggestion: (title: string) => void;
   onOpenAssistant: () => void;
+  creditsNote?: string;
 }
 
 const ACTIONS: { id: string; label: string; icon: LucideIcon; href?: string; onSelect?: () => void }[] = [
@@ -32,6 +33,8 @@ const ACTIONS: { id: string; label: string; icon: LucideIcon; href?: string; onS
   { id: "progress", label: "Analyze my progress", icon: BarChart3, href: "/insights" },
   { id: "plan", label: "Create a habit plan", icon: CalendarPlus },
   { id: "motivate", label: "Give me motivation", icon: Heart },
+  { id: "patterns", label: "Find patterns", icon: TrendingUp },
+  { id: "recover", label: "Recover a streak", icon: RefreshCw },
 ];
 
 export function HabitAssistant({
@@ -44,6 +47,7 @@ export function HabitAssistant({
   suggestionTitles,
   onAddSuggestion,
   onOpenAssistant,
+  creditsNote,
 }: HabitAssistantProps) {
   const [draft, setDraft] = React.useState("");
 
@@ -53,6 +57,8 @@ export function HabitAssistant({
         if (action.id === "suggest") return { ...action, onSelect: () => onAsk("Suggest new habits") };
         if (action.id === "plan") return { ...action, onSelect: onCreate };
         if (action.id === "motivate") return { ...action, onSelect: onMotivate };
+        if (action.id === "patterns") return { ...action, onSelect: () => onAsk("Find patterns in my check-ins") };
+        if (action.id === "recover") return { ...action, onSelect: () => onAsk("Help me recover a broken habit streak") };
         return action;
       }),
     [onAsk, onCreate, onMotivate],
@@ -184,6 +190,11 @@ export function HabitAssistant({
       <p className="mt-3 text-[10px] text-ink-3" data-testid="habits-assistant-stats">
         {stats.totalActive} active habits · {stats.totalCheckIns} total check-ins
       </p>
+      {creditsNote ? (
+        <p className="mt-1 text-[10px] text-ink-3" data-testid="habits-assistant-credits">
+          {creditsNote}
+        </p>
+      ) : null}
     </section>
   );
 }

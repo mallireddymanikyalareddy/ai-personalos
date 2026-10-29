@@ -43,6 +43,8 @@ export const NOTE_ASSISTANT_ACTIONS: NoteAssistantAction[] = [
   { id: "improve", label: "Improve writing", icon: Wand2 },
   { id: "tasks", label: "Convert to task list", icon: Target },
   { id: "plan", label: "Generate a project plan", icon: NotebookPen },
+  { id: "tags", label: "Suggest tags", icon: ListChecks },
+  { id: "flashcards", label: "Study flashcards", icon: Brain },
   { id: "ask", label: "Ask anything", icon: Brain },
 ];
 
@@ -51,11 +53,13 @@ export function NoteAssistant({
   answer,
   onAction,
   onAsk,
+  creditsNote,
 }: {
   disabled: boolean;
   answer: string | null;
   onAction: (id: string) => void;
   onAsk: (question: string) => void;
+  creditsNote?: string;
 }) {
   const [draft, setDraft] = React.useState("");
 
@@ -118,6 +122,11 @@ export function NoteAssistant({
           className="mt-2 rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
         >
           {answer}
+        </p>
+      ) : null}
+      {creditsNote ? (
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="notes-assistant-credits">
+          {creditsNote}
         </p>
       ) : null}
     </section>

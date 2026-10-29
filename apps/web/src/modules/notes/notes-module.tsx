@@ -9,10 +9,12 @@ import { actionItemBlocks, projectPlanBlocks, tidyNoteBlocks } from "@personalos
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 import { useAppState, useOS } from "@/store/use-os";
 
 import { NoteEditor } from "./note-editor";
@@ -34,6 +36,7 @@ export function NotesModule() {
   const os = useOS();
   useAppState();
   const { toast } = useToast();
+  const ai = useAIGateway();
 
   const [folderFilter, setFolderFilter] = React.useState<string>("all");
   const [tagFilter, setTagFilter] = React.useState<string | null>(null);
@@ -42,7 +45,8 @@ export function NotesModule() {
   const [query, setQuery] = React.useState("");
   const [pinnedOnly, setPinnedOnly] = React.useState(false);
   const [activeId, setActiveId] = React.useState<string | null>(null);
-  const [answer, setAnswer] = React.useState<string | null>(null);
+  const answer = ai.answer;
+  const setAnswer = ai.setAnswer;
   const [quickText, setQuickText] = React.useState("");
   const [tagDialog, setTagDialog] = React.useState(false);
   const photoInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -62,6 +66,9 @@ export function NotesModule() {
   );
 
   const note = workspace.active;
+  const noteContext = note
+    ? `${note.title}\n${JSON.stringify(note.blocks).slice(0, 190000)}`
+    : "";
 
   const openNote = (id: string) => {
     setActiveId(id);
@@ -119,6 +126,44 @@ export function NotesModule() {
 
   const runAssistant = (id: string) => {
     if (!note) return;
+    if (ai.gatewayEnabled) {
+      const meta =
+        id === "summarize"
+          ? { action: "note_summary", label: "Summarize note" }
+          : id === "actions"
+            ? { action: "note_action_extract", label: "Extract action items" }
+            : id === "improve"
+              ? { action: "note_rewrite", label: "Rewrite note" }
+              : id === "tasks"
+                ? { action: "task_from_note", label: "Turn note into tasks" }
+                : id === "plan"
+                  ? { action: "project_plan", label: "Generate project plan" }
+                  : id === "tags"
+                    ? { action: "note_tag_suggest", label: "Suggest tags" }
+                    : id === "flashcards"
+                      ? { action: "note_flashcards", label: "Generate study cards" }
+                      : { action: "quick_question", label: "Quick AI question" };
+      void ai.request({
+        action: meta.action,
+        prompt:
+          id === "tags"
+            ? "Suggest 3–6 tags and a folder for this note."
+            : id === "flashcards"
+              ? "Create 5–8 study flashcards from this note."
+              : id === "tasks"
+                ? "Turn this note into a short list of concrete tasks."
+                : id === "plan"
+                  ? "Turn this note into a project plan with phases and tasks."
+                  : id === "actions"
+                    ? "Extract action items with owners and dates if present."
+                    : id === "improve"
+                      ? "Rewrite this note for clarity and concision. Keep the meaning."
+                      : "Summarize this note in a short paragraph and 3–5 bullet points.",
+        context: noteContext,
+        label: meta.label,
+      });
+      return;
+    }
     if (id === "summarize") {
       const summary = os.aiSummarizeNote(note.id);
       setAnswer(
@@ -171,6 +216,22 @@ export function NotesModule() {
     const text = value.trim().toLowerCase();
     if (!note || text.length === 0) {
       setAnswer(null);
+      return;
+    }
+    if (ai.gatewayEnabled) {
+      const action = text.includes("summar")
+        ? "note_summary"
+        : text.includes("tag")
+          ? "note_tag_suggest"
+          : text.includes("flashcard")
+            ? "note_flashcards"
+            : "quick_question";
+      void ai.request({
+        action,
+        prompt: value,
+        context: noteContext,
+        label: action === "note_summary" ? "Summarize note" : "Quick AI question",
+      });
       return;
     }
     if (text.includes("how long") || text.includes("reading")) {
@@ -441,6 +502,15 @@ export function NotesModule() {
           answer={answer}
           onAction={runAssistant}
           onAsk={ask}
+          creditsNote={ai.creditsNote}
+        />
+        <CreditConfirmDialog
+          open={ai.pending != null}
+          label={ai.pending?.label ?? "AI action"}
+          estimate={ai.pending?.estimate ?? null}
+          busy={ai.busy}
+          onClose={ai.dismiss}
+          onConfirm={() => void ai.confirm()}
         />
         {note ? (
           <>

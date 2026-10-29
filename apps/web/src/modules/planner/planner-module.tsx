@@ -16,9 +16,11 @@ import {
 import { Alert } from "@/components/ui/alert";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 import { useFocusNow } from "@/modules/focus/use-focus-now";
 import { useAppState, useOS } from "@/store/use-os";
 
@@ -67,6 +69,7 @@ export function PlannerModule() {
   const os = useOS();
   const state = useAppState();
   const { toast } = useToast();
+  const ai = useAIGateway();
 
   const preferredView = viewFromPreference(state.settings.defaultPlanningView);
   const [view, setView] = React.useState<View>(() => preferredView);
@@ -236,7 +239,22 @@ export function PlannerModule() {
 
   const goToday = () => setAnchor(startOfDay(now));
 
+  const planningContext = () =>
+    `${os.aiContextSummary()}\nWeek: ${new Date(week.start).toDateString()} – ${new Date(week.end).toDateString()}`;
+
+  const requestPlanAI = (action: string, prompt: string, label: string) => {
+    void ai.request({ action, prompt, context: planningContext(), label });
+  };
+
   const planDay = () => {
+    if (ai.gatewayEnabled) {
+      requestPlanAI(
+        "daily_plan",
+        "Plan my day with realistic time blocks, priorities and buffers. Use my tasks, calendar and habits.",
+        "Generate daily plan",
+      );
+      return;
+    }
     if (startOfDay(anchor) + DAY_MS <= now) {
       toast("That day has already passed", { tone: "danger" });
       return;
@@ -245,6 +263,14 @@ export function PlannerModule() {
   };
 
   const planWeek = () => {
+    if (ai.gatewayEnabled) {
+      requestPlanAI(
+        "weekly_plan",
+        "Plan my week across tasks, meetings, habits and goals. Call out overload and free focus windows.",
+        "Generate weekly plan",
+      );
+      return;
+    }
     if (week.end <= now) {
       toast("That week has already passed", { tone: "danger" });
       return;
@@ -253,6 +279,14 @@ export function PlannerModule() {
   };
 
   const optimize = () => {
+    if (ai.gatewayEnabled) {
+      requestPlanAI(
+        "plan_rebalance",
+        "Rebalance my current plan: move low-priority work, protect focus time and resolve conflicts.",
+        "Rebalance plan",
+      );
+      return;
+    }
     if (week.end <= now) {
       toast("That week has already passed", { tone: "danger" });
       return;
@@ -270,7 +304,27 @@ export function PlannerModule() {
     setProposal(proposal);
   };
 
+  const suggestBuffers = () => {
+    if (ai.gatewayEnabled) {
+      requestPlanAI(
+        "plan_buffer_suggest",
+        "Add realistic buffers around meetings and context switches in my plan.",
+        "Suggest buffers",
+      );
+      return;
+    }
+    toast("Local planning already adds short buffers around focus blocks", { tone: "success" });
+  };
+
   const timeBlockCandidates = () => {
+    if (ai.gatewayEnabled) {
+      requestPlanAI(
+        "plan_energy_optimize",
+        "Time-block my tasks around my energy patterns and meetings. Suggest the best windows.",
+        "Optimize time blocks",
+      );
+      return;
+    }
     const pool = candidates.slice(0, 3);
     if (pool.length === 0) {
       toast("No tasks are ready to schedule in this window", { tone: "danger" });
@@ -296,6 +350,14 @@ export function PlannerModule() {
   };
 
   const findFocusTime = () => {
+    if (ai.gatewayEnabled) {
+      requestPlanAI(
+        "calendar_schedule_suggestion",
+        "Find the best focus windows this week and tell me what to protect.",
+        "Suggest focus time",
+      );
+      return;
+    }
     const slot = freeSlots.find((entry) => entry.startsAt > now);
     if (!slot) {
       toast("No free time left this week", { tone: "danger" });
@@ -556,6 +618,17 @@ export function PlannerModule() {
             onOptimize={optimize}
             onFindFocus={findFocusTime}
             onGenerate={planWeek}
+            onBuffers={suggestBuffers}
+            answer={ai.answer}
+            creditsNote={ai.creditsNote}
+          />
+          <CreditConfirmDialog
+            open={ai.pending != null}
+            label={ai.pending?.label ?? "AI action"}
+            estimate={ai.pending?.estimate ?? null}
+            busy={ai.busy}
+            onClose={ai.dismiss}
+            onConfirm={() => void ai.confirm()}
           />
           <FocusTimeCard
             slices={focusSlices}

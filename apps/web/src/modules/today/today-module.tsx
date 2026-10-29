@@ -2,15 +2,17 @@
 
 import * as React from "react";
 
-import { CalendarDays, ChevronLeft, ChevronRight, MoreHorizontal, Sun } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, MoreHorizontal, Sparkles, Sun } from "lucide-react";
 
 import { addDays, endOfDay, startOfDay } from "@personalos/core";
 import type { TodayTaskBucket } from "@personalos/core";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { useToast } from "@/components/ui/toast";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 import { useAppState, useOS } from "@/store/use-os";
 
 import { TaskDetailSheet } from "@/modules/tasks/task-detail-sheet";
@@ -48,6 +50,7 @@ export function TodayModule() {
   const os = useOS();
   useAppState();
   const { toast } = useToast();
+  const ai = useAIGateway();
   const now = useTodayNow(30_000);
 
   const [offset, setOffset] = React.useState(0);
@@ -88,6 +91,26 @@ export function TodayModule() {
         ? `Sample day loaded - ${created} item${created === 1 ? "" : "s"} added`
         : "Sample day is already loaded",
     );
+  };
+
+  const runTodayAI = (id: "rescue" | "focus" | "week") => {
+    const meta =
+      id === "rescue"
+        ? { action: "today_rescue_plan", prompt: "I'm behind. Replan the rest of today with the highest-impact work first.", label: "Rescue my day" }
+        : id === "focus"
+          ? { action: "today_focus_plan", prompt: "Pick the next 1–3 focus blocks for today and say what to protect.", label: "Pick focus blocks" }
+          : { action: "today_weekly_preview", prompt: "Preview the week ahead: key deadlines, meetings and risks.", label: "Week preview" };
+    if (!ai.gatewayEnabled) {
+      ai.setAnswer(
+        id === "rescue"
+          ? `Local rescue: ${counts.today ?? 0} due today and ${counts.overdue ?? 0} overdue. Start with the highest-priority overdue item, then one focus block.`
+          : id === "focus"
+            ? `Local focus: protect 90 minutes for ${rows[0]?.title ?? "your top task"} and batch shallow work after lunch.`
+            : `Local preview: ${goals.length} active goals, ${habits.length} habits and ${meetings.length} meetings in the next week.`,
+      );
+      return;
+    }
+    void ai.request({ action: meta.action, prompt: meta.prompt, context: os.aiContextSummary(), label: meta.label });
   };
 
   return (
@@ -168,6 +191,40 @@ export function TodayModule() {
           <UpgradeCard />
           <TodayHero welcome={welcome} stats={stats} day={selectedDay} onAddMemory={() => navigate("/memory")} />
           <TodayBriefing />
+          <section
+            className="rounded-2xl border border-line bg-surface p-4 shadow-card"
+            aria-label="AI day assistant"
+            data-testid="today-ai-panel"
+          >
+            <header className="mb-2 flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                <Sparkles className="size-4 text-accent-ink" aria-hidden="true" />
+                AI day assistant
+              </h2>
+            </header>
+            <div className="flex flex-wrap gap-1.5">
+              <Button size="sm" variant="secondary" onClick={() => runTodayAI("rescue")} data-testid="today-ai-rescue">
+                Rescue my day
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => runTodayAI("focus")} data-testid="today-ai-focus">
+                Pick focus blocks
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => runTodayAI("week")} data-testid="today-ai-week">
+                Week preview
+              </Button>
+            </div>
+            {ai.answer ? (
+              <p
+                data-testid="today-ai-answer"
+                className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] text-ink-2"
+              >
+                {ai.answer}
+              </p>
+            ) : null}
+            <p className="mt-1.5 text-[10px] text-ink-3" data-testid="today-ai-credits">
+              {ai.creditsNote}
+            </p>
+          </section>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <TodaySchedulePanel entries={schedule} />
@@ -218,6 +275,14 @@ export function TodayModule() {
       </div>
 
       <TaskDetailSheet taskId={detailTaskId} onClose={() => setDetailTaskId(null)} />
+      <CreditConfirmDialog
+        open={ai.pending != null}
+        label={ai.pending?.label ?? "AI action"}
+        estimate={ai.pending?.estimate ?? null}
+        busy={ai.busy}
+        onClose={ai.dismiss}
+        onConfirm={() => void ai.confirm()}
+      />
     </div>
   );
 }

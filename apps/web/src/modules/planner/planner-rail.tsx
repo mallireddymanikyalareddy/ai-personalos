@@ -8,6 +8,7 @@ import {
   CalendarClock,
   Clock,
   Crosshair,
+  Hourglass,
   MoreHorizontal,
   Sparkles,
   Target,
@@ -40,8 +41,11 @@ export function PlannerAssistant({
   onOptimize,
   onFindFocus,
   onGenerate,
+  onBuffers,
   onToggleExpanded,
   expanded,
+  answer,
+  creditsNote,
 }: {
   providerLabel: string;
   onPlanDay: () => void;
@@ -49,14 +53,18 @@ export function PlannerAssistant({
   onOptimize: () => void;
   onFindFocus: () => void;
   onGenerate: () => void;
+  onBuffers: () => void;
   onToggleExpanded: () => void;
   expanded: boolean;
+  answer: string | null;
+  creditsNote?: string;
 }) {
   const tools: { id: string; label: string; icon: LucideIcon; onClick: () => void }[] = [
     { id: "plan", label: "Plan my day", icon: CalendarClock, onClick: onPlanDay },
     { id: "block", label: "Time block tasks", icon: Clock, onClick: onTimeBlock },
     { id: "optimize", label: "Optimize my schedule", icon: Wand2, onClick: onOptimize },
     { id: "focus", label: "Find focus time", icon: Crosshair, onClick: onFindFocus },
+    { id: "buffers", label: "Suggest buffers", icon: Hourglass, onClick: onBuffers },
   ];
 
   return (
@@ -135,6 +143,20 @@ export function PlannerAssistant({
         <Sparkles className="size-3.5" aria-hidden="true" />
         Generate Plan
       </button>
+
+      {answer ? (
+        <p
+          data-testid="planner-assistant-answer"
+          className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
+        >
+          {answer}
+        </p>
+      ) : null}
+      {creditsNote ? (
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="planner-assistant-credits">
+          {creditsNote}
+        </p>
+      ) : null}
     </section>
   );
 }

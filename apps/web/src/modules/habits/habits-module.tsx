@@ -8,10 +8,12 @@ import type { Habit, HabitFilter, HabitSort, HabitTab } from "@personalos/core";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Segmented } from "@/components/ui/segmented";
 import { useToast } from "@/components/ui/toast";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 import { useAppState, useOS } from "@/store/use-os";
 
 import { HabitRow } from "./habit-row";
@@ -51,6 +53,7 @@ export function HabitsModule() {
   const os = useOS();
   useAppState();
   const { toast } = useToast();
+  const ai = useAIGateway();
 
   const [tab, setTab] = React.useState<HabitTab>("all");
   const [sort, setSort] = React.useState<HabitSort>("priority");
@@ -58,7 +61,8 @@ export function HabitsModule() {
   const [monthAnchor, setMonthAnchor] = React.useState<number | null>(null);
   const [selectedDay, setSelectedDay] = React.useState<number | null>(null);
   const [question, setQuestion] = React.useState("");
-  const [answer, setAnswer] = React.useState<string | null>(null);
+  const answer = ai.answer;
+  const setAnswer = ai.setAnswer;
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [detailId, setDetailId] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState<Habit | null>(null);
@@ -103,6 +107,24 @@ export function HabitsModule() {
     const text = value.trim().toLowerCase();
     if (text.length === 0) {
       setAnswer(null);
+      return;
+    }
+    if (ai.gatewayEnabled) {
+      const meta = text.includes("suggest")
+        ? { action: "habit_suggest", label: "Suggest new habits" }
+        : text.includes("stack") || text.includes("plan") || text.includes("routine")
+          ? { action: "habit_stack_suggest", label: "Suggest habit stacking" }
+          : text.includes("recover") || text.includes("streak") || text.includes("motivat")
+            ? { action: "habit_recovery_plan", label: "Recover a habit streak" }
+            : text.includes("progress") || text.includes("pattern") || text.includes("analy")
+              ? { action: "habit_pattern_insight", label: "Habit pattern insight" }
+              : { action: "quick_question", label: "Quick AI question" };
+      void ai.request({
+        action: meta.action,
+        prompt: value,
+        context: os.aiContextSummary(),
+        label: meta.label,
+      });
       return;
     }
     if (text.includes("suggest")) {
@@ -345,6 +367,15 @@ export function HabitsModule() {
           suggestionTitles={suggestionTitles}
           onAddSuggestion={addSuggestion}
           onOpenAssistant={() => window.location.assign("/ai")}
+          creditsNote={ai.creditsNote}
+        />
+        <CreditConfirmDialog
+          open={ai.pending != null}
+          label={ai.pending?.label ?? "AI action"}
+          estimate={ai.pending?.estimate ?? null}
+          busy={ai.busy}
+          onClose={ai.dismiss}
+          onConfirm={() => void ai.confirm()}
         />
         <HabitCalendar
           days={dashboard.calendar}

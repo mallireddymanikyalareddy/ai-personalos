@@ -9,7 +9,9 @@ import { GOAL_CATEGORY_LABELS } from "@personalos/core";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { useToast } from "@/components/ui/toast";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 import { useOS } from "@/store/use-os";
 
 import { GOAL_CATEGORY_ICON } from "./goals-meta";
@@ -18,19 +20,44 @@ const ASSISTANT_ACTIONS = [
   { label: "Break down this goal", prompt: "Break down my goal into milestones" },
   { label: "Suggest next steps", prompt: "Suggest next steps for my goals" },
   { label: "Create a plan", prompt: "Create a plan for my active goals" },
+  { label: "Check risks", prompt: "Check risks for my active goals" },
+  { label: "Rewrite as OKRs", prompt: "Rewrite my active goals as measurable OKRs" },
   { label: "Find similar goals", prompt: "Find similar goals" },
 ] as const;
 
 export function GoalAssistant() {
   const os = useOS();
+  const ai = useAIGateway();
   const [question, setQuestion] = React.useState("");
   const [result, setResult] = React.useState<AIResult | null>(null);
 
   const ask = (prompt: string) => {
     const trimmed = prompt.trim();
     if (trimmed.length === 0) return;
-    setResult(os.aiRun(trimmed));
+    if (!ai.gatewayEnabled) {
+      setResult(os.aiRun(trimmed));
+      return;
+    }
+    const meta = /milestone|break down/i.test(trimmed)
+      ? { action: "goal_milestone_breakdown", label: "Break down goal" }
+      : /risk/i.test(trimmed)
+        ? { action: "goal_risk_check", label: "Goal risk check" }
+        : /okr/i.test(trimmed)
+          ? { action: "goal_okr_rewrite", label: "Rewrite as OKRs" }
+          : /plan/i.test(trimmed)
+            ? { action: "goal_plan", label: "Goal action plan" }
+            : /progress|next steps/i.test(trimmed)
+              ? { action: "goal_progress_review", label: "Goal progress review" }
+              : { action: "quick_question", label: "Quick AI question" };
+    void ai.request({
+      action: meta.action,
+      prompt: trimmed,
+      context: os.aiContextSummary(),
+      label: meta.label,
+    });
   };
+
+  const answer = ai.answer ?? result?.message ?? null;
 
   return (
     <section
@@ -76,15 +103,26 @@ export function GoalAssistant() {
         ))}
       </div>
 
-      {result ? (
+      {answer ? (
         <div
           role="status"
           data-testid="goals-assistant-answer"
           className="mt-2 rounded-lg bg-surface-2 p-2.5 text-[13px] leading-relaxed text-ink-2"
         >
-          {result.message}
+          {answer}
         </div>
       ) : null}
+      <p className="mt-1.5 text-[10px] text-ink-3" data-testid="goals-assistant-credits">
+        {ai.creditsNote}
+      </p>
+      <CreditConfirmDialog
+        open={ai.pending != null}
+        label={ai.pending?.label ?? "AI action"}
+        estimate={ai.pending?.estimate ?? null}
+        busy={ai.busy}
+        onClose={ai.dismiss}
+        onConfirm={() => void ai.confirm()}
+      />
     </section>
   );
 }
