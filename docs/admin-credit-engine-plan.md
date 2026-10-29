@@ -164,5 +164,15 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - **Test reliability:** `vitest.config.mts` now caps the thread pool at 2 workers, eliminating intermittent worker-startup failures on Windows. Fixed a flaky integrations assertion that raced a “Preparing” button state.
 - **Tests:** Rewards/Templates/Work Mode/Collaboration/AI suites pass (110 tests); full web suite **52 files, 831/831** reliably.
 
+## Iteration 37 — universal AI action catalogue
+- Added **All AI actions** to `/ai`: a searchable, grouped catalogue of every action returned by `/api/v1/plans` (all 95 registry entries).
+- Each action shows its label, key, module, credit range and input/output limits.
+- The user can add an instruction and context, optionally set the item count for batch actions, then **Estimate** or **Run with AI**.
+- Runs use the shared gateway hook, so the confirmation dialog, server-side pricing, idempotency, streaming and credits-used note are identical to the module panels.
+- `useAIGateway` now accepts `itemCount`, passing it through both `/api/v1/ai/estimate` and `/api/ai/chat`.
+- Local mode explains that catalogue actions need OpenAI; module-level local actions remain free.
+- This exposes actions without a dedicated module button (for example `document_compare`, `document_style_match`, `note_merge_dedupe`, `capture_route`) without adding a bespoke UI for each.
+- **Tests:** AI suite 29/29; full web suite 52 files, 831/831.
+
 
 

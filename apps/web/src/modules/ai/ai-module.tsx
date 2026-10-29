@@ -17,6 +17,7 @@ import { buildAIContext, streamAIChat, type ChatTurn } from "@/lib/ai-stream";
 import { useCredits } from "@/lib/use-credits";
 
 import { AIChat, type ChatEntry, type ChatSuggestion } from "./ai-chat";
+import { AIActionCatalog } from "./action-catalog";
 import { useSpeechInput } from "./use-speech";
 import { AIFeatureCards, AIHero, defaultAIFeatures, type AIFeature } from "./ai-hero";
 import {
@@ -561,6 +562,8 @@ export function AIModule() {
           />
         </aside>
       </div>
+
+      <AIActionCatalog />
 
       <p className="text-center text-[11px] leading-relaxed text-ink-3">
         Everything I use comes from your own data on this device. I only read what you can see, I

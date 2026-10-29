@@ -12,6 +12,7 @@ export type PendingAI = {
   prompt: string;
   label: string;
   context: string;
+  itemCount: number;
   estimate: AIEstimate;
 };
 
@@ -31,16 +32,18 @@ export function useAIGateway() {
       prompt,
       context,
       label,
+      itemCount = 1,
     }: {
       action: string;
       prompt: string;
       context: string;
       label: string;
+      itemCount?: number;
     }) => {
       setLastCharge(null);
       setAnswer("Pricing…");
       try {
-        const estimate = await estimateAIAction(action, prompt.length + context.length);
+        const estimate = await estimateAIAction(action, prompt.length + context.length, itemCount);
         if (!estimate.allowed) {
           const message = estimate.reasons.includes("PAYMENT_GRACE_EXPIRED")
             ? "AI is paused because this subscription is past due."
@@ -55,7 +58,7 @@ export function useAIGateway() {
           toast(message, { tone: "danger" });
           return false;
         }
-        setPending({ action, prompt, context, label, estimate });
+        setPending({ action, prompt, context, label, itemCount, estimate });
         setAnswer(null);
         return true;
       } catch (err) {
@@ -75,7 +78,8 @@ export function useAIGateway() {
     setAnswer("Thinking…");
     try {
       await streamAIChat(
-        { action: current.action, prompt: current.prompt, context: current.context, history: [] },
+        { action: current.action, prompt: current.prompt, context: current.context,
+          history: [], itemCount: current.itemCount },
         setAnswer,
         (info) => {
           setLastCharge({ charged: info.charged, available: info.available });
