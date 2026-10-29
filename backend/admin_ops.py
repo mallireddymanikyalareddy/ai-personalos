@@ -602,6 +602,8 @@ def window(days: int) -> int:
 async def usage(days: int = 7, limit: int = 100, _=Depends(require_role())):
     days = window(days)
     rows = await db.ai_usage.find({}, {"_id": 0}).sort("created_at", -1).to_list(max(1, min(limit, 500)))
+    settings = await platform_settings.get_settings()
+    rows = [r | {"estimated_cost_paise": round(usage_insights.estimate_cost(r, settings))} for r in rows]
     return {"totals": await usage_totals(now() - timedelta(days=days)), "trend": await usage_trend(days),
             "requests": await with_handles(rows, "created_at")}
 
@@ -624,6 +626,28 @@ class SimulateIn(BaseModel):
 @router.post("/usage/simulate")
 async def simulate_usage(body: SimulateIn, _=Depends(require_role())):
     return await usage_insights.simulate(window(body.days), {a.action: a.credits for a in body.actions})
+
+
+class UsageCostIn(BaseModel):
+    cost_paise: int = Field(ge=0, le=100_000_000)
+    reason: Reason
+
+
+@router.post("/usage/{usage_id}/cost")
+async def record_usage_cost(usage_id: str, body: UsageCostIn, auth=Depends(require_role(*CREDIT_ROLES))):
+    admin = auth[0]
+    row = await db.ai_usage.find_one({"id": usage_id}, {"_id": 0, "id": 1, "user_id": 1, "action": 1})
+    if not row:
+        raise ApiError(404, "NOT_FOUND", "AI usage record not found.")
+    await db.ai_usage.update_one(
+        {"id": usage_id},
+        {"$set": {"provider_cost_paise": body.cost_paise, "provider_cost_source": "manual",
+                  "provider_cost_recorded_at": now(), "provider_cost_recorded_by": admin["handle"],
+                  "provider_cost_reason": body.reason.strip()}})
+    await record_audit(admin["handle"], "usage.cost_record", "user", row["user_id"], body.reason.strip(),
+                       role=admin["admin_role"],
+                       details={"usageId": usage_id, "action": row.get("action"), "costPaise": body.cost_paise})
+    return {"id": usage_id, "providerCostPaise": body.cost_paise, "source": "manual"}
 
 
 def user_label(row: dict, names: dict[str, str]) -> str:
@@ -770,7 +794,7 @@ async def overview(days: int = 7, _=Depends(require_role())):
         {"status": "failed", "created_at": {"$gte": now() - timedelta(hours=24)}})
     revenue, plan_distribution = await subscription_revenue()
     usage_report = await usage_insights.insights(days)
-    cost_per_success = round(usage_report["totals"]["estimatedCostPaise"]
+    cost_per_success = round(usage_report["totals"].get("costPaise", usage_report["totals"]["estimatedCostPaise"])
                              / max(1, usage_report["totals"].get("succeeded", 0)), 2)
     alerts = []
     if subscriptions["pastDue"]:
@@ -822,6 +846,8 @@ async def overview(days: int = 7, _=Depends(require_role())):
         "recentSubscriptionEvents": await recent_subscription_events(10),
         "costPerSuccessPaise": cost_per_success,
         "estimatedCostPaise": usage_report["totals"]["estimatedCostPaise"],
+        "actualCostPaise": usage_report["totals"].get("actualCostPaise", 0),
+        "actualCostRequests": usage_report["totals"].get("actualRequests", 0),
         "alerts": alerts,
         "credits": await credit_summary(),
         "recentAudit": (await audit(5))["entries"],

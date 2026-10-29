@@ -177,6 +177,8 @@ type Overview = {
   }[];
   costPerSuccessPaise: number;
   estimatedCostPaise: number;
+  actualCostPaise: number;
+  actualCostRequests: number;
   alerts: { type: string; level: string; count: number; title: string; detail: string; href: string }[];
   credits: CreditSummary;
   recentAudit: AuditRow[];
@@ -295,7 +297,7 @@ export function AdminDashboard() {
               testId="stat-cost-success"
               label="Estimated cost / success"
               value={inr(data.costPerSuccessPaise)}
-              hint={`${inr(data.estimatedCostPaise)} estimated total`}
+              hint={`${inr(data.actualCostPaise)} actual on ${data.actualCostRequests} request${data.actualCostRequests === 1 ? "" : "s"}`}
             />
           </div>
           <Panel title="Subscriber distribution" testId="admin-plan-distribution">
@@ -969,10 +971,11 @@ export function AdminUsage() {
   }>(`usage?days=${days}&limit=200`);
   const insights = useAdminData<UsageInsights>(`usage/insights?days=${days}`);
   const [refundTarget, setRefundTarget] = React.useState<UsageRow | null>(null);
+  const [costTarget, setCostTarget] = React.useState<UsageRow | null>(null);
   return (
     <LivePage
       title="AI Usage & Costs"
-      description="Requests, credits, provider-cost estimates and plan margins. Set token costs in Platform Settings."
+      description="Requests, credits, provider costs and plan margins. Record invoice costs per request; estimates use token rates from Platform Settings."
     >
       <RangePicker days={days} setDays={setDays} />
       {!data ? (
@@ -1014,6 +1017,9 @@ export function AdminUsage() {
                 <Stat testId="stat-cost-tokens" label="Tokens (range)"
                       value={`${(insights.data.totals.inputTokens / 1000).toFixed(1)}k / ${(insights.data.totals.outputTokens / 1000).toFixed(1)}k`}
                       hint="Input / output, estimated" />
+                <Stat testId="stat-actual-cost" label="Actual provider cost"
+                      value={inr(insights.data.totals.actualCostPaise ?? 0)}
+                      hint={`${insights.data.totals.actualRequests ?? 0} invoiced request${(insights.data.totals.actualRequests ?? 0) === 1 ? "" : "s"}`} />
               </div>
               <DataTable
                 testId="admin-usage-actions"
@@ -1067,6 +1073,19 @@ export function AdminUsage() {
               },
               { key: "reserved", label: "Held", align: "right" },
               { key: "charged", label: "Charged", align: "right" },
+              {
+                key: "estimated_cost_paise",
+                label: "Est. cost",
+                align: "right",
+                render: (r) => inr(r.estimated_cost_paise ?? 0),
+              },
+              {
+                key: "provider_cost_paise",
+                label: "Actual cost",
+                align: "right",
+                render: (r) =>
+                  r.provider_cost_paise != null ? inr(r.provider_cost_paise) : "—",
+              },
               { key: "ms", label: "ms", align: "right" },
               {
                 key: "status",
@@ -1074,22 +1093,38 @@ export function AdminUsage() {
                 render: (r) => <StatusBadge value={r.status} />,
               },
               {
-                key: "refund",
+                key: "actions",
                 label: "",
-                render: (r) =>
-                  r.status === "succeeded" && r.charged > 0 && r.reservation_id ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      data-testid={`refund-${r.id}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setRefundTarget(r);
-                      }}
-                    >
-                      {r.refund_status === "refunded" ? "Refunded" : "Refund"}
-                    </Button>
-                  ) : null,
+                render: (r) => (
+                  <div className="flex justify-end gap-1">
+                    {r.status === "succeeded" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        data-testid={`cost-${r.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setCostTarget(r);
+                        }}
+                      >
+                        Cost
+                      </Button>
+                    )}
+                    {r.status === "succeeded" && r.charged > 0 && r.reservation_id && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        data-testid={`refund-${r.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setRefundTarget(r);
+                        }}
+                      >
+                        {r.refund_status === "refunded" ? "Refunded" : "Refund"}
+                      </Button>
+                    )}
+                  </div>
+                ),
               },
             ]}
           />
@@ -1105,7 +1140,122 @@ export function AdminUsage() {
           }}
         />
       )}
+      {costTarget && (
+        <UsageCostDrawer
+          row={costTarget}
+          onClose={() => setCostTarget(null)}
+          onDone={() => {
+            setCostTarget(null);
+            reload();
+          }}
+        />
+      )}
     </LivePage>
+  );
+}
+
+function UsageCostDrawer({
+  row,
+  onClose,
+  onDone,
+}: {
+  row: UsageRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+  const [cost, setCost] = React.useState(
+    row.provider_cost_paise != null
+      ? String(row.provider_cost_paise / 100)
+      : row.estimated_cost_paise != null
+        ? String(row.estimated_cost_paise / 100)
+        : "",
+  );
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const submit = async () => {
+    if (reason.trim().length < 5) {
+      toast("Add a reason (at least 5 characters).", { tone: "danger" });
+      return;
+    }
+    const paise = Math.round(Number(cost) * 100);
+    if (!Number.isFinite(paise) || paise < 0) {
+      toast("Enter a valid amount.", { tone: "danger" });
+      return;
+    }
+    setBusy(true);
+    try {
+      await adminSend(`usage/${row.id}/cost`, "POST", {
+        cost_paise: paise,
+        reason: reason.trim(),
+      });
+      toast("Actual provider cost recorded.", { tone: "success" });
+      onDone();
+    } catch (err) {
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title="Record actual provider cost"
+      description={`${row.label ?? row.action} · @${row.handle ?? "unknown"}`}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button data-testid="usage-cost-submit" loading={busy} onClick={submit}>
+            Save cost
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4 text-sm text-ink-2">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-ink-3">Estimated</p>
+            <p className="text-lg font-semibold text-ink">
+              {inr(row.estimated_cost_paise ?? 0)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-ink-3">Actual</p>
+            <p className="text-lg font-semibold text-ink">
+              {row.provider_cost_paise != null ? inr(row.provider_cost_paise) : "not recorded"}
+            </p>
+          </div>
+        </div>
+        <label className="block text-xs">
+          <span className="mb-1 block font-medium text-ink-2">Actual cost (₹)</span>
+          <input
+            className="h-9 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink focus:border-accent focus:outline-none"
+            type="number"
+            min={0}
+            step="0.01"
+            value={cost}
+            onChange={(event) => setCost(event.target.value)}
+          />
+        </label>
+        <label className="block text-xs">
+          <span className="mb-1 block font-medium text-ink-2">Reason</span>
+          <textarea
+            className="min-h-20 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+            value={reason}
+            maxLength={300}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Invoice line, provider dashboard note, or reconciliation reference"
+          />
+        </label>
+        <p className="text-xs text-ink-3">
+          Saving replaces the estimate for this request in cost reports. The original estimate
+          stays stored.
+        </p>
+      </div>
+    </Drawer>
   );
 }
 

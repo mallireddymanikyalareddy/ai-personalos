@@ -14,8 +14,15 @@ def estimate_cost(row: dict, settings: dict) -> float:
             + output_tokens * float(settings.get("outputCostPaisePerMTok", 0))) / 1_000_000
 
 
+def actual_cost(row: dict) -> int | None:
+    """A cost recorded from a provider invoice or manual reconciliation."""
+    value = row.get("provider_cost_paise")
+    return None if value is None else int(value)
+
+
 def _row_cost(row: dict, settings: dict) -> int:
-    return round(estimate_cost(row, settings))
+    actual = actual_cost(row)
+    return actual if actual is not None else round(estimate_cost(row, settings))
 
 
 async def _current_prices() -> dict[str, int]:
@@ -37,13 +44,20 @@ async def insights(days: int = 30) -> dict:
 
     month_rows = [r for r in rows if r.get("created_at") and naive(r["created_at"]) >= naive(month_start)]
     totals = {"requests": len(rows), "succeeded": 0, "failed": 0, "cancelled": 0,
-              "credits": 0, "inputTokens": 0, "outputTokens": 0, "estimatedCostPaise": 0}
+              "credits": 0, "inputTokens": 0, "outputTokens": 0, "estimatedCostPaise": 0,
+              "actualCostPaise": 0, "actualRequests": 0, "costPaise": 0}
     for row in rows:
         totals[row.get("status", "failed")] = totals.get(row.get("status", "failed"), 0) + 1
         totals["credits"] += int(row.get("charged", 0))
         totals["inputTokens"] += int(row.get("est_input_tokens", 0))
         totals["outputTokens"] += int(row.get("est_output_tokens", 0))
-        totals["estimatedCostPaise"] += _row_cost(row, settings)
+        estimate = round(estimate_cost(row, settings))
+        totals["estimatedCostPaise"] += estimate
+        actual = actual_cost(row)
+        if actual is not None:
+            totals["actualCostPaise"] += actual
+            totals["actualRequests"] += 1
+        totals["costPaise"] += actual if actual is not None else estimate
 
     def grouped(key: str) -> list[dict]:
         result: dict[str, dict] = {}

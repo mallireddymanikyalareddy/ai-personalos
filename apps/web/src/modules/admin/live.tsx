@@ -192,6 +192,9 @@ export type UsageRow = {
   refunded_credits?: number;
   refund_status?: string;
   est_output_tokens: number;
+  estimated_cost_paise?: number;
+  provider_cost_paise?: number | null;
+  provider_cost_source?: string | null;
   ms: number;
   status: string;
   error?: string | null;
@@ -248,7 +251,14 @@ export type PlanInsight = {
   marginPaise: number;
 };
 export type UsageInsights = {
-  totals: UsageTotals & { inputTokens: number; outputTokens: number; estimatedCostPaise: number };
+  totals: UsageTotals & {
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostPaise: number;
+    costPaise?: number;
+    actualCostPaise?: number;
+    actualRequests?: number;
+  };
   byAction: ActionInsight[];
   byModel: { model: string; calls: number; credits: number; costPaise: number; avgMs: number }[];
   trend: { day: string; calls: number; credits: number; costPaise: number }[];

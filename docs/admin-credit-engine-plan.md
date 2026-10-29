@@ -84,10 +84,10 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - **Subscriber UX:** header badge shows plan and reset date in its tooltip; credits panel shows plan, next reset, allowance, annual bonus and bucket split; the AI confirmation modal shows action, estimated cost, balance, expected remaining, size limits and a shortfall/upgrade path; completed answers show credits used and remaining.
 
 **Still blocked / outstanding**
-- Actual provider-invoice cost: usage costs remain estimates from configurable token rates (`inputCostPaisePerMTok`/`outputCostPaisePerMTok`). The provider response does not return a billed amount.
+- Automatic provider-invoice ingestion: costs can be recorded manually per request (`provider_cost_paise`), and reports prefer them, but the provider response does not return a billed amount and no invoice file is imported automatically.
 - Razorpay: checkout, webhooks, payment reconciliation, real proration collection and subscription refunds remain excluded.
 - Central execution gateway: real provider calls (chat, briefing, reflection) are charged server-side, and the gateway now accepts every priced action with routing/limits. Deterministic browser-side assistants (tasks, habits, journal, goals, notebook, planner) still run locally and do not pass through the server for execution. Moving them requires porting the TS core AI engine or calling it from the Python service.
-- Referral rewards are still granted at signup without email-verification gating.
+- Referral rewards are now gated on email verification (see Iteration 28).
 - Approval requests claimed as `processing` still need a crash-recovery sweep.
 - Full LifeOS regression suite is not run; targeted unit/API checks only.
 
@@ -97,5 +97,7 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - **Plan availability enforcement:** hidden plans are rejected by `create_subscription` and subscription plan changes with `PLAN_UNAVAILABLE`, not merely hidden in the UI. Existing subscriptions and renewals are unaffected.
 - **Export permissions:** user, ledger and audit CSV exports require `super_admin`, `billing_admin` or `support_admin`. The read-only `analyst` role can still read admin screens but cannot export personal data; the UI hides export controls for that role.
 - **Request IDs:** an HTTP middleware assigns or accepts `X-Request-ID`, returns it on every response, and `record_audit` stores it as `request_id`. Audit CSV exports include the column and the Audit Logs table shows it.
+- **Actual provider cost (manual):** usage rows accept `provider_cost_paise` via `POST /admin/usage/{id}/cost`. All cost reports and margins prefer a recorded actual cost and fall back to the token-rate estimate. The AI Usage table shows both, with a “Cost” drawer to record invoice/reconciliation amounts. Automatic provider-invoice ingestion is still not available.
+- **Regression snapshot:** full web suite currently runs 762 tests; 725 pass. The 37 failures are pre-existing and confined to `today`, `settings`, `onboarding` and one stale AI provider-label assertion; admin/credit/AI-chat tests that touch this work pass.
 
 
