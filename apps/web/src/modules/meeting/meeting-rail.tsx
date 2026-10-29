@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { CheckCircle2, Copy, ListChecks, Sparkles } from "lucide-react";
+import { CheckCircle2, ClipboardList, Copy, ListChecks, Mail, Send, Sparkles, Wand2 } from "lucide-react";
 
 import type { ActionItem, MeetingReport } from "@personalos/core";
 
@@ -175,5 +175,95 @@ export function MeetingRail({
         )}
       </section>
     </aside>
+  );
+}
+
+const MEETING_AI_ACTIONS: { id: string; label: string; icon: typeof Sparkles }[] = [
+  { id: "analyze", label: "Analyze meeting", icon: Sparkles },
+  { id: "summary", label: "Summarize", icon: ClipboardList },
+  { id: "actions", label: "Extract actions", icon: ListChecks },
+  { id: "prep", label: "Prep brief", icon: Wand2 },
+  { id: "followup", label: "Follow-up email", icon: Mail },
+];
+
+export function MeetingAIAssistant({
+  draft,
+  onDraftChange,
+  answer,
+  onRun,
+  creditsNote,
+}: {
+  draft: string;
+  onDraftChange: (value: string) => void;
+  answer: string | null;
+  onRun: (id: string) => void;
+  creditsNote?: string;
+}) {
+  return (
+    <section
+      aria-label="AI Meeting Assistant"
+      data-testid="meeting-ai-assistant"
+      className="rounded-2xl border border-line bg-surface p-4 shadow-card"
+    >
+      <header className="mb-2.5 flex items-center justify-between gap-2">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+          <Sparkles className="size-4 text-accent-ink" aria-hidden="true" />
+          AI Meeting Assistant
+        </h2>
+      </header>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onRun("ask");
+        }}
+      >
+        <div className="flex items-center gap-2 rounded-xl border border-line bg-surface-2/60 p-2">
+          <input
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            placeholder="Ask about this meeting…"
+            aria-label="Ask about this meeting"
+            className="h-8 min-w-0 flex-1 border-0 bg-transparent px-0 text-[12px] text-ink outline-none"
+          />
+          <button
+            type="submit"
+            aria-label="Send meeting question"
+            className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent text-white hover:bg-accent-strong"
+          >
+            <Send className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+      </form>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        {MEETING_AI_ACTIONS.map((action) => {
+          const Icon = action.icon;
+          return (
+            <button
+              key={action.id}
+              type="button"
+              data-testid={`meeting-ai-action-${action.id}`}
+              onClick={() => onRun(action.id)}
+              className="flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-2.5 py-2 text-left transition-colors hover:border-line-strong hover:bg-surface-3"
+            >
+              <Icon className="size-3.5 shrink-0 text-accent-ink" aria-hidden="true" />
+              <span className="min-w-0 truncate text-[11px] font-medium text-ink-2">{action.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      {answer != null ? (
+        <p
+          data-testid="meeting-ai-answer"
+          className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
+        >
+          {answer}
+        </p>
+      ) : null}
+      {creditsNote ? (
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="meeting-ai-credits">
+          {creditsNote}
+        </p>
+      ) : null}
+    </section>
   );
 }

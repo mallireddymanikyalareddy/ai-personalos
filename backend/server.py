@@ -279,7 +279,7 @@ AI_ACTIONS = ("quick_question", "daily_plan", "journal_summary")
 
 class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
-    context: str = Field(default="", max_length=20000)
+    context: str = Field(default="", max_length=200000)
     history: list[ChatTurn] = []
     action: str = "quick_question"
     requestId: str | None = Field(default=None, min_length=8, max_length=64)
@@ -414,12 +414,14 @@ async def ai_chat(body: ChatRequest, request: Request):
     settings = await platform_settings.get_settings()
     if not digest.allow_send_now(f"ai:{found[0]['id']}", limit=settings["maxRequestsPerMinute"], window=60):
         return JSONResponse({"detail": "Too many AI requests. Try again in a minute.", "code": "RATE_LIMITED"}, status_code=429)
-    context = body.context[: max(1000, settings["maxInputTokens"]) * 4]
+    raw_context = body.context
     transcript = "\n".join(f"{t.role.upper()}: {t.text}" for t in body.history[-10:])
     text = f"Conversation so far:\n{transcript}\n\nUSER: {body.prompt}" if transcript else body.prompt
-    res, error = await reserve_or_response(found[0]["id"], body, len(context) + len(text))
+    res, error = await reserve_or_response(found[0]["id"], body, len(raw_context) + len(text))
     if error:
         return error
+    limit_tokens = int(res.get("max_input_tokens") or settings["maxInputTokens"])
+    context = raw_context[: max(1000, limit_tokens) * 4]
     model = res.get("model") or settings["defaultModel"] or "gpt-6-luna"
     res["model"] = model
     chat = LlmChat(api_key=key, session_id=str(uuid.uuid4()), system_message=SYSTEM_PROMPT + context).with_model("openai", model)

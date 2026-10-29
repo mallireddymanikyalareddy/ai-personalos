@@ -10,7 +10,9 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Clock,
+  GitMerge,
   Plus,
   Sparkles,
   Target,
@@ -31,6 +33,8 @@ const ASSISTANT_ACTIONS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: "focus", label: "Find focus time", icon: Zap },
   { id: "reschedule", label: "Reschedule", icon: Wand2 },
   { id: "summarize", label: "Summarize week", icon: Sparkles },
+  { id: "conflicts", label: "Resolve conflicts", icon: GitMerge },
+  { id: "prep", label: "Meeting prep", icon: ClipboardList },
 ];
 
 const WEEKDAY_HEADS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -263,11 +267,13 @@ export function CalendarAssistant({
   onDraftChange,
   answer,
   onRun,
+  creditsNote,
 }: {
   draft: string;
   onDraftChange: (value: string) => void;
   answer: string | null;
   onRun: (id: string) => void;
+  creditsNote?: string;
 }) {
   return (
     <section
@@ -333,6 +339,11 @@ export function CalendarAssistant({
           className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
         >
           {answer}
+        </p>
+      ) : null}
+      {creditsNote ? (
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="calendar-assistant-credits">
+          {creditsNote}
         </p>
       ) : null}
     </section>

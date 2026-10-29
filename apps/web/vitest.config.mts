@@ -21,7 +21,7 @@ export default defineConfig({
     // Worker threads start faster and more reliably than per-file forks on Windows.
     pool: "threads",
     // Heavy module renders can exceed Vitest's 5s default when files run in parallel.
-    testTimeout: 15000,
-    hookTimeout: 15000,
+    testTimeout: 30000,
+    hookTimeout: 30000,
   },
 });

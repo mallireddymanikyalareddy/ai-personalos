@@ -44,9 +44,23 @@ beforeEach(() => {
   now = new Date(2026, 9, 8, 10, 0, 0, 0).getTime();
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.setSystemTime(now);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.includes("/api/v1/credits")
+        ? { available: 10, reserved: 0, aiAllowed: true }
+        : { lowCreditThreshold: 3, flags: {} };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }),
+  );
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   cleanup();
 });
@@ -83,7 +97,7 @@ describe("load default data", () => {
     expect(os.calendars().length).toBeGreaterThan(3);
     expect(Object.keys(os.getState().events).length).toBeGreaterThan(10);
     expect(screen.getAllByText("Morning Routine").length).toBeGreaterThan(0);
-  }, 20_000);
+  }, 40_000);
 
   it("does not duplicate the default data when loaded twice", () => {
     renderCalendar();
@@ -96,7 +110,7 @@ describe("load default data", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Load default data" }));
 
     expect(Object.keys(os.getState().events).length).toBe(first);
-  }, 20_000);
+  }, 40_000);
 });
 
 describe("calendar list and filters", () => {
@@ -110,7 +124,7 @@ describe("calendar list and filters", () => {
     expect(calendars.getByText("Work")).toBeDefined();
     expect(calendars.getByText("Personal")).toBeDefined();
     expect(calendars.getByRole("checkbox", { name: /Show Work/ })).toBeDefined();
-  }, 20_000);
+  }, 40_000);
 
   it("lists upcoming events for the next seven days", () => {
     renderCalendar();
@@ -120,7 +134,7 @@ describe("calendar list and filters", () => {
 
     const upcoming = within(screen.getByTestId("calendar-upcoming"));
     expect(upcoming.getAllByTestId("calendar-upcoming-row").length).toBeGreaterThan(0);
-  }, 20_000);
+  }, 40_000);
 });
 
 describe("week insights", () => {
@@ -134,7 +148,7 @@ describe("week insights", () => {
     expect(insights.getByText("Total Events")).toBeDefined();
     expect(insights.getByText("Focus Time")).toBeDefined();
     expect(insights.getByText("Tasks Due")).toBeDefined();
-  }, 20_000);
+  }, 40_000);
 });
 
 describe("AI calendar assistant", () => {

@@ -19,18 +19,21 @@ import { DropdownMenu } from "@/components/ui/dropdown";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
+import { buildAIContext, estimateAIAction, streamAIChat, type AIEstimate } from "@/lib/ai-stream";
+import { useCredits } from "@/lib/use-credits";
 import { useAppState, useOS } from "@/store/use-os";
 import { AUDIO_KEY_PREFIX, loadAudio } from "@/lib/audio-store";
 import { downloadText } from "@/modules/notebook/notebook-export";
 import { safeFileName } from "@personalos/core";
 
 import { AIObjectCard } from "@/components/entities/ai-object-card";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { MeetingDetail, type MeetingDetailTab } from "./meeting-detail";
 import { MeetingDialog, type MeetingDialogValue } from "./meeting-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MeetingInsights } from "./meeting-insights";
 import { MeetingListPanel } from "./meeting-list-panel";
-import { MeetingRail } from "./meeting-rail";
+import { MeetingAIAssistant, MeetingRail } from "./meeting-rail";
 import { ImportRecorder, LiveRecorder } from "./meeting-recorders";
 
 type WorkspaceTab = "all" | "transcripts" | "summaries" | "actions" | "calendar" | "insights";
@@ -76,6 +79,18 @@ export function MeetingModule() {
   const [deleteId, setDeleteId] = React.useState<ID | null>(null);
   const [transcriptDeleteId, setTranscriptDeleteId] = React.useState<ID | null>(null);
   const [showTrashedTranscripts, setShowTrashedTranscripts] = React.useState(false);
+  const { balance, reload: reloadCredits } = useCredits(true);
+  const gatewayEnabled = (state.settings.aiProvider ?? "local") === "openai";
+  const [aiDraft, setAiDraft] = React.useState("");
+  const [aiAnswer, setAiAnswer] = React.useState<string | null>(null);
+  const [pendingAI, setPendingAI] = React.useState<{
+    action: string;
+    prompt: string;
+    label: string;
+    estimate: AIEstimate;
+  } | null>(null);
+  const [aiBusy, setAiBusy] = React.useState(false);
+  const [lastCharge, setLastCharge] = React.useState<{ charged: number; available: number } | null>(null);
 
   const now = Date.now();
   const dashboard = os.meetingsDashboard(
@@ -110,6 +125,8 @@ export function MeetingModule() {
   const meeting = selectedId != null ? os.getMeeting(selectedId) : null;
   const transcript = selected?.transcriptId != null ? os.getTranscript(selected.transcriptId) : null;
   const report = selected?.transcriptId != null ? os.meetingReport(selected.transcriptId, now) : null;
+  const transcriptText = transcript?.segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n") ?? "";
+  const meetingAIContext = `${buildAIContext(os.getState(), "")}\n\nMEETING: ${meeting?.title ?? selected?.title ?? ""}\n${transcriptText}`.slice(0, 190000);
   const recording = React.useMemo(
     () =>
       Object.values(state.recordings).find(
@@ -197,6 +214,160 @@ export function MeetingModule() {
     }
     setProposedTitles(new Set());
     setProposals(os.meetingProposals(selected.transcriptId, now));
+  };
+
+  const meetingAIMeta = (id: string) => {
+    if (id === "analyze") {
+      return {
+        action: "meeting_analysis",
+        prompt:
+          "Analyze this meeting: key decisions, risks, open questions and action items. Be concise and specific.",
+        label: "Analyze meeting",
+      };
+    }
+    if (id === "summary") {
+      return {
+        action: "meeting_summary",
+        prompt: "Summarize this meeting in a short paragraph and 3–5 key takeaways.",
+        label: "Summarize meeting",
+      };
+    }
+    if (id === "actions") {
+      return {
+        action: "meeting_action_items",
+        prompt: "Extract the decisions and action items from this meeting. Include owners if mentioned.",
+        label: "Extract action items",
+      };
+    }
+    if (id === "prep") {
+      return {
+        action: "meeting_prep_brief",
+        prompt:
+          "Prepare a brief for this meeting: agenda, key questions, and what to bring based on the notes.",
+        label: "Prepare meeting brief",
+      };
+    }
+    if (id === "followup") {
+      return {
+        action: "meeting_followup_email",
+        prompt: "Draft a concise follow-up email with decisions, owners and next steps.",
+        label: "Draft follow-up email",
+      };
+    }
+    return {
+      action: "meeting_transcript_qa",
+      prompt: aiDraft.trim(),
+      label: "Ask about this meeting",
+    };
+  };
+
+  const requestMeetingAI = async (action: string, prompt: string, label: string) => {
+    setLastCharge(null);
+    setAiAnswer("Pricing…");
+    try {
+      const estimate = await estimateAIAction(action, prompt.length + meetingAIContext.length);
+      if (!estimate.allowed) {
+        const message = estimate.reasons.includes("PAYMENT_GRACE_EXPIRED")
+          ? "AI is paused because this subscription is past due."
+          : estimate.reasons.includes("INSUFFICIENT_CREDITS")
+            ? `You need ${Math.max(0, estimate.minCredits - estimate.available)} more credits for this.`
+            : estimate.reasons.includes("INPUT_TOO_LARGE")
+              ? `This transcript is too large. The limit is ${estimate.maxInputTokens.toLocaleString()} tokens.`
+              : "This action is temporarily unavailable.";
+        setAiAnswer(message);
+        toast(message, { tone: "danger" });
+        return;
+      }
+      setPendingAI({ action, prompt, label, estimate });
+      setAiAnswer(null);
+    } catch (err) {
+      setAiAnswer(null);
+      toast((err as Error).message, { tone: "danger" });
+    }
+  };
+
+  const confirmMeetingAI = async () => {
+    if (!pendingAI) return;
+    const { action, prompt } = pendingAI;
+    setPendingAI(null);
+    setAiBusy(true);
+    setAiAnswer("Thinking…");
+    try {
+      await streamAIChat(
+        { action, prompt, context: meetingAIContext, history: [] },
+        setAiAnswer,
+        (info) => {
+          setLastCharge({ charged: info.charged, available: info.available });
+          reloadCredits();
+          toast(
+            `${info.charged} credit${info.charged === 1 ? "" : "s"} used · ${info.available} remaining`,
+            { tone: "success" },
+          );
+        },
+      );
+    } catch (err) {
+      setAiAnswer(null);
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const runMeetingAI = (id: string) => {
+    if (selected?.transcriptId == null) {
+      toast("This meeting has no transcript yet", { tone: "danger" });
+      return;
+    }
+    if (!gatewayEnabled) {
+      if (id === "summary") {
+        os.storeMeetingReport(selected.transcriptId, now);
+        setDetailTab("summary");
+        setAiAnswer("Local summary updated in the Summary tab.");
+        return;
+      }
+      if (id === "actions") {
+        setProposedTitles(new Set());
+        setProposals(os.meetingProposals(selected.transcriptId, now));
+        setAiAnswer("Local action items are ready in the rail.");
+        return;
+      }
+      if (id === "analyze") {
+        setAiAnswer(report?.summary ?? "Run Summarize first to build a local meeting analysis.");
+        return;
+      }
+      if (id === "prep") {
+        setAiAnswer(
+          `Prep for “${meeting?.title ?? "this meeting"}”: review the agenda, list 3 questions, and bring the latest notes.`,
+        );
+        return;
+      }
+      if (id === "followup") {
+        setAiAnswer(
+          `Hi all — thanks for the discussion. Decisions: ${report?.decisions?.map((d) => d.text).join("; ") || "see notes"}. Next steps are in the action items.`,
+        );
+        return;
+      }
+      const query = aiDraft.trim();
+      if (!query) {
+        setAiAnswer("Ask a question about this meeting.");
+        return;
+      }
+      const matches = transcript?.segments.filter((segment) =>
+        `${segment.speaker} ${segment.text}`.toLowerCase().includes(query.toLowerCase()),
+      ) ?? [];
+      setAiAnswer(
+        matches.length > 0
+          ? matches.slice(0, 3).map((segment) => `${segment.speaker}: ${segment.text}`).join("\n")
+          : `Nothing in this transcript matches “${query}”.`,
+      );
+      return;
+    }
+    const meta = meetingAIMeta(id);
+    if (!meta.prompt) {
+      setAiAnswer("Ask a question about this meeting.");
+      return;
+    }
+    void requestMeetingAI(meta.action, meta.prompt, meta.label);
   };
 
   const saveMeeting = (value: MeetingDialogValue) => {
@@ -537,6 +708,21 @@ export function MeetingModule() {
             />
           </div>
 
+          <MeetingAIAssistant
+            draft={aiDraft}
+            onDraftChange={setAiDraft}
+            answer={aiAnswer}
+            onRun={runMeetingAI}
+            creditsNote={
+              gatewayEnabled
+                ? lastCharge
+                  ? `${lastCharge.charged} credits used · ${lastCharge.available} remaining`
+                  : balance
+                    ? `GPT 6 Luna · ${balance.available} credits available`
+                    : "GPT 6 Luna · charges apply"
+                : "Local — no credits"
+            }
+          />
           <MeetingRail
             report={report}
             actionItems={actionItems}
@@ -803,6 +989,15 @@ export function MeetingModule() {
         title="Delete this meeting?"
         description="The meeting is removed. Its transcript and action items stay available."
         confirmLabel="Delete meeting"
+      />
+
+      <CreditConfirmDialog
+        open={pendingAI != null}
+        label={pendingAI?.label ?? "AI action"}
+        estimate={pendingAI?.estimate ?? null}
+        busy={aiBusy}
+        onClose={() => setPendingAI(null)}
+        onConfirm={() => void confirmMeetingAI()}
       />
     </div>
   );

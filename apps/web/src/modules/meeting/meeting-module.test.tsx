@@ -14,6 +14,26 @@ vi.mock("next/navigation", () => ({
 
 afterEach(cleanup);
 
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.includes("/api/v1/credits")
+        ? { available: 10, reserved: 0, aiAllowed: true }
+        : { lowCreditThreshold: 3, flags: {} };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }),
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 const NOW = new Date(2026, 9, 15, 10, 0, 0, 0).getTime();
 
 const SEGMENTS = [

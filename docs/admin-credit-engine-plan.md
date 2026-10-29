@@ -122,5 +122,13 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - **Manual/free actions remain outside the gateway:** creating/editing tasks, calendar drag/drop, writing notes/journal, viewing dashboards, search/filter/sort, habit check-ins, manual goal updates, reading documents and settings changes.
 - **Local suggestions stay free and labelled:** “Local — no credits” continues on the Tasks pilot; the gateway is only used when the OpenAI provider is selected.
 
+## Iteration 32 — Calendar and Meetings wired
+- **Calendar:** the existing AI Calendar Assistant now routes through the gateway when the OpenAI provider is selected. Action map: `weekly_plan`, `calendar_schedule_suggestion`, `calendar_reschedule_day`, `weekly_review`, `calendar_conflict_resolution`, `calendar_meeting_prep`, and `quick_question` for free-form questions. Added “Resolve conflicts” and “Meeting prep” buttons. Local mode keeps the existing free answers and shows **“Local — no credits.”**
+- **Meetings:** added an AI Meeting Assistant panel with `meeting_analysis`, `meeting_summary`, `meeting_action_items`, `meeting_prep_brief`, `meeting_followup_email` and `meeting_transcript_qa`. The transcript is included in the gateway context; long transcripts respect the action’s 40k-token limit. Local mode keeps the existing report/proposal generation and shows **“Local — no credits.”**
+- **Shared confirmation UI:** `components/ai/credit-confirm.tsx` renders the estimate, balance, expected remaining, limits, daily usage and block reasons for Calendar and Meetings.
+- **Context limit:** `/api/ai/chat` now accepts up to 200k context characters and truncates to the action’s `max_input_tokens` (falling back to the platform limit) instead of always using the global 12k-token setting.
+- **Test IDs:** meeting AI button IDs use `meeting-ai-action-*` to avoid colliding with the existing `meeting-ai-summary` panel.
+- **Tests:** Calendar and Meetings suites pass (47 tests); full web suite remains 831/831.
+
 
 

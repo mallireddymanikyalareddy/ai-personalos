@@ -24,12 +24,15 @@ import {
   type Timestamp,
 } from "@personalos/core";
 
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
+import { buildAIContext, estimateAIAction, streamAIChat, type AIEstimate } from "@/lib/ai-stream";
 import { cn } from "@/lib/cn";
+import { useCredits } from "@/lib/use-credits";
 import { useAppState, useOS } from "@/store/use-os";
 
 import { AgendaView } from "./agenda-view";
@@ -68,6 +71,16 @@ export function CalendarModule() {
   const [hidden, setHidden] = React.useState<Set<string>>(new Set());
   const [draft, setDraft] = React.useState("");
   const [answer, setAnswer] = React.useState<string | null>(null);
+  const { balance, reload: reloadCredits } = useCredits(true);
+  const gatewayEnabled = (state.settings.aiProvider ?? "local") === "openai";
+  const [pendingAI, setPendingAI] = React.useState<{
+    action: string;
+    prompt: string;
+    label: string;
+    estimate: AIEstimate;
+  } | null>(null);
+  const [aiBusy, setAiBusy] = React.useState(false);
+  const [lastCharge, setLastCharge] = React.useState<{ charged: number; available: number } | null>(null);
 
   const [search, setSearch] = React.useState("");
   const [showAllDay, setShowAllDay] = React.useState(true);
@@ -321,7 +334,115 @@ export function CalendarModule() {
     setSearch("");
   };
 
-  const runAssistant = (id: string) => {
+  const calendarAIMeta = (id: string) => {
+    if (id === "plan") {
+      return {
+        action: "weekly_plan",
+        prompt:
+          "Plan my week using the calendar, tasks and goals in the context. Call out the key blocks and any risks.",
+        label: "Generate weekly plan",
+      };
+    }
+    if (id === "focus") {
+      return {
+        action: "calendar_schedule_suggestion",
+        prompt:
+          "Find the best focus windows in my calendar this week. Suggest specific times and what to protect.",
+        label: "Suggest focus time",
+      };
+    }
+    if (id === "reschedule") {
+      return {
+        action: "calendar_reschedule_day",
+        prompt:
+          "My day was disrupted. Rebuild the rest of today using my calendar, tasks and priorities.",
+        label: "Rebuild a disrupted day",
+      };
+    }
+    if (id === "summarize") {
+      return {
+        action: "weekly_review",
+        prompt: "Summarize my week: meetings, focus time, tasks and anything that needs attention.",
+        label: "Weekly review",
+      };
+    }
+    if (id === "conflicts") {
+      return {
+        action: "calendar_conflict_resolution",
+        prompt:
+          "Find overlapping events and suggest how to resolve them, including buffers and moves.",
+        label: "Resolve calendar conflicts",
+      };
+    }
+    if (id === "prep") {
+      return {
+        action: "calendar_meeting_prep",
+        prompt:
+          "Prepare me for my next meeting: agenda, key questions, and what to bring based on my notes.",
+        label: "Prepare meeting agenda",
+      };
+    }
+    return {
+      action: "quick_question",
+      prompt: draft.trim(),
+      label: "Quick AI question",
+    };
+  };
+
+  const requestAI = async (action: string, prompt: string, label: string) => {
+    setLastCharge(null);
+    setAnswer("Pricing…");
+    try {
+      const context = buildAIContext(os.getState(), "");
+      const estimate = await estimateAIAction(action, prompt.length + context.length);
+      if (!estimate.allowed) {
+        const message = estimate.reasons.includes("PAYMENT_GRACE_EXPIRED")
+          ? "AI is paused because this subscription is past due."
+          : estimate.reasons.includes("INSUFFICIENT_CREDITS")
+            ? `You need ${Math.max(0, estimate.minCredits - estimate.available)} more credits for this.`
+            : estimate.reasons.includes("INPUT_TOO_LARGE")
+              ? `This calendar context is too large. The limit is ${estimate.maxInputTokens.toLocaleString()} tokens.`
+              : "This action is temporarily unavailable.";
+        setAnswer(message);
+        toast(message, { tone: "danger" });
+        return;
+      }
+      setPendingAI({ action, prompt, label, estimate });
+      setAnswer(null);
+    } catch (err) {
+      setAnswer(null);
+      toast((err as Error).message, { tone: "danger" });
+    }
+  };
+
+  const confirmAI = async () => {
+    if (!pendingAI) return;
+    const { action, prompt } = pendingAI;
+    setPendingAI(null);
+    setAiBusy(true);
+    setAnswer("Thinking…");
+    try {
+      await streamAIChat(
+        { action, prompt, context: buildAIContext(os.getState(), ""), history: [] },
+        setAnswer,
+        (info) => {
+          setLastCharge({ charged: info.charged, available: info.available });
+          reloadCredits();
+          toast(
+            `${info.charged} credit${info.charged === 1 ? "" : "s"} used · ${info.available} remaining`,
+            { tone: "success" },
+          );
+        },
+      );
+    } catch (err) {
+      setAnswer(null);
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const runAssistantLocal = (id: string) => {
     if (id === "plan") {
       setAnswer(
         `Your week has ${weekEvents} events and ${weekTasksDue} tasks due. Start with ${upcoming[0]?.title ?? "the first free slot"} and protect 2 hours of focus time.`,
@@ -351,6 +472,23 @@ export function CalendarModule() {
       );
       return;
     }
+    if (id === "conflicts") {
+      setAnswer(
+        conflictIds.size > 0
+          ? `${conflictIds.size} event${conflictIds.size === 1 ? "" : "s"} overlap this week. Move one to a free slot.`
+          : "No overlapping events this week.",
+      );
+      return;
+    }
+    if (id === "prep") {
+      const next = upcoming[0];
+      setAnswer(
+        next
+          ? `Prep for “${next.title}”: review the agenda, list 3 questions, and bring the latest notes.`
+          : "Nothing upcoming to prepare for.",
+      );
+      return;
+    }
     const query = draft.trim();
     if (query.length === 0) {
       setAnswer("Ask me to plan your week, find focus time or summarise the week.");
@@ -367,6 +505,19 @@ export function CalendarModule() {
             .join(", ")}.`
         : `Nothing on the calendar matches “${query}”.`,
     );
+  };
+
+  const runAssistant = (id: string) => {
+    if (!gatewayEnabled) {
+      runAssistantLocal(id);
+      return;
+    }
+    const meta = calendarAIMeta(id);
+    if (!meta.prompt) {
+      setAnswer("Ask me to plan your week, find focus time or summarise the week.");
+      return;
+    }
+    void requestAI(meta.action, meta.prompt, meta.label);
   };
 
   return (
@@ -803,11 +954,33 @@ export function CalendarModule() {
             }}
             onViewAll={() => setView("agenda")}
           />
-          <CalendarAssistant draft={draft} onDraftChange={setDraft} answer={answer} onRun={runAssistant} />
+          <CalendarAssistant
+            draft={draft}
+            onDraftChange={setDraft}
+            answer={answer}
+            onRun={runAssistant}
+            creditsNote={
+              gatewayEnabled
+                ? lastCharge
+                  ? `${lastCharge.charged} credits used · ${lastCharge.available} remaining`
+                  : balance
+                    ? `GPT 6 Luna · ${balance.available} credits available`
+                    : "GPT 6 Luna · charges apply"
+                : "Local — no credits"
+            }
+          />
         </aside>
       </div>
 
       <EventDetailSheet sheet={sheet} onClose={() => setSheet(null)} />
+      <CreditConfirmDialog
+        open={pendingAI != null}
+        label={pendingAI?.label ?? "AI action"}
+        estimate={pendingAI?.estimate ?? null}
+        busy={aiBusy}
+        onClose={() => setPendingAI(null)}
+        onConfirm={() => void confirmAI()}
+      />
     </div>
   );
 }

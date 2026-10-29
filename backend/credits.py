@@ -241,7 +241,8 @@ async def reserve(user_id: str, action: str, request_id: str, input_chars: int =
            "label": q["label"], "pricing_version": q["pricing_version"], "min_credits": q["min_credits"],
            "amount": amount, "max_output_tokens": q["max_output_tokens"], "status": "held", "created_at": now(),
            "bucket_hold": hold, "included_since": account.get("included_since"),
-           "model": q["model"], "input_credits": q["input_credits"], "item_count": q["item_count"]}
+           "model": q["model"], "input_credits": q["input_credits"], "item_count": q["item_count"],
+           "max_input_tokens": q["max_input_tokens"]}
     try:
         await db.credit_reservations.insert_one(dict(res))
     except DuplicateKeyError:
