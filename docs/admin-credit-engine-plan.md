@@ -106,5 +106,12 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - **Verification script:** `scripts/verify_admin_credit.py` logs in as an admin and checks dashboard revenue, credit summary, reconciliation queue, plan features/preview, pricing, support/security/grace settings, subscriber credits, usage costs and audit request IDs. See `docs/verify-admin-credit.md`.
 - **Test repair:** updated the stale 3-step onboarding flows in `handoff.test.tsx` and `submit.test.tsx` to the current 5-step wizard, fixed the stale AI provider-label assertions in the AI and Planner tests, and restored the tasks list default to hide completed rows. `vitest.config.mts` now uses the `threads` pool and a 15s test timeout, so the full web suite completes reliably: **52 files, 830/830 tests pass**.
 
+## Iteration 30 — gateway registry, estimate endpoint and Tasks pilot
+- **Action registry:** the live pricing version now contains 18 actions, including the five Phase 2 actions: `calendar_schedule_suggestion` (2), `meeting_prep_brief` (3), `project_plan` (5–8), `document_qa` (4–8) and `inbox_triage` (3). Existing installs receive a new additive pricing version via `stage_gateway_actions_v1`; published history is preserved.
+- **Server quote:** `credits.quote` centralises price, input surcharge, input cap, daily limit and model routing so reserve and estimate cannot drift.
+- **`POST /api/v1/ai/estimate`:** returns the server-owned min/max credits, input/output limits, daily usage, available balance, expected remaining, model and block reasons (`INSUFFICIENT_CREDITS`, `INPUT_TOO_LARGE`, `ACTION_LIMIT_REACHED`, `PAYMENT_GRACE_EXPIRED`). The browser never sends a credit amount.
+- **Tasks pilot:** when the AI provider is OpenAI, the Tasks assistant prices the action, shows a confirmation modal, streams the result through `/api/ai/chat`, and reports credits used/remaining. When the provider is Local, the existing deterministic answers stay free and are labelled **“Local — no credits.”**
+- **Tests:** added a frontend test for the Tasks estimate → confirm → stream → credits-note flow, and a backend gateway check covering the new actions, estimate endpoint, unknown actions, insufficient credits and past-due grace. Full web suite remains green.
+
 
 

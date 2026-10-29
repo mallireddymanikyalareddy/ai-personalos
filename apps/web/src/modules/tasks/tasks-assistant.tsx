@@ -19,12 +19,14 @@ export interface TaskAssistantProps {
   stats: TaskStatTile[];
   question: string;
   answer: string | null;
+  onQuestionChange: (question: string) => void;
   onAsk: (question: string) => void;
   onCreateFromText: (text: string) => void;
   onBreakDown: () => void;
   onPrioritize: () => void;
   onSuggest: () => void;
   onOpenAssistant: () => void;
+  creditsNote?: string;
 }
 
 const ACTIONS: { id: string; label: string; icon: LucideIcon }[] = [
@@ -38,12 +40,14 @@ export function TaskAssistant({
   stats,
   question,
   answer,
+  onQuestionChange,
   onAsk,
   onCreateFromText,
   onBreakDown,
   onPrioritize,
   onSuggest,
   onOpenAssistant,
+  creditsNote,
 }: TaskAssistantProps) {
   const [createText, setCreateText] = React.useState("");
   const done = stats.find((tile) => tile.id === "completed")?.value ?? 0;
@@ -114,7 +118,7 @@ export function TaskAssistant({
       >
         <Input
           value={question}
-          onChange={(event) => onAsk(event.target.value)}
+          onChange={(event) => onQuestionChange(event.target.value)}
           placeholder="Ask me to create, prioritize or break down tasks…"
           aria-label="Ask the task assistant"
         />
@@ -156,6 +160,11 @@ export function TaskAssistant({
           className="mt-3 rounded-xl border border-line bg-surface-2 p-3 text-[12px] leading-snug text-ink-2"
         >
           {answer}
+        </p>
+      ) : null}
+      {creditsNote ? (
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="tasks-assistant-credits">
+          {creditsNote}
         </p>
       ) : null}
 

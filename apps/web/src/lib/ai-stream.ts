@@ -38,6 +38,39 @@ const notifyCreditsChanged = () => window.dispatchEvent(new Event(CREDITS_EVENT)
 
 export type AIAction = string;
 export type ChatCreditInfo = { charged: number; available: number; reserved?: number };
+export type AIEstimate = {
+  action: string;
+  label: string;
+  minCredits: number;
+  maxCredits: number;
+  inputTokens: number;
+  maxInputTokens: number;
+  maxOutputTokens: number;
+  model: string;
+  pricingVersion: number;
+  available: number;
+  reserved: number;
+  expectedRemaining: number;
+  dailyLimit: number;
+  dailyUsed: number;
+  allowed: boolean;
+  reasons: string[];
+  graceEndsAt: string | null;
+};
+
+export async function estimateAIAction(action: string, inputChars = 0): Promise<AIEstimate> {
+  const res = await fetch("/api/v1/ai/estimate", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ action, inputChars }),
+  });
+  const data = (await res.json().catch(() => ({}))) as AIEstimate & { detail?: string; code?: string };
+  if (!res.ok) {
+    throw new Error(data.detail ?? "Could not price that AI action.");
+  }
+  return data;
+}
 
 export async function streamAIChat(
   body: { prompt: string; context: string; history: ChatTurn[]; action?: AIAction },

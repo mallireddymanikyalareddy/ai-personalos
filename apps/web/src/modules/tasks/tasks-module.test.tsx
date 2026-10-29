@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "@/components/ui/toast";
@@ -354,6 +354,83 @@ describe("quick add and assistant", () => {
     fireEvent.click(screen.getByTestId("tasks-assistant-create"));
 
     expect(Object.values(os.getState().tasks).map((task) => task.title)).toContain("Review the proposal");
+  });
+
+  it("prices and confirms a GPT action through the gateway", async () => {
+    vi.useRealTimers();
+    os.updateSettings({ aiProvider: "openai" });
+    addTask({ title: "Ship it", priority: 4, status: "open" });
+
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/v1/settings/public")) {
+          return json({ lowCreditThreshold: 3, flags: {} });
+        }
+        if (url.includes("/api/v1/credits")) {
+          return json({
+            available: 10,
+            reserved: 0,
+            aiAllowed: true,
+            planId: "ai",
+            planName: "PersonalOS AI",
+            nextResetAt: null,
+            allowance: 100,
+          });
+        }
+        if (url.includes("/api/v1/ai/estimate")) {
+          return json({
+            action: "task_priorities",
+            label: "Suggest task priorities",
+            minCredits: 2,
+            maxCredits: 2,
+            inputTokens: 120,
+            maxInputTokens: 0,
+            maxOutputTokens: 600,
+            model: "gpt-6-luna",
+            pricingVersion: 1,
+            available: 10,
+            reserved: 0,
+            expectedRemaining: 8,
+            dailyLimit: 0,
+            dailyUsed: 0,
+            allowed: true,
+            reasons: [],
+            graceEndsAt: null,
+          });
+        }
+        if (url.includes("/api/ai/chat")) {
+          return new Response(
+            'data: {"delta":"Step 1"}\n\ndata: {"credits":{"charged":2,"available":8}}\n\n',
+            { status: 200, headers: { "content-type": "text/event-stream" } },
+          );
+        }
+        return json({});
+      }),
+    );
+
+    renderTasks();
+    fireEvent.change(screen.getByLabelText("Ask the task assistant"), {
+      target: { value: "prioritize my tasks" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    expect(await screen.findByTestId("tasks-ai-confirm")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Use credits" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("tasks-assistant-answer").textContent).toContain("Step 1"),
+    );
+    expect(screen.getByTestId("tasks-assistant-credits").textContent).toContain(
+      "2 credits used",
+    );
+    vi.unstubAllGlobals();
   });
 });
 

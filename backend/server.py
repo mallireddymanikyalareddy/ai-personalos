@@ -285,6 +285,11 @@ class ChatRequest(BaseModel):
     requestId: str | None = Field(default=None, min_length=8, max_length=64)
 
 
+class EstimateIn(BaseModel):
+    action: str = Field(min_length=1, max_length=80)
+    inputChars: int = Field(default=0, ge=0, le=2_000_000)
+
+
 def friendly_ai_error(msg: str) -> str:
     if "credits" in msg or "quota" in msg:
         return "your OpenAI account has no credits left"
@@ -347,6 +352,41 @@ async def gift_credits(body: GiftIn, auth=Depends(require_auth)):
     except credits.CreditError as exc:
         return JSONResponse({"detail": exc.message, "code": exc.code}, status_code=exc.status)
     return {**result, "amount": body.amount, "recipientHandle": recipient["handle"]}
+
+
+@app.post("/api/v1/ai/estimate")
+async def ai_estimate(body: EstimateIn, auth=Depends(require_auth)):
+    """Quote one AI action before it runs. The server owns the price, limits and balance."""
+    user = auth[0]
+    try:
+        quote = await credits.quote(user["id"], body.action, body.inputChars)
+    except credits.CreditError as exc:
+        return JSONResponse({"detail": exc.message, "code": exc.code, **exc.extra}, status_code=exc.status)
+    access = await entitlements.ai_access(user["id"])
+    balance = await credits.balance(user["id"])
+    settings = await platform_settings.get_settings()
+    reasons = []
+    if not access["allowed"]:
+        reasons.append("PAYMENT_GRACE_EXPIRED")
+    if quote["too_large"]:
+        reasons.append("INPUT_TOO_LARGE")
+    if quote["daily_limit"] and quote["daily_used"] >= quote["daily_limit"]:
+        reasons.append("ACTION_LIMIT_REACHED")
+    if balance["available"] < quote["min_credits"]:
+        reasons.append("INSUFFICIENT_CREDITS")
+    return {
+        "action": quote["action"], "label": quote["label"],
+        "minCredits": quote["min_credits"], "maxCredits": quote["max_credits"],
+        "inputTokens": quote["input_tokens"], "maxInputTokens": quote["max_input_tokens"],
+        "maxOutputTokens": quote["max_output_tokens"],
+        "model": quote["model"] or settings["defaultModel"],
+        "pricingVersion": quote["pricing_version"],
+        "available": balance["available"], "reserved": balance["reserved"],
+        "expectedRemaining": max(0, balance["available"] - quote["max_credits"]),
+        "dailyLimit": quote["daily_limit"], "dailyUsed": quote["daily_used"],
+        "allowed": not reasons, "reasons": reasons,
+        "graceEndsAt": access.get("graceEndsAt"),
+    }
 
 
 async def reserve_or_response(user_id: str, body: ChatRequest, input_chars: int = 0):

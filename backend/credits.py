@@ -171,8 +171,30 @@ async def _consume_promotions(user_id: str, amount: int) -> None:
             break
 
 
-async def reserve(user_id: str, action: str, request_id: str, input_chars: int = 0) -> dict:
+async def quote(user_id: str, action: str, input_chars: int = 0) -> dict:
+    """Server-side price, limits and input size for one action. The browser never supplies a cost."""
     price, pricing_version = await action_price(action)
+    limit = int(price.get("request_limit_per_day", 0))
+    day_start = now().replace(hour=0, minute=0, second=0, microsecond=0)
+    used = await db.ai_usage.count_documents(
+        {"user_id": user_id, "action": action, "created_at": {"$gte": day_start}}) if limit else 0
+    max_input = int(price.get("max_input_tokens", 0))
+    input_tokens = math.ceil(max(0, input_chars) / 4)
+    too_large = bool(max_input and input_tokens > max_input)
+    rate = int(price.get("input_credits_per_1k", 0))
+    extra = math.ceil(max(0, input_chars) / 4 / 1000) * rate if rate else 0
+    return {
+        "action": action, "label": price["label"], "price": price, "pricing_version": pricing_version,
+        "input_tokens": input_tokens, "input_credits": extra,
+        "min_credits": price["min_credits"] + extra, "max_credits": price["max_credits"] + extra,
+        "max_input_tokens": max_input, "max_output_tokens": price["max_output_tokens"],
+        "model": price.get("model") or None, "daily_limit": limit, "daily_used": used,
+        "too_large": too_large,
+    }
+
+
+async def reserve(user_id: str, action: str, request_id: str, input_chars: int = 0) -> dict:
+    q = await quote(user_id, action, input_chars)
     from entitlements import ai_access
 
     access = await ai_access(user_id)
@@ -182,22 +204,16 @@ async def reserve(user_id: str, action: str, request_id: str, input_chars: int =
                           f"AI access is paused because this subscription is past due. "
                           f"Update payment{' by ' + deadline if deadline else ''} to continue.",
                           graceEndsAt=access.get("graceEndsAt"))
-    limit = int(price.get("request_limit_per_day", 0))
-    if limit:
-        day_start = now().replace(hour=0, minute=0, second=0, microsecond=0)
-        used = await db.ai_usage.count_documents(
-            {"user_id": user_id, "action": action, "created_at": {"$gte": day_start}})
-        if used >= limit:
-            raise CreditError(429, "ACTION_LIMIT_REACHED",
-                              f"This action is limited to {limit} request{'s' if limit != 1 else ''} per day.")
-    max_input = int(price.get("max_input_tokens", 0))
-    if max_input and input_chars > max_input * 4:
+    if q["too_large"]:
         raise CreditError(400, "INPUT_TOO_LARGE",
-                          f"This action accepts up to {max_input:,} input tokens. Shorten the input and try again.",
-                          maxInputTokens=max_input)
-    rate = int(price.get("input_credits_per_1k", 0))
-    extra = math.ceil(max(0, input_chars) / 4 / 1000) * rate if rate else 0
-    amount = price["max_credits"] + extra
+                          f"This action accepts up to {q['max_input_tokens']:,} input tokens. "
+                          f"Shorten the input and try again.",
+                          maxInputTokens=q["max_input_tokens"])
+    if q["daily_limit"] and q["daily_used"] >= q["daily_limit"]:
+        raise CreditError(429, "ACTION_LIMIT_REACHED",
+                          f"This action is limited to {q['daily_limit']} request"
+                          f"{'s' if q['daily_limit'] != 1 else ''} per day.")
+    amount = q["max_credits"]
     if await db.credit_reservations.find_one({"user_id": user_id, "request_id": request_id}, {"_id": 1}):
         raise CreditError(409, "DUPLICATE_REQUEST", "This AI request was already submitted.")
     hold, account = await _hold_buckets(user_id, amount)
@@ -206,17 +222,17 @@ async def reserve(user_id: str, action: str, request_id: str, input_chars: int =
         raise CreditError(402, "INSUFFICIENT_CREDITS", f"You need {amount} AI credit{'s' if amount != 1 else ''} for this, "
                           f"but have {current.get('available', 0)}.", required=amount, available=current.get("available", 0))
     res = {"id": f"rsv_{uuid.uuid4().hex[:16]}", "user_id": user_id, "request_id": request_id, "action": action,
-           "label": price["label"], "pricing_version": pricing_version, "min_credits": price["min_credits"] + extra,
-           "amount": amount, "max_output_tokens": price["max_output_tokens"], "status": "held", "created_at": now(),
+           "label": q["label"], "pricing_version": q["pricing_version"], "min_credits": q["min_credits"],
+           "amount": amount, "max_output_tokens": q["max_output_tokens"], "status": "held", "created_at": now(),
            "bucket_hold": hold, "included_since": account.get("included_since"),
-           "model": price.get("model") or None, "input_credits": extra}
+           "model": q["model"], "input_credits": q["input_credits"]}
     try:
         await db.credit_reservations.insert_one(dict(res))
     except DuplicateKeyError:
         await _return_hold(user_id, hold, amount)
         raise CreditError(409, "DUPLICATE_REQUEST", "This AI request was already submitted.")
-    await write_ledger(user_id, "reserve", amount, -amount, amount, f"Held for {price['label']}", f"{res['id']}:reserve",
-                       reservation_id=res["id"], action=action, pricing_version=pricing_version, request_id=request_id,
+    await write_ledger(user_id, "reserve", amount, -amount, amount, f"Held for {q['label']}", f"{res['id']}:reserve",
+                       reservation_id=res["id"], action=action, pricing_version=q["pricing_version"], request_id=request_id,
                        buckets=hold)
     return res
 

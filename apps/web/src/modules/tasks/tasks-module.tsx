@@ -25,10 +25,13 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import { buildAIContext, estimateAIAction, streamAIChat, type AIEstimate } from "@/lib/ai-stream";
+import { useCredits } from "@/lib/use-credits";
 import { useAppState, useOS } from "@/store/use-os";
 
 import { seedSampleTasks } from "./sample-tasks";
@@ -118,6 +121,16 @@ export function TasksModule() {
   const os = useOS();
   const state = useAppState();
   const { toast } = useToast();
+  const { balance, reload: reloadCredits } = useCredits(true);
+  const gatewayEnabled = (state.settings.aiProvider ?? "local") === "openai";
+  const [pendingAI, setPendingAI] = React.useState<{
+    action: string;
+    prompt: string;
+    label: string;
+    estimate: AIEstimate;
+  } | null>(null);
+  const [aiBusy, setAiBusy] = React.useState(false);
+  const [lastCharge, setLastCharge] = React.useState<{ charged: number; available: number } | null>(null);
 
   const [view, setView] = React.useState<TaskView>("list");
   const [status, setStatus] = React.useState<TaskStatus | "all">("all");
@@ -489,13 +502,8 @@ export function TasksModule() {
     return () => window.removeEventListener("keydown", listener);
   }, []);
 
-  const ask = (value: string) => {
-    setQuestion(value);
+  const localAsk = (value: string) => {
     const text = value.trim().toLowerCase();
-    if (text.length === 0) {
-      setAnswer(null);
-      return;
-    }
     const done = dashboard.stats.find((tile) => tile.id === "completed")?.value ?? 0;
     const dueToday = dashboard.stats.find((tile) => tile.id === "dueToday")?.value ?? 0;
     const overdue = dashboard.stats.find((tile) => tile.id === "overdue")?.value ?? 0;
@@ -527,7 +535,7 @@ export function TasksModule() {
     );
   };
 
-  const prioritizeNow = () => {
+  const localPrioritize = () => {
     const ordered = [...dashboard.rows].sort(
       (a, b) => b.priority - a.priority || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity),
     );
@@ -539,7 +547,7 @@ export function TasksModule() {
     );
   };
 
-  const breakDown = () => {
+  const localBreakDown = () => {
     const next = dashboard.upcoming[0];
     setAnswer(
       next
@@ -548,13 +556,121 @@ export function TasksModule() {
     );
   };
 
-  const suggestNext = () => {
+  const localSuggest = () => {
     const next = dashboard.rows.filter((row) => !row.done)[0];
     setAnswer(
       next
         ? `Next step: “${next.title}” — ${next.priorityLabel} priority, due ${next.dueLabel}.`
         : "You have no open tasks. Add one or review what you finished.",
     );
+  };
+
+  const requestAI = async (action: string, prompt: string, label: string) => {
+    setLastCharge(null);
+    setAnswer("Pricing…");
+    try {
+      const context = buildAIContext(os.getState(), "");
+      const estimate = await estimateAIAction(action, prompt.length + context.length);
+      if (!estimate.allowed) {
+        const message = estimate.reasons.includes("PAYMENT_GRACE_EXPIRED")
+          ? "AI is paused because this subscription is past due."
+          : estimate.reasons.includes("INSUFFICIENT_CREDITS")
+            ? `You need ${Math.max(0, estimate.minCredits - estimate.available)} more credits for this.`
+            : estimate.reasons.includes("INPUT_TOO_LARGE")
+              ? `This task context is too large. The limit is ${estimate.maxInputTokens.toLocaleString()} tokens.`
+              : "This action is temporarily unavailable.";
+        setAnswer(message);
+        toast(message, { tone: "danger" });
+        return;
+      }
+      setPendingAI({ action, prompt, label, estimate });
+      setAnswer(null);
+    } catch (err) {
+      setAnswer(null);
+      toast((err as Error).message, { tone: "danger" });
+    }
+  };
+
+  const confirmAI = async () => {
+    if (!pendingAI) return;
+    const { action, prompt } = pendingAI;
+    setPendingAI(null);
+    setAiBusy(true);
+    setAnswer("Thinking…");
+    try {
+      await streamAIChat(
+        { action, prompt, context: buildAIContext(os.getState(), ""), history: [] },
+        setAnswer,
+        (info) => {
+          setLastCharge({ charged: info.charged, available: info.available });
+          reloadCredits();
+          toast(
+            `${info.charged} credit${info.charged === 1 ? "" : "s"} used · ${info.available} remaining`,
+            { tone: "success" },
+          );
+        },
+      );
+    } catch (err) {
+      setAnswer(null);
+      toast((err as Error).message, { tone: "danger" });
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const ask = (value: string) => {
+    setQuestion(value);
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      setAnswer(null);
+      return;
+    }
+    if (gatewayEnabled) {
+      void requestAI("quick_question", trimmed, "Quick AI question");
+      return;
+    }
+    localAsk(trimmed);
+  };
+
+  const prioritizeNow = () => {
+    if (gatewayEnabled) {
+      void requestAI(
+        "task_priorities",
+        "Prioritize my open tasks and explain the order. Use the task list in the context.",
+        "Suggest task priorities",
+      );
+      return;
+    }
+    localPrioritize();
+  };
+
+  const breakDown = () => {
+    const next = dashboard.upcoming[0];
+    if (gatewayEnabled) {
+      if (!next) {
+        setAnswer("Add a task with a due date first, then ask me to break it down.");
+        return;
+      }
+      void requestAI(
+        "task_breakdown",
+        `Break down the task “${next.title}” into concrete, ordered steps.`,
+        "Break down task",
+      );
+      return;
+    }
+    localBreakDown();
+  };
+
+  const suggestNext = () => {
+    if (gatewayEnabled) {
+      void requestAI(
+        "quick_question",
+        "Suggest the next best steps for my open tasks. Be concise and practical.",
+        "Suggest next steps",
+      );
+      return;
+    }
+    localSuggest();
   };
 
   return (
@@ -980,16 +1096,26 @@ export function TasksModule() {
           stats={dashboard.stats}
           question={question}
           answer={answer}
+          onQuestionChange={setQuestion}
           onAsk={ask}
           onCreateFromText={(text) => {
             os.addTask({ title: text });
             toast("Task created from text");
-            setAnswer(`Created “${text}”.`);
+            setAnswer(`Created "${text}".`);
           }}
           onBreakDown={breakDown}
           onPrioritize={prioritizeNow}
           onSuggest={suggestNext}
           onOpenAssistant={() => window.location.assign("/ai")}
+          creditsNote={
+            gatewayEnabled
+              ? lastCharge
+                ? `${lastCharge.charged} credits used · ${lastCharge.available} remaining`
+                : balance
+                  ? `GPT 6 Luna · ${balance.available} credits available`
+                  : "GPT 6 Luna · charges apply"
+              : "Local — no credits"
+          }
         />
         <QuickAdd text={quickText} onChange={setQuickText} onAdd={quickAdd} />
         <UpcomingDeadlines rows={dashboard.upcoming} onOpen={openDetail} />
@@ -1003,6 +1129,73 @@ export function TasksModule() {
       </aside>
 
       <TaskDetailSheet taskId={detailId} onClose={() => setDetailId(null)} />
+      <ConfirmDialog
+        open={pendingAI != null}
+        onClose={() => setPendingAI(null)}
+        onConfirm={() => void confirmAI()}
+        title="Use AI credits?"
+        description={
+          pendingAI
+            ? `${pendingAI.label} — this answer uses credits from your balance.`
+            : undefined
+        }
+        confirmLabel={
+          pendingAI?.estimate.allowed ? "Use credits" : "Not enough credits"
+        }
+        confirmDisabled={!pendingAI?.estimate.allowed || aiBusy}
+        busy={aiBusy}
+        tone="accent"
+      >
+        {pendingAI && (
+          <div className="mt-3 space-y-2 text-xs" data-testid="tasks-ai-confirm">
+            <dl className="space-y-1.5">
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-3">Estimated cost</dt>
+                <dd className="font-medium text-ink">
+                  {pendingAI.estimate.minCredits === pendingAI.estimate.maxCredits
+                    ? `${pendingAI.estimate.minCredits} credit${pendingAI.estimate.minCredits === 1 ? "" : "s"}`
+                    : `${pendingAI.estimate.minCredits}–${pendingAI.estimate.maxCredits} credits`}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-3">Current balance</dt>
+                <dd className="font-medium text-ink">{pendingAI.estimate.available}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-3">Expected remaining</dt>
+                <dd className="font-medium text-ink">{pendingAI.estimate.expectedRemaining}</dd>
+              </div>
+              {pendingAI.estimate.maxInputTokens > 0 && (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-ink-3">Input limit</dt>
+                  <dd className="font-medium text-ink">
+                    {pendingAI.estimate.maxInputTokens.toLocaleString()} tokens
+                  </dd>
+                </div>
+              )}
+              {pendingAI.estimate.dailyLimit > 0 && (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-ink-3">Daily limit</dt>
+                  <dd className="font-medium text-ink">
+                    {pendingAI.estimate.dailyUsed}/{pendingAI.estimate.dailyLimit} used
+                  </dd>
+                </div>
+              )}
+            </dl>
+            {pendingAI.estimate.reasons.length > 0 && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+                {pendingAI.estimate.reasons.includes("PAYMENT_GRACE_EXPIRED")
+                  ? "AI is paused because the subscription is past due."
+                  : pendingAI.estimate.reasons.includes("INSUFFICIENT_CREDITS")
+                    ? `You need ${Math.max(0, pendingAI.estimate.minCredits - pendingAI.estimate.available)} more credits.`
+                    : pendingAI.estimate.reasons.includes("INPUT_TOO_LARGE")
+                      ? `Reduce the input to ${pendingAI.estimate.maxInputTokens.toLocaleString()} tokens or fewer.`
+                      : "This action is temporarily unavailable."}
+              </p>
+            )}
+          </div>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

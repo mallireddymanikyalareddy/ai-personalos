@@ -32,6 +32,11 @@ ACTION_SEEDS = [
     ("document_analysis", "Document analysis", 3, 8, 2000),
     ("meeting_analysis", "Meeting analysis", 3, 6, 1800),
     ("complex_planning", "Complex multi-step planning", 5, 5, 2500),
+    ("calendar_schedule_suggestion", "Suggest a calendar slot", 2, 2, 700),
+    ("meeting_prep_brief", "Prepare a meeting brief", 3, 3, 1200),
+    ("project_plan", "Plan a project", 5, 8, 2000),
+    ("document_qa", "Ask a document", 4, 8, 1500),
+    ("inbox_triage", "Triage the inbox", 3, 3, 1200),
 ]
 
 
@@ -97,6 +102,31 @@ async def seed_pricing() -> dict:
     return {"pricing_version": 1, "actions": len(actions)}
 
 
+async def seed_gateway_actions() -> dict:
+    """Add the gateway's phase-2 actions to the live pricing version without rewriting history."""
+    current = await db.ai_pricing_versions.find_one(
+        {"status": "published", "effective_at": {"$lte": now()}}, {"_id": 0},
+        sort=[("effective_at", -1), ("version", -1)])
+    if not current:
+        return {"added": 0, "skipped": "no published pricing"}
+    existing = {a["action"] for a in current.get("actions", [])}
+    missing = [a for a in ACTION_SEEDS if a[0] not in existing]
+    if not missing:
+        return {"added": 0, "version": current["version"]}
+    last = await db.ai_pricing_versions.find_one({}, {"version": 1}, sort=[("version", -1)])
+    version = (last["version"] if last else 0) + 1
+    actions = list(current.get("actions", [])) + [
+        {"action": a, "label": label, "min_credits": lo, "max_credits": hi, "provider": "openai", "model": M,
+         "max_output_tokens": out, "input_credits_per_1k": 0, "max_input_tokens": 0, "request_limit_per_day": 0}
+        for a, label, lo, hi, out in missing
+    ]
+    await db.ai_pricing_versions.insert_one({
+        "version": version, "status": "published", "effective_at": now(), "actions": actions,
+        "created_at": now(), "created_by": "system", "published_at": now(),
+    })
+    return {"added": len(missing), "version": version}
+
+
 def empty_account(user_id: str) -> dict:
     return {"user_id": user_id, "available": 0, "reserved": 0, "included": 0, "promotional": 0,
             "purchased": 0, "created_at": now(), "updated_at": now()}
@@ -122,4 +152,5 @@ async def setup_billing() -> None:
     await db.plans.update_many({"current_version": {"$exists": True}}, {"$unset": {"current_version": ""}})
     await run_once("stage3_seed_plans_v1", seed_plans)
     await run_once("stage3_seed_ai_pricing_v1", seed_pricing)
+    await run_once("stage_gateway_actions_v1", seed_gateway_actions)
     await run_once("stage3_backfill_credit_accounts", backfill_credit_accounts)

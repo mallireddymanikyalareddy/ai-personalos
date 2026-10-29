@@ -35,6 +35,12 @@ class Checker:
             raise RuntimeError(f"{path} -> HTTP {res.status_code}: {res.text[:200]}")
         return res.json()
 
+    def post(self, path: str, body: dict) -> dict:
+        res = self.session.post(f"{self.base_url}{path}", json=body, timeout=30)
+        if not res.ok:
+            raise RuntimeError(f"{path} -> HTTP {res.status_code}: {res.text[:200]}")
+        return res.json()
+
     def login(self, identifier: str, password: str) -> str:
         res = self.session.post(
             f"{self.base_url}/api/v1/auth/login",
@@ -88,6 +94,7 @@ def main() -> int:
     c.check("pricing version", lambda: _pricing(c))
     c.check("support/security/grace settings", lambda: _settings(c))
     c.check("subscriber credit overview", lambda: _subscriber_credits(c))
+    c.check("action estimate", lambda: _estimate(c))
     c.check("usage cost columns", lambda: _usage(c))
     c.check("audit request IDs", lambda: _audit(c))
     print(f"\nSigned in as @{handle}")
@@ -175,6 +182,14 @@ def _subscriber_credits(c: Checker) -> str:
         if key not in data:
             raise RuntimeError(f"missing {key}")
     return f"available={data['available']} plan={data['planId']} aiAllowed={data['aiAllowed']}"
+
+
+def _estimate(c: Checker) -> str:
+    data = c.post("/api/v1/ai/estimate", {"action": "task_breakdown", "inputChars": 500})
+    for key in ("minCredits", "maxCredits", "available", "expectedRemaining", "allowed", "model"):
+        if key not in data:
+            raise RuntimeError(f"missing {key}")
+    return f"{data['label']}: {data['minCredits']}–{data['maxCredits']} credits, allowed={data['allowed']}"
 
 
 def _usage(c: Checker) -> str:

@@ -32,6 +32,7 @@ It prints PASS/FAIL for:
 - published pricing version
 - support, security, MFA and past-due grace settings
 - subscriber credit overview (`aiAllowed`, plan, reset, allowance)
+- action estimate before execution
 - usage cost columns and actual-cost totals
 - audit request IDs
 
