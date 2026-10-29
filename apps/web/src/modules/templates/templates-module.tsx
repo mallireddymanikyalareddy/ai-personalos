@@ -52,12 +52,14 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { Input, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 import { downloadText } from "@/modules/notebook/notebook-export";
 import { findJsonEntry, readZip, zipEntryText } from "@/lib/zip";
 import { useAppState, useOS } from "@/store/use-os";
@@ -147,6 +149,7 @@ export function TemplatesModule() {
   const os = useOS();
   useAppState();
   const { toast } = useToast();
+  const ai = useAIGateway();
 
   const [category, setCategory] = React.useState<TemplateCategory | "all">("all");
   const [kind, setKind] = React.useState<TemplateKind | "all">("all");
@@ -252,6 +255,24 @@ export function TemplatesModule() {
     );
   };
 
+  const runTemplateAI = (id: "generate" | "fill" | "improve") => {
+    const template = previewTemplate ?? editingTemplate;
+    const context = template
+      ? `${template.name}\n${template.description ?? ""}\n${template.body ?? ""}`
+      : `Template idea: ${query || "a reusable personal operating system template"}`;
+    const meta =
+      id === "generate"
+        ? { action: "template_generate", prompt: "Generate a reusable template with clear sections and prompts.", label: "Generate template" }
+        : id === "fill"
+          ? { action: "template_fill", prompt: "Fill this template with realistic example content.", label: "Fill template" }
+          : { action: "template_improve", prompt: "Improve this template's structure, clarity and usefulness.", label: "Improve template" };
+    if (!ai.gatewayEnabled) {
+      ai.setAnswer(`Local ${meta.label.toLowerCase()}: add clear headings, prompts and a short example for each section.`);
+      return;
+    }
+    void ai.request({ ...meta, context });
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -269,7 +290,7 @@ export function TemplatesModule() {
                   items: [
                     { label: "Blank template", onSelect: () => openEditor(null) },
                     { label: "From an existing template", onSelect: () => setDialog("existing") },
-                    { label: "Generate with AI", onSelect: () => setDialog("ai") },
+                    { label: "Generate with AI", onSelect: () => runTemplateAI("generate") },
                   ],
                 },
               ]}
@@ -304,6 +325,24 @@ export function TemplatesModule() {
           </>
         }
       />
+
+      <section className="rounded-2xl border border-line bg-surface p-4 shadow-card" aria-label="AI template assistant" data-testid="templates-ai-panel">
+        <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink">
+          <Sparkles className="size-4 text-accent-ink" aria-hidden="true" />
+          AI template assistant
+        </h2>
+        <div className="flex flex-wrap gap-1.5">
+          <Button size="sm" variant="secondary" onClick={() => runTemplateAI("generate")}>Generate template</Button>
+          <Button size="sm" variant="ghost" onClick={() => runTemplateAI("fill")}>Fill template</Button>
+          <Button size="sm" variant="ghost" onClick={() => runTemplateAI("improve")}>Improve template</Button>
+        </div>
+        {ai.answer ? (
+          <p className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] text-ink-2" data-testid="templates-ai-answer">
+            {ai.answer}
+          </p>
+        ) : null}
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="templates-ai-credits">{ai.creditsNote}</p>
+      </section>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 space-y-4">
@@ -710,6 +749,14 @@ export function TemplatesModule() {
       <TemplatePreviewDialog
         template={previewTemplate}
         onClose={() => setPreviewTemplate(null)}
+      />
+      <CreditConfirmDialog
+        open={ai.pending != null}
+        label={ai.pending?.label ?? "AI action"}
+        estimate={ai.pending?.estimate ?? null}
+        busy={ai.busy}
+        onClose={ai.dismiss}
+        onConfirm={() => void ai.confirm()}
       />
     </div>
   );

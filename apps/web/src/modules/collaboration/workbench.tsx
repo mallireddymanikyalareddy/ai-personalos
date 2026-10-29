@@ -8,6 +8,7 @@ import {
   Check,
   Plus,
   Send,
+  Sparkles,
   Trash2,
   UserPlus,
   X,
@@ -18,11 +19,13 @@ import { SHARE_ROLE_LABELS, type ShareableEntityType } from "@personalos/core";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { FieldLabel, Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 
 import { useOS } from "@/store/use-os";
 
@@ -109,6 +112,7 @@ function CommentThread({
 export function WorkModeModule() {
   const os = useOS();
   const { toast } = useToast();
+  const ai = useAIGateway();
   const [tab, setTab] = React.useState<Tab>("team");
 
   const [memberOpen, setMemberOpen] = React.useState(false);
@@ -203,6 +207,20 @@ export function WorkModeModule() {
     toast("Time off requested");
   };
 
+  const runCollabAI = (id: "summary" | "reply" | "agenda") => {
+    const meta =
+      id === "summary"
+        ? { action: "collab_summary", prompt: "Summarize this shared workspace thread and the open decisions.", label: "Workspace summary" }
+        : id === "reply"
+          ? { action: "collab_reply_draft", prompt: "Draft a concise, friendly reply to the latest thread.", label: "Draft reply" }
+          : { action: "collab_agenda", prompt: "Build a shared agenda for the next team meeting.", label: "Shared agenda" };
+    if (!ai.gatewayEnabled) {
+      ai.setAnswer(`Local ${meta.label.toLowerCase()}: list the open items, owners and the next decision.`);
+      return;
+    }
+    void ai.request({ ...meta, context: os.aiContextSummary() });
+  };
+
   return (
     <>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -220,6 +238,24 @@ export function WorkModeModule() {
           </Button>
         )}
       </div>
+
+      <section className="mb-4 rounded-2xl border border-line bg-surface p-4 shadow-card" aria-label="AI collaboration assistant" data-testid="collab-ai-panel">
+        <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink">
+          <Sparkles className="size-4 text-accent-ink" aria-hidden="true" />
+          AI collaboration assistant
+        </h2>
+        <div className="flex flex-wrap gap-1.5">
+          <Button size="sm" variant="secondary" onClick={() => runCollabAI("summary")}>Summarize workspace</Button>
+          <Button size="sm" variant="ghost" onClick={() => runCollabAI("reply")}>Draft reply</Button>
+          <Button size="sm" variant="ghost" onClick={() => runCollabAI("agenda")}>Build agenda</Button>
+        </div>
+        {ai.answer ? (
+          <p className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] text-ink-2" data-testid="collab-ai-answer">
+            {ai.answer}
+          </p>
+        ) : null}
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="collab-ai-credits">{ai.creditsNote}</p>
+      </section>
 
       {tab === "team" && (
         <>
@@ -750,6 +786,14 @@ export function WorkModeModule() {
           autoFocus
         />
       </Modal>
+      <CreditConfirmDialog
+        open={ai.pending != null}
+        label={ai.pending?.label ?? "AI action"}
+        estimate={ai.pending?.estimate ?? null}
+        busy={ai.busy}
+        onClose={ai.dismiss}
+        onConfirm={() => void ai.confirm()}
+      />
     </>
   );
 }

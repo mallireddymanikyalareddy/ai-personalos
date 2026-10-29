@@ -140,7 +140,9 @@ describe("IntegrationsModule", () => {
     const google = await googleCard();
     const notion = screen.getByRole("heading", { name: "Notion" }).closest("section") as HTMLElement;
 
-    expect(within(google).getByRole("button", { name: "Connect" })).toBeTruthy();
+    await waitFor(() =>
+      expect(within(google).getByRole("button", { name: "Connect" })).toBeTruthy(),
+    );
     const preparing = within(notion).getByRole("button", { name: "Preparing" }) as HTMLButtonElement;
     expect(preparing.disabled).toBe(true);
   });

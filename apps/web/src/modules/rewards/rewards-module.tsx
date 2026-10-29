@@ -29,10 +29,12 @@ import { startOfDay, XP_RULES } from "@personalos/core";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 import { cn } from "@/lib/cn";
 import { useAppState, useOS } from "@/store/use-os";
 import { useFocusNow } from "@/modules/focus/use-focus-now";
@@ -70,6 +72,7 @@ export function RewardsModule() {
   const os = useOS();
   const state = useAppState();
   const { toast } = useToast();
+  const ai = useAIGateway();
 
   const [showSettings, setShowSettings] = React.useState(false);
   const [rewardDialogOpen, setRewardDialogOpen] = React.useState(false);
@@ -296,6 +299,20 @@ export function RewardsModule() {
     );
   }
 
+  const runRewardAI = (id: "suggest" | "reflect" | "celebrate") => {
+    const meta =
+      id === "suggest"
+        ? { action: "reward_suggest", prompt: "Suggest a meaningful reward for my current progress.", label: "Suggest a reward" }
+        : id === "reflect"
+          ? { action: "reward_reflection", prompt: "Reflect on what worked this week and what I should repeat.", label: "Reward reflection" }
+          : { action: "celebration_message", prompt: "Write a short celebration message for my progress.", label: "Celebration message" };
+    if (!ai.gatewayEnabled) {
+      ai.setAnswer(`Local ${meta.label.toLowerCase()}: acknowledge the streak, pick one small reward, and repeat the habit tomorrow.`);
+      return;
+    }
+    void ai.request({ ...meta, context: os.aiContextSummary() });
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -341,6 +358,24 @@ export function RewardsModule() {
           </>
         }
       />
+
+      <section className="rounded-2xl border border-line bg-surface p-4 shadow-card" aria-label="AI rewards assistant" data-testid="rewards-ai-panel">
+        <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink">
+          <Sparkles className="size-4 text-accent-ink" aria-hidden="true" />
+          AI rewards assistant
+        </h2>
+        <div className="flex flex-wrap gap-1.5">
+          <Button size="sm" variant="secondary" onClick={() => runRewardAI("suggest")}>Suggest a reward</Button>
+          <Button size="sm" variant="ghost" onClick={() => runRewardAI("reflect")}>Reflect on progress</Button>
+          <Button size="sm" variant="ghost" onClick={() => runRewardAI("celebrate")}>Celebrate</Button>
+        </div>
+        {ai.answer ? (
+          <p className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] text-ink-2" data-testid="rewards-ai-answer">
+            {ai.answer}
+          </p>
+        ) : null}
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="rewards-ai-credits">{ai.creditsNote}</p>
+      </section>
 
       {showSettings ? (
         <section
@@ -971,6 +1006,14 @@ export function RewardsModule() {
           setRewardDialogOpen(false);
           setEditingReward(null);
         }}
+      />
+      <CreditConfirmDialog
+        open={ai.pending != null}
+        label={ai.pending?.label ?? "AI action"}
+        estimate={ai.pending?.estimate ?? null}
+        busy={ai.busy}
+        onClose={ai.dismiss}
+        onConfirm={() => void ai.confirm()}
       />
     </div>
   );

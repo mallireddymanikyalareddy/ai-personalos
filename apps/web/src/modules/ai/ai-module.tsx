@@ -4,7 +4,7 @@ import * as React from "react";
 
 import Link from "next/link";
 
-import { CalendarClock, ListChecks, NotebookPen, Target } from "lucide-react";
+import { CalendarClock, ListChecks, NotebookPen, Sparkles, Target } from "lucide-react";
 
 import type { AIObject, AIResult, ID } from "@personalos/core";
 
@@ -53,12 +53,20 @@ export function AIModule() {
     maxInputTokens: number;
     maxOutputTokens: number;
   } | null>(null);
+  const [complexPrice, setComplexPrice] = React.useState<{
+    label: string;
+    minCredits: number;
+    maxCredits: number;
+    maxInputTokens: number;
+    maxOutputTokens: number;
+  } | null>(null);
   React.useEffect(() => {
     let alive = true;
     fetch("/api/v1/plans", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { actions?: { action: string; label: string; minCredits: number; maxCredits: number; maxInputTokens?: number; maxOutputTokens?: number }[] } | null) => {
         const price = data?.actions?.find((item) => item.action === "quick_question");
+        const complex = data?.actions?.find((item) => item.action === "complex_planning");
         if (alive && price) {
           setActionPrice({
             label: price.label,
@@ -66,6 +74,15 @@ export function AIModule() {
             maxCredits: price.maxCredits,
             maxInputTokens: price.maxInputTokens ?? 0,
             maxOutputTokens: price.maxOutputTokens ?? 0,
+          });
+        }
+        if (alive && complex) {
+          setComplexPrice({
+            label: complex.label,
+            minCredits: complex.minCredits,
+            maxCredits: complex.maxCredits,
+            maxInputTokens: complex.maxInputTokens ?? 0,
+            maxOutputTokens: complex.maxOutputTokens ?? 0,
           });
         }
       })
@@ -100,6 +117,7 @@ export function AIModule() {
     (prompt: string) => {
       const trimmed = prompt.trim();
       if (trimmed.length === 0) return;
+      const action = trimmed.toLowerCase().startsWith("complex plan") ? "complex_planning" : "quick_question";
       if (flags.ai_confirmation_modal && providerId === "openai" && !skipConfirm.current) {
         setConfirmPrompt(trimmed);
         return;
@@ -155,7 +173,7 @@ export function AIModule() {
           setEntries((prev) => prev.map((entry) => (entry.id === assistantMessage.id ? { ...entry, text } : entry)));
         setText("Thinking…");
         streamAIChat(
-          { prompt: trimmed, context: buildAIContext(os.getState(), result.message), history },
+          { prompt: trimmed, context: buildAIContext(os.getState(), result.message), history, action },
           setText,
           (info) =>
             setEntries((prev) =>
@@ -204,6 +222,12 @@ export function AIModule() {
         label: "How am I doing this week?",
         prompt: "how am I doing",
         icon: NotebookPen,
+      },
+      {
+        id: "complex",
+        label: "Create a complex multi-step plan",
+        prompt: "complex plan my next 30 days",
+        icon: Sparkles,
       },
     ];
     return list;
@@ -397,7 +421,8 @@ export function AIModule() {
     );
   };
 
-  const price = actionPrice ?? {
+  const complex = confirmPrompt?.toLowerCase().startsWith("complex plan") ?? false;
+  const price = (complex ? complexPrice : actionPrice) ?? actionPrice ?? {
     label: "Quick AI question",
     minCredits: 1,
     maxCredits: 1,

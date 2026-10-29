@@ -27,9 +27,11 @@ import {
 import type { ID, Project } from "@personalos/core";
 
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 import { useOS } from "@/store/use-os";
 
 const ASSISTANT_ACTIONS: { id: string; label: string; icon: LucideIcon }[] = [
@@ -39,6 +41,9 @@ const ASSISTANT_ACTIONS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: "tasks", label: "Prioritise tasks", icon: ClipboardList },
   { id: "report", label: "Generate report", icon: BarChart3 },
   { id: "find", label: "Find information", icon: Search },
+  { id: "standup", label: "Draft standup", icon: NotebookPen },
+  { id: "brief", label: "Meeting brief", icon: CalendarPlus },
+  { id: "focus", label: "Plan focus", icon: Timer },
 ];
 
 const QUICK_ACTIONS: { id: string; label: string; shortcut: string; icon: LucideIcon }[] = [
@@ -83,8 +88,10 @@ export function WorkModeRail({
 }) {
   const os = useOS();
   const { toast } = useToast();
+  const ai = useAIGateway();
 
-  const [answer, setAnswer] = React.useState<string | null>(null);
+  const answer = ai.answer;
+  const setAnswer = ai.setAnswer;
   const [sessionId, setSessionId] = React.useState<string | null>(null);
   const [endsAt, setEndsAt] = React.useState<number | null>(null);
   const [remaining, setRemaining] = React.useState(25 * 60_000);
@@ -167,6 +174,30 @@ export function WorkModeRail({
   };
 
   const runAssistant = (id: string) => {
+    if (ai.gatewayEnabled) {
+      const meta: Record<string, { action: string; label: string; prompt: string }> = {
+        summarize: { action: "meeting_summary", label: "Summarize meeting", prompt: "Summarize today's meeting and key decisions." },
+        draft: { action: "meeting_followup_email", label: "Draft email", prompt: "Draft a concise work update email from today's work." },
+        explain: { action: "quick_question", label: "Explain ticket", prompt: "Explain the open support ticket and the next step." },
+        tasks: { action: "workmode_task_triage", label: "Prioritise tasks", prompt: "Triage and prioritize my open work tasks." },
+        report: { action: "workmode_end_of_day", label: "Generate report", prompt: "Write my end-of-day work report." },
+        find: { action: "quick_question", label: "Find information", prompt: `Find information about: ${askDraft.trim() || "my work"}` },
+        standup: { action: "workmode_standup", label: "Draft standup", prompt: "Draft my standup update: done, next, blockers." },
+        brief: { action: "workmode_meeting_brief", label: "Meeting brief", prompt: "Prepare a brief for my next work meeting." },
+        focus: { action: "workmode_focus_plan", label: "Plan focus", prompt: "Plan my next focus session and what to protect." },
+      };
+      const selected = meta[id] ?? {
+        action: "quick_question",
+        label: "Quick AI question",
+        prompt: askDraft.trim(),
+      };
+      if (!selected.prompt) {
+        setAnswer("Ask about your work, projects or meetings.");
+        return;
+      }
+      void ai.request({ ...selected, context: os.aiContextSummary() });
+      return;
+    }
     if (id === "summarize") {
       const meeting = meetings[0];
       if (meeting == null) {
@@ -350,6 +381,17 @@ export function WorkModeRail({
             {answer}
           </p>
         ) : null}
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="workmode-assistant-credits">
+          {ai.creditsNote}
+        </p>
+        <CreditConfirmDialog
+          open={ai.pending != null}
+          label={ai.pending?.label ?? "AI action"}
+          estimate={ai.pending?.estimate ?? null}
+          busy={ai.busy}
+          onClose={ai.dismiss}
+          onConfirm={() => void ai.confirm()}
+        />
       </section>
 
       <section

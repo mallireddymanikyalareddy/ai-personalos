@@ -155,5 +155,14 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - All four use the shared confirmation dialog and show **“Local — no credits”** when the provider is Local.
 - **Tests:** Journal/Notebook/Insights/Memory suites pass (127 tests); full web suite remains 831/831.
 
+## Iteration 36 — Rewards, Templates, Work Mode, Collaboration and complex planning
+- **Rewards:** added an AI panel with `reward_suggest`, `reward_reflection` and `celebration_message`.
+- **Templates:** added `template_generate`, `template_fill` and `template_improve`; the existing “Generate with AI” menu now opens the gateway estimate. A selected/previewed template is used as context.
+- **Work Mode:** the existing assistant now routes `meeting_summary`, `meeting_followup_email`, `workmode_task_triage`, `workmode_end_of_day`, `workmode_standup`, `workmode_meeting_brief`, `workmode_focus_plan` and `quick_question`. Added standup, meeting brief and focus tools.
+- **Collaboration:** added `collab_summary`, `collab_reply_draft` and `collab_agenda`.
+- **AI Assistant:** added a **Complex multi-step planning** suggestion. Prompts beginning with “complex plan” use the `complex_planning` action and its 7–10 credit price in the confirmation modal.
+- **Test reliability:** `vitest.config.mts` now caps the thread pool at 2 workers, eliminating intermittent worker-startup failures on Windows. Fixed a flaky integrations assertion that raced a “Preparing” button state.
+- **Tests:** Rewards/Templates/Work Mode/Collaboration/AI suites pass (110 tests); full web suite **52 files, 831/831** reliably.
+
 
 
