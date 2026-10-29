@@ -53,17 +53,24 @@ export type AIEstimate = {
   expectedRemaining: number;
   dailyLimit: number;
   dailyUsed: number;
+  itemCount: number;
+  batchSize: number;
+  modelMultiplier: number;
   allowed: boolean;
   reasons: string[];
   graceEndsAt: string | null;
 };
 
-export async function estimateAIAction(action: string, inputChars = 0): Promise<AIEstimate> {
+export async function estimateAIAction(
+  action: string,
+  inputChars = 0,
+  itemCount = 1,
+): Promise<AIEstimate> {
   const res = await fetch("/api/v1/ai/estimate", {
     method: "POST",
     headers: { "content-type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ action, inputChars }),
+    body: JSON.stringify({ action, inputChars, itemCount }),
   });
   const data = (await res.json().catch(() => ({}))) as AIEstimate & { detail?: string; code?: string };
   if (!res.ok) {
@@ -73,7 +80,7 @@ export async function estimateAIAction(action: string, inputChars = 0): Promise<
 }
 
 export async function streamAIChat(
-  body: { prompt: string; context: string; history: ChatTurn[]; action?: AIAction },
+  body: { prompt: string; context: string; history: ChatTurn[]; action?: AIAction; itemCount?: number },
   onDelta: (text: string) => void,
   onCredits?: (info: ChatCreditInfo) => void,
 ): Promise<string> {

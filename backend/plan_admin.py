@@ -212,6 +212,12 @@ class ActionCostIn(BaseModel):
     input_credits_per_1k: Annotated[int, Field(ge=0, le=100)] = 0
     max_input_tokens: Annotated[int, Field(ge=0, le=200000)] = 0
     request_limit_per_day: Annotated[int, Field(ge=0, le=10000)] = 0
+    input_step_tokens: Annotated[int, Field(ge=1, le=100000)] = 1000
+    input_credits_per_step: Annotated[int, Field(ge=0, le=100)] = 0
+    model_multiplier: Annotated[int, Field(ge=1, le=3)] = 1
+    batch_size: Annotated[int, Field(ge=0, le=500)] = 0
+    batch_credits: Annotated[int, Field(ge=0, le=1000)] = 0
+    batch_extra_credits: Annotated[int, Field(ge=0, le=100)] = 0
 
 
 class PricingDraftIn(BaseModel):

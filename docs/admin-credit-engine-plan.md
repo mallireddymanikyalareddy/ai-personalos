@@ -113,5 +113,14 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - **Tasks pilot:** when the AI provider is OpenAI, the Tasks assistant prices the action, shows a confirmation modal, streams the result through `/api/ai/chat`, and reports credits used/remaining. When the provider is Local, the existing deterministic answers stay free and are labelled **“Local — no credits.”**
 - **Tests:** added a frontend test for the Tasks estimate → confirm → stream → credits-note flow, and a backend gateway check covering the new actions, estimate endpoint, unknown actions, insufficient credits and past-due grace. Full web suite remains green.
 
+## Iteration 31 — full action catalogue and pricing models
+- **95 priced actions** now cover Today, Tasks, Calendar, Planner, Goals, Habits, Notes, Journal, Projects/Work, Meetings, Digital Paper, Digital Notebook, Insights, Rewards, Templates, Inbox/Capture, Life Memory, Work Mode and Collaboration.
+- **Pricing models:** fixed (`min = max`), range, size-based (`input_step_tokens` + `input_credits_per_step`), batch (`batch_size`, `batch_credits`, `batch_extra_credits`) and model multiplier (`model_multiplier`, 1–3×). `max_credits` is the base range; input and model components are added, and `estimate` shows the final total.
+- **Long-content caps:** documents 30k input tokens, meetings/transcripts 40k, document comparison 60k, project/note batches 20k. Larger inputs return `INPUT_TOO_LARGE` or cost extra by input step.
+- **Batch actions:** `task_bulk_cleanup`, `note_merge_dedupe`, `inbox_triage` and `memory_dedupe` charge 3 credits for up to 25 items, +1 per additional 25.
+- **Migration:** `stage_gateway_actions_v2` adds the missing actions to the live pricing version on startup without altering published history.
+- **Manual/free actions remain outside the gateway:** creating/editing tasks, calendar drag/drop, writing notes/journal, viewing dashboards, search/filter/sort, habit check-ins, manual goal updates, reading documents and settings changes.
+- **Local suggestions stay free and labelled:** “Local — no credits” continues on the Tasks pilot; the gateway is only used when the OpenAI provider is selected.
+
 
 

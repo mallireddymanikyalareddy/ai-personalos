@@ -124,7 +124,8 @@ async def action_price(action: str) -> tuple[dict, int]:
     if not match:
         raise CreditError(400, "UNKNOWN_ACTION", "That AI action isn't available.")
     match = {"provider": "openai", "model": None, "input_credits_per_1k": 0, "max_input_tokens": 0,
-             "request_limit_per_day": 0} | match
+             "request_limit_per_day": 0, "input_step_tokens": 1000, "input_credits_per_step": 0,
+             "model_multiplier": 1, "batch_size": 0, "batch_credits": 0, "batch_extra_credits": 0} | match
     return match, version["version"]
 
 
@@ -171,7 +172,7 @@ async def _consume_promotions(user_id: str, amount: int) -> None:
             break
 
 
-async def quote(user_id: str, action: str, input_chars: int = 0) -> dict:
+async def quote(user_id: str, action: str, input_chars: int = 0, item_count: int = 1) -> dict:
     """Server-side price, limits and input size for one action. The browser never supplies a cost."""
     price, pricing_version = await action_price(action)
     limit = int(price.get("request_limit_per_day", 0))
@@ -181,20 +182,35 @@ async def quote(user_id: str, action: str, input_chars: int = 0) -> dict:
     max_input = int(price.get("max_input_tokens", 0))
     input_tokens = math.ceil(max(0, input_chars) / 4)
     too_large = bool(max_input and input_tokens > max_input)
-    rate = int(price.get("input_credits_per_1k", 0))
-    extra = math.ceil(max(0, input_chars) / 4 / 1000) * rate if rate else 0
+    step = max(1, int(price.get("input_step_tokens", 1000)))
+    step_rate = int(price.get("input_credits_per_step", 0))
+    if step_rate:
+        extra = math.ceil(input_tokens / step) * step_rate
+    else:
+        rate = int(price.get("input_credits_per_1k", 0))
+        extra = math.ceil(input_tokens / 1000) * rate if rate else 0
+    multiplier = max(1, int(price.get("model_multiplier", 1)))
+    base_min, base_max = int(price["min_credits"]), int(price["max_credits"])
+    batch_size = int(price.get("batch_size", 0))
+    batch_credits = int(price.get("batch_credits", 0))
+    item_count = max(1, int(item_count))
+    if batch_size and batch_credits:
+        batches = max(1, math.ceil(item_count / batch_size))
+        base_min = base_max = batch_credits + max(0, batches - 1) * int(price.get("batch_extra_credits", 0))
     return {
         "action": action, "label": price["label"], "price": price, "pricing_version": pricing_version,
         "input_tokens": input_tokens, "input_credits": extra,
-        "min_credits": price["min_credits"] + extra, "max_credits": price["max_credits"] + extra,
+        "min_credits": (base_min + extra) * multiplier, "max_credits": (base_max + extra) * multiplier,
         "max_input_tokens": max_input, "max_output_tokens": price["max_output_tokens"],
         "model": price.get("model") or None, "daily_limit": limit, "daily_used": used,
-        "too_large": too_large,
+        "too_large": too_large, "item_count": item_count, "batch_size": batch_size,
+        "model_multiplier": multiplier,
     }
 
 
-async def reserve(user_id: str, action: str, request_id: str, input_chars: int = 0) -> dict:
-    q = await quote(user_id, action, input_chars)
+async def reserve(user_id: str, action: str, request_id: str, input_chars: int = 0,
+                  item_count: int = 1) -> dict:
+    q = await quote(user_id, action, input_chars, item_count)
     from entitlements import ai_access
 
     access = await ai_access(user_id)
@@ -225,7 +241,7 @@ async def reserve(user_id: str, action: str, request_id: str, input_chars: int =
            "label": q["label"], "pricing_version": q["pricing_version"], "min_credits": q["min_credits"],
            "amount": amount, "max_output_tokens": q["max_output_tokens"], "status": "held", "created_at": now(),
            "bucket_hold": hold, "included_since": account.get("included_since"),
-           "model": q["model"], "input_credits": q["input_credits"]}
+           "model": q["model"], "input_credits": q["input_credits"], "item_count": q["item_count"]}
     try:
         await db.credit_reservations.insert_one(dict(res))
     except DuplicateKeyError:

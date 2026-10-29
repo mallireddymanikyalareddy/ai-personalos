@@ -283,11 +283,13 @@ class ChatRequest(BaseModel):
     history: list[ChatTurn] = []
     action: str = "quick_question"
     requestId: str | None = Field(default=None, min_length=8, max_length=64)
+    itemCount: int = Field(default=1, ge=1, le=500)
 
 
 class EstimateIn(BaseModel):
     action: str = Field(min_length=1, max_length=80)
     inputChars: int = Field(default=0, ge=0, le=2_000_000)
+    itemCount: int = Field(default=1, ge=1, le=500)
 
 
 def friendly_ai_error(msg: str) -> str:
@@ -359,7 +361,7 @@ async def ai_estimate(body: EstimateIn, auth=Depends(require_auth)):
     """Quote one AI action before it runs. The server owns the price, limits and balance."""
     user = auth[0]
     try:
-        quote = await credits.quote(user["id"], body.action, body.inputChars)
+        quote = await credits.quote(user["id"], body.action, body.inputChars, body.itemCount)
     except credits.CreditError as exc:
         return JSONResponse({"detail": exc.message, "code": exc.code, **exc.extra}, status_code=exc.status)
     access = await entitlements.ai_access(user["id"])
@@ -384,6 +386,8 @@ async def ai_estimate(body: EstimateIn, auth=Depends(require_auth)):
         "available": balance["available"], "reserved": balance["reserved"],
         "expectedRemaining": max(0, balance["available"] - quote["max_credits"]),
         "dailyLimit": quote["daily_limit"], "dailyUsed": quote["daily_used"],
+        "itemCount": quote["item_count"], "batchSize": quote["batch_size"],
+        "modelMultiplier": quote["model_multiplier"],
         "allowed": not reasons, "reasons": reasons,
         "graceEndsAt": access.get("graceEndsAt"),
     }
@@ -391,7 +395,8 @@ async def ai_estimate(body: EstimateIn, auth=Depends(require_auth)):
 
 async def reserve_or_response(user_id: str, body: ChatRequest, input_chars: int = 0):
     try:
-        return await credits.reserve(user_id, body.action, body.requestId or str(uuid.uuid4()), input_chars), None
+        return await credits.reserve(user_id, body.action, body.requestId or str(uuid.uuid4()), input_chars,
+                                     body.itemCount), None
     except credits.CreditError as exc:
         return None, JSONResponse({"detail": exc.message, "code": exc.code, **exc.extra}, status_code=exc.status)
 

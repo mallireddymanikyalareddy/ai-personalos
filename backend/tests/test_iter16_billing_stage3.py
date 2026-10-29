@@ -74,10 +74,10 @@ class TestPricing:
         v = d["current"]
         assert v["version"] >= 1 and v["status"] == "published"
         acts = {a["action"]: a for a in v["actions"]}
-        assert len(v["actions"]) == 13 and len(acts) == 13
+        assert len(v["actions"]) >= 13 and len(acts) == len(v["actions"])
         assert (acts["document_analysis"]["min_credits"], acts["document_analysis"]["max_credits"]) == (3, 8)
-        assert (acts["meeting_analysis"]["min_credits"], acts["meeting_analysis"]["max_credits"]) == (3, 6)
-        assert (acts["complex_planning"]["min_credits"], acts["complex_planning"]["max_credits"]) == (5, 5)
+        assert (acts["meeting_analysis"]["min_credits"], acts["meeting_analysis"]["max_credits"]) == (3, 8)
+        assert (acts["complex_planning"]["min_credits"], acts["complex_planning"]["max_credits"]) == (5, 10)
         assert all(a["model"] == "gpt-6-luna" for a in v["actions"])
 
 
