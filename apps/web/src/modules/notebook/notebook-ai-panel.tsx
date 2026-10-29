@@ -2,14 +2,16 @@
 
 import * as React from "react";
 
-import { Link2, ListTree, PenLine, Sparkles, SplitSquareVertical, Wand2 } from "lucide-react";
+import { GraduationCap, HelpCircle, Link2, ListTree, PenLine, Sparkles, SplitSquareVertical, Wand2 } from "lucide-react";
 
 import { runNotebookAssistant, type NotebookAiAction, type NotebookAiResult } from "@personalos/core";
 import type { Page } from "@personalos/core";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { Input } from "@/components/ui/input";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 
 import { useAppState, useOS } from "@/store/use-os";
 
@@ -35,17 +37,48 @@ export interface NotebookAiPanelProps {
 export function NotebookAiPanel({ page, onApplyBlocks, onAddRef }: NotebookAiPanelProps) {
   const os = useOS();
   const state = useAppState();
+  const ai = useAIGateway();
   const [prompt, setPrompt] = React.useState("");
   const [result, setResult] = React.useState<NotebookAiResult | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const pageContext = JSON.stringify(page.blocks).slice(0, 190000);
 
   const run = (action: NotebookAiAction) => {
+    if (ai.gatewayEnabled && (action === "summarize" || action === "outline")) {
+      void ai.request({
+        action: action === "summarize" ? "notebook_summary" : "notebook_outline",
+        prompt: action === "summarize" ? "Summarize this notebook page." : "Build an outline for this notebook page.",
+        context: pageContext,
+        label: action === "summarize" ? "Summarize notebook" : "Notebook outline",
+      });
+      return;
+    }
     setBusy(true);
     try {
       setResult(runNotebookAssistant({ page, action, prompt }, state));
     } finally {
       setBusy(false);
     }
+  };
+
+  const runExtra = (action: "flashcards" | "quiz" | "links") => {
+    const meta =
+      action === "flashcards"
+        ? { action: "notebook_flashcards", label: "Generate flashcards", prompt: "Create 5–8 study flashcards from this page." }
+        : action === "quiz"
+          ? { action: "notebook_quiz", label: "Generate quiz", prompt: "Create a short quiz from this page with answers." }
+          : { action: "notebook_link_suggest", label: "Suggest links", prompt: "Suggest related pages and ideas to link from this page." };
+    if (!ai.gatewayEnabled) {
+      ai.setAnswer(
+        action === "flashcards"
+          ? "Local flashcards: turn each heading into a question and its first sentence into the answer."
+          : action === "quiz"
+            ? "Local quiz: use each heading as a question and the following paragraph as the answer."
+            : "Local links: connect this page to notes with matching tags or titles.",
+      );
+      return;
+    }
+    void ai.request({ action: meta.action, prompt: meta.prompt, context: pageContext, label: meta.label });
   };
 
   return (
@@ -82,6 +115,38 @@ export function NotebookAiPanel({ page, onApplyBlocks, onAddRef }: NotebookAiPan
           </Button>
         ))}
       </div>
+
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <Button variant="ghost" size="sm" onClick={() => runExtra("flashcards")}>
+          <GraduationCap className="size-3.5" />
+          Flashcards
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => runExtra("quiz")}>
+          <HelpCircle className="size-3.5" />
+          Quiz
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => runExtra("links")}>
+          <Link2 className="size-3.5" />
+          Link ideas
+        </Button>
+      </div>
+
+      {ai.answer ? (
+        <p className="mt-4 whitespace-pre-line rounded-lg bg-surface-2 p-3 text-sm text-ink-2" data-testid="notebook-ai-answer">
+          {ai.answer}
+        </p>
+      ) : null}
+      <p className="mt-1.5 text-[10px] text-ink-3" data-testid="notebook-ai-credits">
+        {ai.creditsNote}
+      </p>
+      <CreditConfirmDialog
+        open={ai.pending != null}
+        label={ai.pending?.label ?? "AI action"}
+        estimate={ai.pending?.estimate ?? null}
+        busy={ai.busy}
+        onClose={ai.dismiss}
+        onConfirm={() => void ai.confirm()}
+      />
 
       {result ? (
         <div className="mt-4 space-y-3" data-testid="notebook-ai-result">

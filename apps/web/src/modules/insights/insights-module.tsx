@@ -24,9 +24,11 @@ import { aiProvider, startOfDay, startOfWeek, type Timestamp } from "@personalos
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 import { downloadText } from "@/modules/notebook/notebook-export";
 import { useFocusNow } from "@/modules/focus/use-focus-now";
 import { useAppState, useOS } from "@/store/use-os";
@@ -153,6 +155,7 @@ export function InsightsModule() {
   const os = useOS();
   const state = useAppState();
   const { toast } = useToast();
+  const ai = useAIGateway();
 
   const [range, setRange] = React.useState<Range>("week");
   const [showAllAreas, setShowAllAreas] = React.useState(false);
@@ -389,6 +392,21 @@ export function InsightsModule() {
     downloadText(`insights-${range}-${new Date(from).toISOString().slice(0, 10)}.md`, lines.join("\n"));
     toast("Insights report downloaded", { tone: "success" });
   };
+  const runInsightAI = (id: "narrative" | "anomaly" | "recommendations" | "forecast" | "review") => {
+    const meta = {
+      narrative: { action: "insights_narrative", prompt: "Explain these insights in plain language.", label: "Insight narrative" },
+      anomaly: { action: "insights_anomaly_explain", prompt: "Explain any unusual pattern or anomaly in this period.", label: "Explain anomaly" },
+      recommendations: { action: "insights_recommendations", prompt: "Suggest practical changes based on these trends.", label: "Recommendations" },
+      forecast: { action: "insights_forecast", prompt: "Forecast my workload and AI credit usage for the next period.", label: "Forecast" },
+      review: { action: "weekly_review", prompt: "Give me a weekly productivity review with wins, risks and next steps.", label: "Weekly review" },
+    }[id];
+    if (!ai.gatewayEnabled) {
+      ai.setAnswer(`Local ${meta.label.toLowerCase()}: review the range selector above and focus on the biggest change first.`);
+      return;
+    }
+    void ai.request({ action: meta.action, prompt: meta.prompt, context: os.aiContextSummary(), label: meta.label });
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -435,6 +453,26 @@ export function InsightsModule() {
           </>
         }
       />
+
+      <section className="rounded-2xl border border-line bg-surface p-4 shadow-card" aria-label="AI insights assistant" data-testid="insights-ai-panel">
+        <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink">
+          <Sparkles className="size-4 text-accent-ink" aria-hidden="true" />
+          AI insights assistant
+        </h2>
+        <div className="flex flex-wrap gap-1.5">
+          <Button size="sm" variant="secondary" onClick={() => runInsightAI("narrative")}>Explain</Button>
+          <Button size="sm" variant="ghost" onClick={() => runInsightAI("anomaly")}>Explain anomaly</Button>
+          <Button size="sm" variant="ghost" onClick={() => runInsightAI("recommendations")}>Recommendations</Button>
+          <Button size="sm" variant="ghost" onClick={() => runInsightAI("forecast")}>Forecast</Button>
+          <Button size="sm" variant="ghost" onClick={() => runInsightAI("review")}>Weekly review</Button>
+        </div>
+        {ai.answer ? (
+          <p className="mt-2 whitespace-pre-line rounded-xl border border-line bg-surface-2 p-3 text-[12px] text-ink-2" data-testid="insights-ai-answer">
+            {ai.answer}
+          </p>
+        ) : null}
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="insights-ai-credits">{ai.creditsNote}</p>
+      </section>
 
       <p className="text-[11px] text-ink-3" data-testid="insights-range-label">
         {rangeLabel}
@@ -821,6 +859,14 @@ export function InsightsModule() {
           </section>
         </aside>
       </div>
+      <CreditConfirmDialog
+        open={ai.pending != null}
+        label={ai.pending?.label ?? "AI action"}
+        estimate={ai.pending?.estimate ?? null}
+        busy={ai.busy}
+        onClose={ai.dismiss}
+        onConfirm={() => void ai.confirm()}
+      />
     </div>
   );
 }

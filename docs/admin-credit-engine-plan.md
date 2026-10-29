@@ -147,5 +147,13 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - All five modules show **“Local — no credits”** when the provider is Local, and use the shared confirmation dialog when the provider is OpenAI.
 - **Tests:** Today/Planner/Goals/Habits/Notes suites pass (151 tests); full web suite remains 831/831.
 
+## Iteration 35 — Journal, Notebook, Insights and Life Memory wired
+- **Journal:** `JournalAIPanel` now routes `journal_summary`, `journal_reflection`, `journal_mood_insight`, `journal_pattern_review`, `journal_gratitude_prompt`, `task_from_note`, `note_rewrite` and `quick_question` through the gateway. Added **Pattern review** and **Gratitude prompt** buttons. Local proposals and apply-confirmation remain free when the provider is Local.
+- **Notebook:** `NotebookAiPanel` routes `notebook_summary`, `notebook_outline`, `notebook_flashcards`, `notebook_quiz` and `notebook_link_suggest`. Added **Flashcards**, **Quiz** and **Link ideas**. Data-changing local actions (`continue`, `extract_notes`, `backlinks`) stay local so block insertion and link proposals still work.
+- **Insights:** added an **AI insights assistant** with `insights_narrative`, `insights_anomaly_explain`, `insights_recommendations`, `insights_forecast` and `weekly_review`.
+- **Life Memory:** the existing “Ask about your history” uses `memory_recall_answer` when OpenAI is selected; added `memory_timeline_summary`, `memory_connection_suggest` and `memory_dedupe`. Local answer lookup remains free.
+- All four use the shared confirmation dialog and show **“Local — no credits”** when the provider is Local.
+- **Tests:** Journal/Notebook/Insights/Memory suites pass (127 tests); full web suite remains 831/831.
+
 
 

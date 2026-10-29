@@ -16,12 +16,14 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FieldLabel, Input, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 
 import { MemoryTimelineWorkspace } from "./memory-timeline-workspace";
 import { seedSampleMemory } from "./sample-memory";
@@ -572,6 +574,7 @@ export function MemoryModule() {
   const os = useOS();
   const state = useAppState();
   const { toast } = useToast();
+  const ai = useAIGateway();
   const [view, setView] = React.useState<"timeline" | "trackers">("timeline");
   const [tab, setTab] = React.useState<Tab>("all");
   const [dialogOpen, setDialogOpen] = React.useState(false);
@@ -579,7 +582,8 @@ export function MemoryModule() {
   const [detailId, setDetailId] = React.useState<ID | null>(null);
   const [completingId, setCompletingId] = React.useState<ID | null>(null);
   const [question, setQuestion] = React.useState("");
-  const [answer, setAnswer] = React.useState<string | null>(null);
+  const answer = ai.answer;
+  const setAnswer = ai.setAnswer;
   const [category, setCategory] = React.useState<LifeMemoryCategory | null>(null);
   const [search, setSearch] = React.useState("");
 
@@ -648,9 +652,33 @@ export function MemoryModule() {
 
   const ask = (text: string) => {
     if (!text.trim()) return;
+    if (ai.gatewayEnabled) {
+      void ai.request({
+        action: "memory_recall_answer",
+        prompt: text.trim(),
+        context: os.aiContextSummary(),
+        label: "Life memory answer",
+      });
+      setQuestion("");
+      return;
+    }
     const result = os.aiLifeMemoryAnswer(text.trim());
     setAnswer(result.answer);
     setQuestion("");
+  };
+
+  const runMemoryAI = (id: "timeline" | "connections" | "dedupe") => {
+    const meta =
+      id === "timeline"
+        ? { action: "memory_timeline_summary", prompt: "Summarize this period of my life memories.", label: "Memory timeline summary" }
+        : id === "connections"
+          ? { action: "memory_connection_suggest", prompt: "Suggest connections between these memories and related notes or goals.", label: "Suggest memory connections" }
+          : { action: "memory_dedupe", prompt: "Find duplicate or near-duplicate memories and suggest merges.", label: "Find duplicate memories" };
+    if (!ai.gatewayEnabled) {
+      setAnswer(`Local ${meta.label.toLowerCase()}: review the timeline for repeated titles, dates or tags.`);
+      return;
+    }
+    void ai.request({ ...meta, context: os.aiContextSummary() });
   };
 
   const loadSampleMemory = () => {
@@ -852,11 +880,25 @@ export function MemoryModule() {
             Ask
           </Button>
         </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <Button variant="ghost" size="sm" onClick={() => runMemoryAI("timeline")}>Timeline summary</Button>
+          <Button variant="ghost" size="sm" onClick={() => runMemoryAI("connections")}>Suggest connections</Button>
+          <Button variant="ghost" size="sm" onClick={() => runMemoryAI("dedupe")}>Find duplicates</Button>
+        </div>
         {answer && (
-          <p className="mt-3 whitespace-pre-wrap rounded-xl border border-line bg-surface-2/60 p-3 text-sm leading-relaxed text-ink-2">
+          <p className="mt-3 whitespace-pre-wrap rounded-xl border border-line bg-surface-2/60 p-3 text-sm leading-relaxed text-ink-2" data-testid="memory-ai-answer">
             {answer}
           </p>
         )}
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="memory-ai-credits">{ai.creditsNote}</p>
+        <CreditConfirmDialog
+          open={ai.pending != null}
+          label={ai.pending?.label ?? "AI action"}
+          estimate={ai.pending?.estimate ?? null}
+          busy={ai.busy}
+          onClose={ai.dismiss}
+          onConfirm={() => void ai.confirm()}
+        />
       </div>
 
       {filtered.length === 0 ? (

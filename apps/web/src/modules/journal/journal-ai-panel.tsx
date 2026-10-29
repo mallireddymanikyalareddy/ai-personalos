@@ -22,7 +22,9 @@ import { PersonalOS } from "@personalos/core";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CreditConfirmDialog } from "@/components/ai/credit-confirm";
 import { useToast } from "@/components/ui/toast";
+import { useAIGateway } from "@/lib/use-ai-gateway";
 
 type Action = NonNullable<Parameters<typeof runJournalAssistant>[0]["action"]>;
 
@@ -45,11 +47,37 @@ interface JournalAIPanelProps {
 
 export function JournalAIPanel({ os, entry }: JournalAIPanelProps) {
   const { toast } = useToast();
+  const ai = useAIGateway();
   const [pending, setPending] = React.useState<AIProposal[]>([]);
   const [message, setMessage] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<Action | null>(null);
 
+  const journalContext = `${entry.title}\n${entry.body}`.slice(0, 190000);
+
   const run = (action: Action, now: Timestamp = Date.now()) => {
+    if (ai.gatewayEnabled) {
+      const meta =
+        action === "summarize"
+          ? { action: "journal_summary", label: "Summarize journal entry" }
+          : action === "reflect"
+            ? { action: "journal_reflection", label: "Guided reflection" }
+            : action === "detect_mood"
+              ? { action: "journal_mood_insight", label: "Mood and theme insight" }
+              : action === "extract_tasks"
+                ? { action: "task_from_note", label: "Extract tasks" }
+                : action === "tomorrow"
+                  ? { action: "today_weekly_preview", label: "Tomorrow preview" }
+                  : action === "improve_writing"
+                    ? { action: "note_rewrite", label: "Improve writing" }
+                    : { action: "quick_question", label: "Quick AI question" };
+      void ai.request({
+        action: meta.action,
+        prompt: action === "reflect" ? "Reflect on this journal entry with 3 thoughtful follow-up questions." : `Journal action: ${action}.`,
+        context: journalContext,
+        label: meta.label,
+      });
+      return;
+    }
     setBusy(action);
     try {
       const result = runJournalAssistant({ entry: os.getJournalEntry(entry.id) ?? entry, action }, os.getState(), now);
@@ -58,6 +86,23 @@ export function JournalAIPanel({ os, entry }: JournalAIPanelProps) {
     } finally {
       setBusy(null);
     }
+  };
+
+  const runExtra = (action: "pattern_review" | "gratitude_prompt") => {
+    if (!ai.gatewayEnabled) {
+      setMessage(
+        action === "pattern_review"
+          ? "Local pattern review: your recent entries share themes of work, energy and planning."
+          : "Local gratitude prompt: name one person, one moment and one thing that helped today.",
+      );
+      return;
+    }
+    void ai.request({
+      action: action === "pattern_review" ? "journal_pattern_review" : "journal_gratitude_prompt",
+      prompt: action === "pattern_review" ? "Review my journal entries for recurring themes and patterns." : "Give me one short gratitude prompt for today.",
+      context: journalContext,
+      label: action === "pattern_review" ? "Journal pattern review" : "Gratitude prompt",
+    });
   };
 
   const context: JournalApplyContext = {
@@ -137,11 +182,31 @@ export function JournalAIPanel({ os, entry }: JournalAIPanelProps) {
           ))}
         </div>
 
-        {message ? (
-          <p className="mt-3 rounded-lg bg-surface-2 p-3 text-sm text-ink-2" role="status">
-            {message}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <Button size="sm" variant="ghost" onClick={() => runExtra("pattern_review")}>
+            Pattern review
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => runExtra("gratitude_prompt")}>
+            Gratitude prompt
+          </Button>
+        </div>
+
+        {(ai.answer ?? message) ? (
+          <p className="mt-3 whitespace-pre-line rounded-lg bg-surface-2 p-3 text-sm text-ink-2" role="status" data-testid="journal-ai-answer">
+            {ai.answer ?? message}
           </p>
         ) : null}
+        <p className="mt-1.5 text-[10px] text-ink-3" data-testid="journal-ai-credits">
+          {ai.creditsNote}
+        </p>
+        <CreditConfirmDialog
+          open={ai.pending != null}
+          label={ai.pending?.label ?? "AI action"}
+          estimate={ai.pending?.estimate ?? null}
+          busy={ai.busy}
+          onClose={ai.dismiss}
+          onConfirm={() => void ai.confirm()}
+        />
       </section>
 
       {pending.length > 0 ? (
