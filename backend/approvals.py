@@ -1,4 +1,7 @@
+import asyncio
+import logging
 import uuid
+from datetime import timedelta
 
 from billing import now
 from db import db
@@ -50,3 +53,22 @@ async def finish(approval_id: str, status: str, admin: dict, reason: str, error:
 async def release(approval_id: str) -> None:
     await db.admin_approvals.update_one(
         {"id": approval_id, "status": "processing"}, {"$set": {"status": "pending"}, "$unset": {"claimed_at": ""}})
+
+
+async def release_stale_claims(minutes: int = 10) -> int:
+    """Return approvals claimed by a crashed/restarted decision process to the pending queue."""
+    cutoff = now() - timedelta(minutes=minutes)
+    result = await db.admin_approvals.update_many(
+        {"status": "processing", "claimed_at": {"$lt": cutoff}},
+        {"$set": {"status": "pending", "error": "Recovered after an interrupted decision"},
+         "$unset": {"claimed_at": ""}})
+    return result.modified_count
+
+
+async def sweep_loop():
+    while True:
+        try:
+            await release_stale_claims()
+        except Exception:
+            logging.exception("Approval recovery sweep error")
+        await asyncio.sleep(60)

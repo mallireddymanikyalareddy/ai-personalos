@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pymongo import UpdateOne
 
 from db import db
+from request_context import current_request_id
 
 SEED_EFFECTIVE_AT = datetime(2026, 6, 1, tzinfo=timezone.utc)
 
@@ -58,6 +59,7 @@ async def record_audit(actor: str, action: str, target_type: str, target_id: str
     await db.admin_audit.insert_one({
         "id": f"aud_{uuid.uuid4().hex[:16]}", "actor": actor, "role": role, "action": action, "target_type": target_type,
         "target_id": target_id, "reason": reason, "outcome": outcome, "details": details or {}, "created_at": now(),
+        "request_id": current_request_id(),
     })
 
 

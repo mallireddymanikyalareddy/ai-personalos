@@ -106,8 +106,9 @@ async def update_subscription(subscription_id: str, body: SubscriptionUpdateIn, 
     changed_billing = bool(body.billing_period and body.billing_period != sub["billing_period"])
     if changed_plan:
         version = await entitlements.live_plan_version(body.plan_id)
-        if not version:
-            raise ApiError(404, "NOT_FOUND", "That plan is not available.")
+        plan = await db.plans.find_one({"plan_id": body.plan_id}, {"_id": 0, "available": 1})
+        if not version or not plan or not plan.get("available", True):
+            raise ApiError(404, "PLAN_UNAVAILABLE", "That plan isn't available for new subscriptions.")
         update |= {"plan_id": body.plan_id, "plan_version": version["version"]}
     if changed_billing:
         update["billing_period"] = body.billing_period

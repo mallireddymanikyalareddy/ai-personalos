@@ -24,6 +24,7 @@ router = APIRouter(prefix="/api/v1/admin")
 Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=300)]
 
 CREDIT_ROLES = ("billing_admin", "support_admin")
+EXPORT_ROLES = ("billing_admin", "support_admin")
 USER_FIELDS = {"_id": 0, "id": 1, "handle": 1, "email": 1, "display_name": 1, "created_at": 1, "admin_role": 1,
                "admin_role_source": 1, "email_verified_at": 1, "suspended_at": 1, "suspension_reason": 1,
                "suspended_by": 1}
@@ -640,7 +641,7 @@ async def audit(limit: int = 100, _=Depends(require_role())):
 
 
 @router.get("/exports/users.csv")
-async def export_users(q: str = "", ids: str = "", limit: int = 5000, _=Depends(require_role())):
+async def export_users(q: str = "", ids: str = "", limit: int = 5000, _=Depends(require_role(*EXPORT_ROLES))):
     match = {}
     if ids.strip():
         match["id"] = {"$in": [value for value in ids.split(",") if value][:500]}
@@ -663,7 +664,7 @@ async def export_users(q: str = "", ids: str = "", limit: int = 5000, _=Depends(
 
 
 @router.get("/exports/ledger.csv")
-async def export_ledger(type: str = "", limit: int = 5000, _=Depends(require_role())):
+async def export_ledger(type: str = "", limit: int = 5000, _=Depends(require_role(*EXPORT_ROLES))):
     match = {"type": type} if type else {}
     entries = await db.credit_ledger.find(match, {"_id": 0, "idempotency_key": 0}).sort(
         "created_at", -1).to_list(max(1, min(limit, 5000)))
@@ -675,13 +676,13 @@ async def export_ledger(type: str = "", limit: int = 5000, _=Depends(require_rol
 
 
 @router.get("/exports/audit.csv")
-async def export_audit(limit: int = 5000, _=Depends(require_role())):
+async def export_audit(limit: int = 5000, _=Depends(require_role(*EXPORT_ROLES))):
     entries = await db.admin_audit.find({}, {"_id": 0}).sort("created_at", -1).to_list(max(1, min(limit, 5000)))
     names = await handles_for({r["target_id"] for r in entries if r.get("target_type") == "user"})
     rows = [[e["id"], e["actor"], e.get("role", ""), e["action"], e["target_type"], e["target_id"],
-             user_label(e, names), e["reason"], e["outcome"], e["created_at"]] for e in entries]
+             user_label(e, names), e["reason"], e["outcome"], e.get("request_id", ""), e["created_at"]] for e in entries]
     return csv_download("admin-audit.csv", ["id", "actor", "role", "action", "targetType", "targetId",
-                                            "targetLabel", "reason", "outcome", "createdAt"], rows)
+                                            "targetLabel", "reason", "outcome", "requestId", "createdAt"], rows)
 
 
 async def ai_charged_since(since) -> int:

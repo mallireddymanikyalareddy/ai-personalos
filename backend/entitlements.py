@@ -153,8 +153,9 @@ async def create_subscription(identifier: str, plan_id: str, billing_period: str
         raise SubscriptionError(400, "VALIDATION_FAILED", "Unknown subscription status.")
     user = await find_user(identifier)
     version = await live_plan_version(plan_id)
-    if not version:
-        raise SubscriptionError(404, "NOT_FOUND", "That plan is not available.")
+    plan = await db.plans.find_one({"plan_id": plan_id}, {"_id": 0, "available": 1})
+    if not version or not plan or not plan.get("available", True):
+        raise SubscriptionError(404, "PLAN_UNAVAILABLE", "That plan isn't available for new subscriptions.")
     existing = await db.subscriptions.find_one({"user_id": user["id"], "status": {"$in": list(ACTIVE_STATUSES)}})
     if existing:
         raise SubscriptionError(409, "CONFLICT", "This user already has an active subscription.")

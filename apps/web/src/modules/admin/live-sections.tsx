@@ -409,6 +409,7 @@ export function AdminUsers() {
     }
   };
   const canCredit = CREDIT_ADMIN_ROLES.includes(role);
+  const canExport = ["super_admin", "billing_admin", "support_admin"].includes(role);
   return (
     <LivePage
       title="Users"
@@ -422,15 +423,19 @@ export function AdminUsers() {
           placeholder="Search by handle or email..."
           className="h-9 w-full max-w-xs rounded-lg border border-line bg-surface px-3 text-sm text-ink focus:border-accent focus:outline-none"
         />
-        <Button size="sm" onClick={() => void exportCsv(`exports/users.csv?q=${encodeURIComponent(query)}`, "users.csv")}>
-          Export users
-        </Button>
-        <Button size="sm" onClick={() => void exportCsv("exports/ledger.csv", "credit-ledger.csv")}>
-          Export ledger
-        </Button>
-        <Button size="sm" onClick={() => void exportCsv("exports/audit.csv", "admin-audit.csv")}>
-          Export audit
-        </Button>
+        {canExport && (
+          <>
+            <Button size="sm" onClick={() => void exportCsv(`exports/users.csv?q=${encodeURIComponent(query)}`, "users.csv")}>
+              Export users
+            </Button>
+            <Button size="sm" onClick={() => void exportCsv("exports/ledger.csv", "credit-ledger.csv")}>
+              Export ledger
+            </Button>
+            <Button size="sm" onClick={() => void exportCsv("exports/audit.csv", "admin-audit.csv")}>
+              Export audit
+            </Button>
+          </>
+        )}
         <select
           data-testid="admin-users-status"
           className="h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink"
@@ -520,14 +525,16 @@ export function AdminUsers() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium text-ink">{checked.length} selected</p>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      void exportCsv(`exports/users.csv?ids=${encodeURIComponent(checked.join(","))}`, "users-selected.csv")
-                    }
-                  >
-                    Export selected
-                  </Button>
+                  {canExport && (
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        void exportCsv(`exports/users.csv?ids=${encodeURIComponent(checked.join(","))}`, "users-selected.csv")
+                      }
+                    >
+                      Export selected
+                    </Button>
+                  )}
                   <Button size="sm" variant="ghost" onClick={() => setChecked([])}>
                     Clear
                   </Button>
@@ -1501,6 +1508,18 @@ export function AdminAudit() {
               ),
             },
             { key: "reason", label: "Reason" },
+            {
+              key: "request_id",
+              label: "Request",
+              render: (r) =>
+                r.request_id ? (
+                  <code className="text-[11px] text-ink-3" title={r.request_id}>
+                    {r.request_id.slice(0, 14)}…
+                  </code>
+                ) : (
+                  "—"
+                ),
+            },
             {
               key: "details",
               label: "Details",

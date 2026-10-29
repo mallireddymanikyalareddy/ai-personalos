@@ -295,7 +295,7 @@ async def register(body: RegisterIn, request: Request, response: Response):
     await referrals.ensure_code(user)
     if referrer:
         try:
-            await referrals.reward(referrer, user)
+            await referrals.queue(referrer, user)
         except Exception:
             # A referral problem must never block registration.
             pass
@@ -493,8 +493,16 @@ async def verify_confirm(body: TokenIn):
         user = await db.users.find_one({"id": used["user_id"]}, {"_id": 0})
         if not user:
             raise
+        try:
+            await referrals.reward_pending(user["id"])
+        except Exception:
+            pass
         return profile(user)
     await db.users.update_one({"id": doc["user_id"]}, {"$set": {"email_verified_at": now(), "updated_at": now()}})
+    try:
+        await referrals.reward_pending(doc["user_id"])
+    except Exception:
+        pass
     return profile(await db.users.find_one({"id": doc["user_id"]}, {"_id": 0}))
 
 

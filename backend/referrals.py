@@ -76,6 +76,36 @@ async def reward(referrer: dict, referee: dict) -> dict | None:
     return doc
 
 
+async def queue(referrer: dict, referee: dict) -> None:
+    """Attach attribution now; rewards are released only after the referee verifies their email."""
+    if referrer["id"] == referee["id"]:
+        return
+    await db.users.update_one(
+        {"id": referee["id"]},
+        {"$set": {"pending_referral": {"referrer_id": referrer["id"], "code": referrer.get("referral_code")}}})
+
+
+async def reward_pending(user_id: str) -> dict | None:
+    """Grant a queued referral once the referee has a verified email. Safe to call repeatedly."""
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user or not user.get("email_verified_at"):
+        return None
+    pending = user.get("pending_referral")
+    if not pending:
+        return None
+    referrer = await db.users.find_one({"id": pending.get("referrer_id")}, {"_id": 0})
+    if not referrer:
+        await db.users.update_one({"id": user_id}, {"$unset": {"pending_referral": ""}})
+        return None
+    try:
+        doc = await reward(referrer, user)
+    except Exception:
+        # Keep the attribution so a later verification attempt can retry the grant.
+        raise
+    await db.users.update_one({"id": user_id}, {"$unset": {"pending_referral": ""}})
+    return doc
+
+
 async def summary(user: dict) -> dict:
     code = await ensure_code(user)
     invited = await db.referrals.count_documents({"referrer_id": user["id"]})

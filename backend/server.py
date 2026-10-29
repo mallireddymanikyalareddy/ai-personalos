@@ -116,13 +116,29 @@ async def lifespan(_: FastAPI):
     tasks = [asyncio.create_task(digest_loop()), asyncio.create_task(credits.sweep_loop()),
              asyncio.create_task(entitlements.sweep_loop()), asyncio.create_task(promotions.sweep_loop()),
              asyncio.create_task(alerts.loop()), asyncio.create_task(reconciliation.loop()),
-             asyncio.create_task(promotions.auto_loop())]
+             asyncio.create_task(promotions.auto_loop()), asyncio.create_task(approvals.sweep_loop())]
     yield
     for task in tasks:
         task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def attach_request_id(request: Request, call_next):
+    from request_context import request_id as request_id_var
+
+    rid = request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex[:16]}"
+    token = request_id_var.set(rid)
+    try:
+        response = await call_next(request)
+    finally:
+        request_id_var.reset(token)
+    response.headers["X-Request-ID"] = rid
+    return response
+
+
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(admin_ops_router)

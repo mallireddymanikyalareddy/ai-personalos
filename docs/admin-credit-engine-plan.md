@@ -91,3 +91,11 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - Approval requests claimed as `processing` still need a crash-recovery sweep.
 - Full LifeOS regression suite is not run; targeted unit/API checks only.
 
+## Iteration 28 — hardening
+- **Referral abuse gate:** registration now stores a `pending_referral` attribution without granting credits. Rewards are granted only after the referee confirms their email; `referrals.reward_pending` is idempotent and safe on repeated confirmations. Users without an email keep a pending attribution and receive nothing.
+- **Approval crash recovery:** `approvals.release_stale_claims` returns `processing` approvals older than 10 minutes to `pending`, and `approvals.sweep_loop` runs every minute on startup. Approval decisions no longer stay stuck after a restart.
+- **Plan availability enforcement:** hidden plans are rejected by `create_subscription` and subscription plan changes with `PLAN_UNAVAILABLE`, not merely hidden in the UI. Existing subscriptions and renewals are unaffected.
+- **Export permissions:** user, ledger and audit CSV exports require `super_admin`, `billing_admin` or `support_admin`. The read-only `analyst` role can still read admin screens but cannot export personal data; the UI hides export controls for that role.
+- **Request IDs:** an HTTP middleware assigns or accepts `X-Request-ID`, returns it on every response, and `record_audit` stores it as `request_id`. Audit CSV exports include the column and the Audit Logs table shows it.
+
+
