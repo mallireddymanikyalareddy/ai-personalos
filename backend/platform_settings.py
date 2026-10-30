@@ -28,6 +28,12 @@ DEFAULT_SETTINGS = {
     "requireMfaForAdmins": False,
     "adminSessionMinutes": 1440,
     "auditRetentionDays": 365,
+    "seoTitle": "PersonalOS — Your Personal Operating System",
+    "seoDescription": "Plan, create, focus and organize your work and life in one personal operating system.",
+    "seoKeywords": "personal operating system, productivity, tasks, calendar, notes, goals, habits, AI assistant",
+    "seoIndexable": True,
+    "seoOgImage": "/landing/hero-devices.png",
+    "seoSiteUrl": "",
     "flags": {"ai_confirmation_modal": True, "annual_bonus_credits": True, "promotions": True,
               "referrals": True},
 }
@@ -50,8 +56,9 @@ async def get_settings() -> dict:
 
 
 async def update_settings(values: dict, actor: str) -> dict:
+    merged = await get_settings() | values
     await db.platform_settings.update_one(
-        {"key": KEY}, {"$set": {"values": values, "updated_at": now(), "updated_by": actor}}, upsert=True)
+        {"key": KEY}, {"$set": {"values": merged, "updated_at": now(), "updated_by": actor}}, upsert=True)
     return await get_settings()
 
 
@@ -69,3 +76,10 @@ async def public_settings() -> dict:
     return {"lowCreditThreshold": values["lowCreditThreshold"], "flags": values["flags"],
             "support": {"email": values.get("supportEmail"), "url": values.get("supportUrl"),
                         "statusPageUrl": values.get("statusPageUrl"), "hours": values.get("supportHours")}}
+
+
+async def public_seo() -> dict:
+    values = await get_settings()
+    return {"title": values.get("seoTitle"), "description": values.get("seoDescription"),
+            "keywords": values.get("seoKeywords"), "indexable": bool(values.get("seoIndexable", True)),
+            "ogImage": values.get("seoOgImage"), "siteUrl": values.get("seoSiteUrl")}

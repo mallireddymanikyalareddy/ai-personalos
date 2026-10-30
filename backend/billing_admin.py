@@ -404,6 +404,40 @@ async def public_settings():
     return await platform_settings.public_settings()
 
 
+@public_router.get("/seo")
+async def public_seo():
+    return await platform_settings.public_seo()
+
+
+class SeoIn(BaseModel):
+    title: str = Field(min_length=10, max_length=70)
+    description: str = Field(min_length=50, max_length=160)
+    keywords: str = Field(default="", max_length=300)
+    indexable: bool = True
+    og_image: str = Field(default="", max_length=200)
+    site_url: str = Field(default="", max_length=200)
+    reason: Reason
+
+
+@router.get("/seo")
+async def get_seo(_=Depends(require_role())):
+    return await platform_settings.public_seo()
+
+
+@router.put("/seo")
+async def save_seo(body: SeoIn, auth=Depends(WriteSettings)):
+    admin = auth[0]
+    values = (await platform_settings.get_settings()) | {
+        "seoTitle": body.title, "seoDescription": body.description, "seoKeywords": body.keywords,
+        "seoIndexable": body.indexable, "seoOgImage": body.og_image, "seoSiteUrl": body.site_url,
+    }
+    await platform_settings.update_settings(values, admin["handle"])
+    await record_audit(admin["handle"], "seo.update", "settings", "seo", body.reason, role=admin["admin_role"],
+                       details={"title": body.title, "indexable": body.indexable,
+                                "descriptionLength": len(body.description)})
+    return await platform_settings.public_seo()
+
+
 class RedeemIn(BaseModel):
     code: str = Field(min_length=3, max_length=32)
 

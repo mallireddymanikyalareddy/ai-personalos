@@ -6,6 +6,7 @@ import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import { PERSIST_KEY } from "@personalos/core";
 
 import { AuthProvider } from "@/modules/auth/auth-context";
+import { SeoManager } from "@/components/seo/seo-manager";
 import { ToastProvider } from "@/components/ui/toast";
 import { SIDEBAR_INIT_SCRIPT } from "@/lib/sidebar-pref";
 
@@ -69,6 +70,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-dvh">
         <ToastProvider>
+          <SeoManager />
           <AuthProvider>{children}</AuthProvider>
         </ToastProvider>
       </body>

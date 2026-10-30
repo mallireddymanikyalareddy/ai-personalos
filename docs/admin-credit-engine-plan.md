@@ -180,5 +180,15 @@ Take an Atlas snapshot before publishing. All Stage 3 changes are additive: exis
 - Answers now render like the example: **bold labels**, numbered steps and bullet lists instead of raw markdown text.
 - **Tests:** full web suite 52 files, 831/831 with `--maxWorkers=1`; typecheck, lint and static build pass.
 
+## Iteration 39 — admin SEO panel and runtime metadata
+- Added **Admin → SEO** (`/admin/seo`) with editable page title, meta description, keywords, Open Graph image, canonical site URL and an **Allow search indexing** toggle. Every save requires a reason and writes `seo.update` to the admin audit log.
+- Added **Generate title & description** using the gateway action `seo_metadata` (1 credit). The AI answer is parsed into the form for review; manual editing and saving work without OpenAI.
+- Backend: `platform_settings` now stores `seoTitle`, `seoDescription`, `seoKeywords`, `seoIndexable`, `seoOgImage` and `seoSiteUrl`; `GET /api/v1/admin/seo`, `PUT /api/v1/admin/seo` and public `GET /api/v1/seo` are available.
+- `platform_settings.update_settings` now merges instead of replacing, so saving unrelated platform settings no longer resets SEO values.
+- Added `components/seo/seo-manager.tsx`. It applies the admin title/description, robots directive, Open Graph, Twitter and canonical tags after hydration. Private routes (`/admin`, `/settings`, `/journal`, `/tasks`, `/ai`, auth screens and every other app route) are always `noindex, nofollow`; `/`, `/privacy` and `/terms` follow the admin toggle.
+- Added `app/robots.ts` and `app/sitemap.ts`. The sitemap lists only `/`, `/privacy` and `/terms`; the private routes are explicitly disallowed. Set `NEXT_PUBLIC_SITE_URL` at build time for absolute sitemap URLs.
+- **Deployment limitation:** this is a static export. The admin settings are applied client-side, so Google (which renders JavaScript) will see them, but crawlers that do not execute JavaScript only see the build-time metadata in `app/layout.tsx`. Server-rendered or build-time generation would be required for strict crawler parity.
+- **Tests:** typecheck, lint and static build pass; full web suite unchanged.
+
 
 

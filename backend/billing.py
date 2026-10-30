@@ -33,6 +33,7 @@ ACTION_SEEDS = [
     ("document_analysis", "Document analysis", 3, 8, 2000),
     ("meeting_analysis", "Meeting analysis", 3, 8, 2000),
     ("complex_planning", "Complex multi-step planning", 5, 10, 2500),
+    ("seo_metadata", "Generate SEO title and description", 1, 1, 300),
     # Today
     ("today_briefing", "Morning briefing", 2, 2, 900),
     ("today_evening_reflection", "End-of-day reflection", 2, 2, 800),
@@ -173,6 +174,7 @@ ACTION_LIMITS = {
                       "batch_extra_credits": 1},
     "memory_timeline_summary": {"max_input_tokens": 30000, "input_step_tokens": 2000, "input_credits_per_step": 1},
     "complex_planning": {"max_input_tokens": 12000, "request_limit_per_day": 20},
+    "seo_metadata": {"max_input_tokens": 4000, "max_output_tokens": 300, "request_limit_per_day": 20},
 }
 
 
@@ -297,4 +299,5 @@ async def setup_billing() -> None:
     await run_once("stage3_seed_ai_pricing_v1", seed_pricing)
     await run_once("stage_gateway_actions_v1", seed_gateway_actions)
     await run_once("stage_gateway_actions_v2", seed_gateway_actions)
+    await run_once("stage_gateway_actions_v3", seed_gateway_actions)
     await run_once("stage3_backfill_credit_accounts", backfill_credit_accounts)

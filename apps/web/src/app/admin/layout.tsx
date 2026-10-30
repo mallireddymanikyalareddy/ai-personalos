@@ -12,6 +12,7 @@ import {
   Coins,
   Gift,
   LayoutDashboard,
+  Search,
   ScrollText,
   Settings2,
   ShieldAlert,
@@ -36,6 +37,7 @@ const NAV = [
   { href: "/admin/pricing", label: "AI Action Pricing", icon: Tags },
   { href: "/admin/promotions", label: "Promotions & Grants", icon: Gift },
   { href: "/admin/audit", label: "Audit Logs", icon: ScrollText },
+  { href: "/admin/seo", label: "SEO", icon: Search },
   { href: "/admin/settings", label: "Platform Settings", icon: Settings2 },
 ];
 
